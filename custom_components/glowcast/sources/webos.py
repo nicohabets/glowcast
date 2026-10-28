@@ -44,6 +44,7 @@ class WebOsFrameSource:
         self._watcher: asyncio.Task[None] | None = None
         self._last_on = False
         self._lost = False
+        self._connected = asyncio.Event()
 
     async def start(self) -> None:
         """Connect to the TV with the credentials of HA's webostv entry."""
@@ -92,7 +93,7 @@ class WebOsFrameSource:
     async def capture(self) -> Frame:
         """Take a screenshot and return it downscaled."""
         client = self._client
-        if client is None or client.connection is None or not self.is_on():
+        if client is None or not self.is_on():
             raise SourceUnavailable("The TV is off or not connected")
 
         # Reasons are set outside the except blocks so the original error, whose
@@ -100,6 +101,8 @@ class WebOsFrameSource:
         reason: str
         try:
             async with asyncio.timeout(CAPTURE_TIMEOUT):
+                if client.connection is None:
+                    await self._async_wait_for_reconnect(client)
                 response = await client.request(CAPTURE_URI, CAPTURE_PAYLOAD)
                 data = await self._async_download(response["imageUri"])
                 return await self._hass.async_add_executor_job(_decode, data)
@@ -127,6 +130,21 @@ class WebOsFrameSource:
             client.unregister_state_update_callback(self._async_state_updated)
             await client.disconnect()
 
+    async def _async_wait_for_reconnect(self, client: WebOsClient) -> None:
+        """Wait for the reconnect in progress, so it gets its chance first."""
+        watcher = self._watcher
+        if watcher is None or watcher.done():
+            raise SourceUnavailable("The TV is off or not connected")
+        # Only set again by a state update on a live connection.
+        self._connected.clear()
+        waiter = asyncio.ensure_future(self._connected.wait())
+        try:
+            await asyncio.wait({waiter, watcher}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            waiter.cancel()
+        if client.connection is None or not self.is_on():
+            raise SourceUnavailable("Lost the connection to the TV")
+
     async def _async_download(self, url: str) -> bytes:
         """Download the screenshot; the TV uses a self-signed certificate."""
         session = async_get_clientsession(self._hass)
@@ -143,6 +161,7 @@ class WebOsFrameSource:
         """
         if self._client is not None and self._client.connection is not None:
             self._last_on = state.is_on and state.is_screen_on
+            self._connected.set()
 
     async def _async_watch_connection(self, client: WebOsClient) -> None:
         """Reconnect once whenever the websocket drops."""

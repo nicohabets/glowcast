@@ -113,17 +113,18 @@ async def main(args: argparse.Namespace) -> None:
                     args.save
                 )
 
-            # Force a websocket drop and watch the source reconnect.
-            old = source._client.connection
+            # Force a websocket drop and capture straight away: the capture waits
+            # for the source's reconnect instead of failing.
             begin = time.perf_counter()
-            await old.close()
+            await source._client.connection.close()
+            capture = asyncio.create_task(source.capture())
             on_during = []
-            while source._client.connection in (None, old):
+            while not capture.done():
                 on_during.append(source.is_on())
-                await asyncio.sleep(0.05)
-            await source.capture()
+                await asyncio.sleep(0.02)
+            await capture
             print(
-                f"drop: reconnected and captured after "
+                f"drop: capture right after the drop succeeded after "
                 f"{time.perf_counter() - begin:.2f}s, is_on during reconnect: "
                 f"{all(on_during)} ({len(on_during)} samples)"
             )

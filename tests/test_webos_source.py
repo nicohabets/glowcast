@@ -38,9 +38,10 @@ class FakeWebOsClient:
     """Behaves like aiowebostv.WebOsClient for the calls the source makes.
 
     `connect_outcomes` scripts each connect() call: None connects, an exception
-    is raised, HANG never finishes. `drop()` mirrors aiowebostv's closeout: the
-    connection goes, the state is cleared, callbacks run with the cleared state,
-    and only then does the connect task end.
+    is raised, HANG never finishes, and a Future holds the call until the test
+    resolves it (with None to connect, or with an exception). `drop()` mirrors
+    aiowebostv's closeout: the connection goes, the state is cleared, callbacks
+    run with the cleared state, and only then does the connect task end.
     """
 
     instances: list["FakeWebOsClient"] = []
@@ -81,6 +82,11 @@ class FakeWebOsClient:
         try:
             if outcome is HANG:
                 await asyncio.Event().wait()
+            if isinstance(outcome, asyncio.Future):
+                try:
+                    outcome = await outcome
+                except Exception as err:  # noqa: BLE001 - becomes the outcome
+                    outcome = err
             if isinstance(outcome, BaseException):
                 ready.set_exception(outcome)
                 return
@@ -361,6 +367,58 @@ async def test_reconnect_times_out(
 
 
 # Capture
+
+
+async def test_capture_during_reconnect_waits_for_it(
+    started: tuple[WebOsFrameSource, FakeWebOsClient],
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    source, client = started
+    aioclient_mock.get(IMAGE_URL, content=_jpeg())
+    reconnect: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    FakeWebOsClient.connect_outcomes = [reconnect]
+    await client.drop()
+    await _settle()
+
+    capture = asyncio.create_task(source.capture())
+    await _settle()
+    assert not capture.done()
+
+    reconnect.set_result(None)
+    frame = await capture
+    assert (frame.width, frame.height) == (64, 36)
+
+
+async def test_capture_during_failed_reconnect(
+    started: tuple[WebOsFrameSource, FakeWebOsClient],
+) -> None:
+    source, client = started
+    reconnect: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    FakeWebOsClient.connect_outcomes = [reconnect]
+    await client.drop()
+    await _settle()
+
+    capture = asyncio.create_task(source.capture())
+    await _settle()
+    assert not capture.done()
+
+    reconnect.set_exception(OSError("gone"))
+    with pytest.raises(SourceUnavailable, match="Lost the connection"):
+        await capture
+    assert not source.is_on()
+
+
+async def test_capture_during_reconnect_times_out(
+    started: tuple[WebOsFrameSource, FakeWebOsClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, client = started
+    monkeypatch.setattr(webos, "CAPTURE_TIMEOUT", 0.05)
+    FakeWebOsClient.connect_outcomes = [HANG]
+    await client.drop()
+    await _settle()
+    with pytest.raises(SourceUnavailable, match="timed out"):
+        await source.capture()
 
 
 async def test_capture_returns_a_downscaled_frame(
