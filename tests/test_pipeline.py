@@ -386,8 +386,8 @@ async def test_intensity_is_passed_as_a_factor() -> None:
 
 # Holding the last colours when the picture suddenly turns black (#39)
 
-WARM_RED = (1.0, 0.072, 0.042)  # red with the glow floor
-GLOW_ONLY = (0.10, 0.072, 0.042)  # black at brightness 100 %
+WARM_RED = (1.0, 0.078, 0.050)  # red with the glow floor
+GLOW_ONLY = (0.10, 0.078, 0.050)  # black at brightness 100 %
 
 
 async def test_tv_switched_off_during_the_hold_never_shows_the_glow() -> None:
@@ -447,7 +447,7 @@ async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() ->
     await h.clock.advance(3)
     sent = [c[0].rgb for t, c in h.output.sent if t >= 2]
     assert not any(rgb == approx_rgb(GLOW_ONLY) for rgb in sent)
-    assert sent[-1] == approx_rgb((0.10, 0.072, 1.0))
+    assert sent[-1] == approx_rgb((0.10, 0.078, 1.0))
     assert await h.stop() == StopReason.USER
 
 
