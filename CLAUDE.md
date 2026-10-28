@@ -41,7 +41,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 
 - Hardware: an LG OLED65G36LA (2023, G3) on webOS, a Hue Pro bridge, and a Hue entertainment area with a gradient lightstrip. Hardware details that are specific to the owner's home (names, addresses, credentials) are given in the session handover, never in this repository.
 - Measured: about 4.1 captures per second with `WebOsFrameSource` (download and decode to 64x36 included), from a 960x540 JPEG (see architecture section 2).
-- Minimum Home Assistant version: 2025.3.0 (architecture section 2).
+- Minimum Home Assistant version: 2025.7.2 (architecture section 2).
 
 ## How we work
 
