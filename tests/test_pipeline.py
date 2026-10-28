@@ -411,11 +411,31 @@ async def test_a_black_scene_longer_than_the_hold_fades_to_the_glow() -> None:
     await h.start()
     await h.clock.advance(2)
     h.source.default = solid(BLACK)
-    await h.clock.advance(1.2)  # black arrives at about 2.25 s, held for 1 s
+    await h.clock.advance(3.6)  # black arrives at about 2.25 s, held for 3.5 s
     assert h.output.rgb_at(-1) == approx_rgb(WARM_RED)
     await h.clock.advance(1.5)
     assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)
     assert await h.stop() == StopReason.USER
+
+
+def switch_off_animation() -> Frame:
+    """Black with one bright pixel: under 5 % of the frame, but inside the region
+    of the test channel, like the small element of a TV's switch-off animation."""
+    pixels = bytearray(bytes(BLACK) * 32)
+    pixels[(2 * 8 + 3) * 3 : (2 * 8 + 3) * 3 + 3] = bytes((220, 220, 220))
+    return Frame(width=8, height=4, pixels=bytes(pixels))
+
+
+async def test_a_switch_off_animation_counts_as_black() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = switch_off_animation()
+    await h.clock.advance(2.5)
+    h.source.on = False
+    assert await h.finish() == StopReason.TV_OFF
+    after = [c[0].rgb for t, c in h.output.sent if t >= 2]
+    assert all(rgb == approx_rgb(WARM_RED) for rgb in after)
 
 
 async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() -> None:

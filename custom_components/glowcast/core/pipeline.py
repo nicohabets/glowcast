@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from .color_engine import compute
+from .color_engine import compute, is_black
 from .models import Channel, ChannelColor, Frame
 from .ports import (
     FrameSource,
@@ -40,9 +40,10 @@ GLOW = 0.10  # level of the minimal glow
 # Colour of the minimal glow: a warm white of about 2700K (D11).
 GLOW_COLOR = (1.0, 0.78, 0.50)
 # When the whole picture suddenly turns black, keep the last colours this long
-# before fading to the glow: a TV being switched off shows black for up to
-# 0.63 s before it reports that it is off (measured, see "Verified facts").
-BLACK_HOLD = 1.0
+# before fading to the glow: a TV being switched off shows an (almost) black
+# switch-off animation for up to 3.0 s before it reports that it is off
+# (measured, see "Verified facts").
+BLACK_HOLD = 3.5
 BLACK = (0.0, 0.0, 0.0)
 
 RGB = tuple[float, float, float]
@@ -391,7 +392,7 @@ class Pipeline:
             self._fade_duration = now - self._last_capture
         self._last_capture = now
         target = {color.channel_id: color.rgb for color in colors}
-        if self._hold_black(target, now):
+        if self._hold_black(is_black(frame), now):
             return
         if not self._current:
             # The first target is shown straight away.
@@ -401,16 +402,15 @@ class Pipeline:
         self._target = target
         self._fade_start = now
 
-    def _hold_black(self, target: dict[str, RGB], now: float) -> bool:
-        """Whether to keep the last colours instead of an all-black target.
+    def _hold_black(self, frame_black: bool, now: float) -> bool:
+        """Whether to keep the last colours instead of the new frame's.
 
         Only a picture that suddenly turns black is held (for BLACK_HOLD), so
         the lights go straight from the picture to their previous state when
         the TV is switched off. Starting on black shows the glow at once.
         """
-        all_black = bool(target) and all(rgb == BLACK for rgb in target.values())
         showing_picture = any(rgb != BLACK for rgb in self._target.values())
-        if not all_black:
+        if not frame_black:
             self._black_since = None
             return False
         if not showing_picture:

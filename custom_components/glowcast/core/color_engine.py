@@ -18,6 +18,24 @@ MIN_LIT_SHARE = 0.05
 BLACK = (0.0, 0.0, 0.0)
 
 
+def is_black(frame: Frame) -> bool:
+    """Whether the whole frame is (almost) black: fewer than MIN_LIT_SHARE lit pixels.
+
+    A small bright element, such as a TV's switch-off animation, does not
+    count as a picture here, even if it makes one channel's region lit.
+    """
+    pixels = frame.pixels
+    lit = 0
+    for i in range(0, len(pixels), 3):
+        if (
+            pixels[i] > BLACK_LEVEL
+            or pixels[i + 1] > BLACK_LEVEL
+            or pixels[i + 2] > BLACK_LEVEL
+        ):
+            lit += 1
+    return lit < MIN_LIT_SHARE * frame.width * frame.height
+
+
 def channel_region(
     channel: Channel, width: int, height: int
 ) -> tuple[int, int, int, int]:
