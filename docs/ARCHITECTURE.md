@@ -25,7 +25,7 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 |---|---|
 | Screen capture works | `ssap://tv/executeOneShot` with `{"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "JPG"}` returns `{"imageUri": "https://<tv>:3001/resources/<hash>/capture.jpg"}` |
 | Frame | 960x540 JPEG, about 80 KB. The `width`/`height` parameters are ignored. |
-| Rate | about 3.4 captures per second, sequential (request, then download) |
+| Rate | about 4.1 captures per second with `WebOsFrameSource`, sequential (request, download, decode to 64x36); see the `WebOsFrameSource` row below. An earlier test without decoding measured about 3.4. |
 | TLS | The image URL uses the TV's self-signed certificate: download without verification, LAN only. |
 | Pairing | Reusing `host` + `client_secret` from HA's `webostv` config entry works with `aiowebostv.WebOsClient(host, client_key=...)`. No pairing prompt, and it coexists with HA's own connection. |
 | Hue app | The official Hue Sync TV app is not available on 2023 LG models (webOS 24+ only). |
@@ -169,9 +169,9 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 | Low | 1 | calm background light, lowest load on the TV |
 | Medium | 2 | |
 | High (default) | 3 | |
-| Maximum | as fast as the TV allows (about 3.4 on a 2023 G3) | |
+| Maximum | as fast as the TV allows (about 4 on a 2023 G3) | |
 
-The TV cannot go faster than about 3.4 per second, so there is no level above Maximum. The lights are always updated 25 times per second by fading, whatever the level.
+The TV cannot go faster than about 4 per second, so there is no level above Maximum. The lights are always updated 25 times per second by fading, whatever the level.
 
 ## 4. Home Assistant integration
 
