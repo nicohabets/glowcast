@@ -35,7 +35,7 @@ jobs:
             python: "3.13"
             phcc: "0.13.262"
             aiowebostv: "0.7.4"
-            extra: "'pycares<5'"
+            extra: "pycares<5"
           # Latest tested Home Assistant release (2026.10.4).
           - name: latest
             python: "3.14"
@@ -47,11 +47,15 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - run: >-
+      # The extra requirement goes through an environment variable so that a
+      # character such as < is never parsed by the shell.
+      - env:
+          EXTRA: ${{ matrix.extra }}
+        run: >-
           pip install
           pytest-homeassistant-custom-component==${{ matrix.phcc }}
           aiowebostv==${{ matrix.aiowebostv }}
-          ${{ matrix.extra }}
+          $EXTRA
       - run: pytest
 
   hassfest:
