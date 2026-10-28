@@ -1,25 +1,274 @@
 """Glowcast: Hue lights follow the picture on an LG webOS TV."""
 
-from dataclasses import dataclass
+import asyncio
+import logging
+from collections.abc import Callable
+from contextlib import suppress
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 
+from .const import (
+    CONF_BRIGHTNESS,
+    CONF_INTENSITY,
+    CONF_OUTPUT,
+    CONF_SOURCE,
+    CONF_TYPE,
+    CONF_UPDATE_RATE,
+    DOMAIN,
+)
+from .core.models import Channel, ChannelColor
+from .core.pipeline import MonotonicClock, Pipeline, Settings, StopReason, UpdateRate
+from .core.ports import LightOutput
+from .outputs import OUTPUTS
+from .sources import SOURCES
 
-@dataclass
-class GlowcastData:
-    """What a loaded Glowcast entry holds while Home Assistant runs."""
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS = [Platform.SWITCH]
+
+# Repair issues (translation keys under "issues" in translations/*.json).
+ISSUE_SOURCE_MISSING = "source_missing"
+ISSUE_OUTPUT_MISSING = "output_missing"
+ISSUE_TOO_MANY_CHANNELS = "too_many_channels"
+ISSUE_AREA_NOT_FOUND = "area_not_found"
+ISSUES = (
+    ISSUE_SOURCE_MISSING,
+    ISSUE_OUTPUT_MISSING,
+    ISSUE_TOO_MANY_CHANNELS,
+    ISSUE_AREA_NOT_FOUND,
+)
+
+# Why syncing stopped, for the log (no secrets, no image URLs).
+_STOP_MESSAGES = {
+    StopReason.USER: "switched off",
+    StopReason.TV_OFF: "the TV is off or not reachable",
+    StopReason.OUTPUT_LOST: "the light stream was lost or taken over by another app",
+    StopReason.OUTPUT_BUSY: "another app is streaming to the lights",
+    StopReason.OUTPUT_NOT_FOUND: "the chosen entertainment area no longer exists",
+    StopReason.OUTPUT_TOO_MANY_CHANNELS: (
+        "the chosen entertainment area has more than 20 channels"
+    ),
+    StopReason.OUTPUT_UNAVAILABLE: "the lights could not be reached",
+    StopReason.AUTH_FAILED: "the lights rejected Glowcast's key; pair again",
+    StopReason.SOURCE_UNAVAILABLE: "the TV source failed",
+}
+# Stops the user does not need to act on are logged at info level.
+_ROUTINE_STOPS = {StopReason.USER, StopReason.TV_OFF}
 
 
 type GlowcastConfigEntry = ConfigEntry[GlowcastData]
 
 
+class GlowcastData:
+    """Runs and stops the pipeline for one entry; the switch shows its state."""
+
+    def __init__(self, hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
+        """Initialize; nothing runs until async_start()."""
+        self._hass = hass
+        self._entry = entry
+        self._pipeline: Pipeline | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._restarting = False
+        self._listeners: list[Callable[[], None]] = []
+
+    @property
+    def is_on(self) -> bool:
+        """Whether the pipeline is running."""
+        return self._pipeline is not None
+
+    @callback
+    def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
+        """Call `update` whenever is_on changes; returns a function to stop."""
+        self._listeners.append(update)
+        return lambda: self._listeners.remove(update)
+
+    async def async_start(self) -> None:
+        """Start syncing, unless the TV or the bridge is not set up in HA."""
+        if self._pipeline is not None:
+            return
+        data, options = self._entry.data, self._entry.options
+        source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
+        output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
+        if self._missing_reference(source_type.is_missing, output_type.is_missing):
+            self._notify()
+            return
+        self._pipeline = Pipeline(
+            source_type.create(self._hass, data, options),
+            _ReportStart(
+                output_type.create(self._hass, data, options), self._async_started
+            ),
+            Settings(
+                brightness=int(options[CONF_BRIGHTNESS]),
+                intensity=int(options[CONF_INTENSITY]),
+                update_rate=UpdateRate(options[CONF_UPDATE_RATE]),
+            ),
+            self._hass.async_add_executor_job,
+            MonotonicClock(),
+            self._async_stopped,
+        )
+        self._task = self._entry.async_create_background_task(
+            self._hass, self._pipeline.run(), f"glowcast {self._entry.title}"
+        )
+        self._notify()
+
+    async def async_stop(self) -> None:
+        """Stop syncing and wait until the lights are released."""
+        if self._pipeline is not None:
+            self._pipeline.stop()
+        task, self._task = self._task, None
+        if task is not None:
+            with suppress(asyncio.CancelledError):
+                await task
+
+    async def async_restart(self) -> None:
+        """Restart a running pipeline with the new settings; the switch stays on."""
+        if not self.is_on:
+            return
+        self._restarting = True
+        try:
+            await self.async_stop()
+        finally:
+            self._restarting = False
+        await self.async_start()
+
+    @callback
+    def async_remove_issues(self) -> None:
+        """Remove this entry's repair issues."""
+        for key in ISSUES:
+            ir.async_delete_issue(self._hass, DOMAIN, self._issue_id(key))
+
+    def _missing_reference(
+        self,
+        source_missing: Callable[[HomeAssistant, Any], bool],
+        output_missing: Callable[[HomeAssistant, Any], bool],
+    ) -> bool:
+        """Raise a repair issue if the TV or bridge entry is gone or not loaded."""
+        data = self._entry.data
+        for missing, key, what in (
+            (source_missing, ISSUE_SOURCE_MISSING, "TV"),
+            (output_missing, ISSUE_OUTPUT_MISSING, "bridge"),
+        ):
+            if missing(self._hass, data):
+                _LOGGER.warning(
+                    "Glowcast %s cannot sync: the %s is not set up (or not loaded) "
+                    "in Home Assistant",
+                    self._entry.title,
+                    what,
+                )
+                self._raise_issue(key)
+                return True
+        return False
+
+    @callback
+    def _async_started(self) -> None:
+        """The lights were claimed: earlier problems are solved."""
+        self.async_remove_issues()
+
+    @callback
+    def _async_stopped(self, reason: StopReason) -> None:
+        """React to the pipeline's stop reason (architecture 4.4)."""
+        self._pipeline = None
+        if self._restarting:
+            _LOGGER.debug("Glowcast %s restarting with new settings", self._entry.title)
+            return
+        log = _LOGGER.info if reason in _ROUTINE_STOPS else _LOGGER.warning
+        log("Glowcast %s stopped: %s", self._entry.title, _STOP_MESSAGES[reason])
+        if reason is StopReason.AUTH_FAILED:
+            self._entry.async_start_reauth(self._hass)
+        elif reason is StopReason.OUTPUT_TOO_MANY_CHANNELS:
+            self._raise_issue(ISSUE_TOO_MANY_CHANNELS)
+        elif reason is StopReason.OUTPUT_NOT_FOUND:
+            self._raise_issue(ISSUE_AREA_NOT_FOUND)
+        elif reason in (
+            StopReason.TV_OFF,
+            StopReason.SOURCE_UNAVAILABLE,
+            StopReason.OUTPUT_UNAVAILABLE,
+        ):
+            # The TV or bridge may have been removed from HA while syncing.
+            data, options = self._entry.data, self._entry.options
+            self._missing_reference(
+                SOURCES[data[CONF_SOURCE][CONF_TYPE]].is_missing,
+                OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]].is_missing,
+            )
+        self._notify()
+
+    def _raise_issue(self, key: str) -> None:
+        ir.async_create_issue(
+            self._hass,
+            DOMAIN,
+            self._issue_id(key),
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=key,
+            translation_placeholders={"name": self._entry.title},
+        )
+
+    def _issue_id(self, key: str) -> str:
+        return f"{key}_{self._entry.entry_id}"
+
+    def _notify(self) -> None:
+        for update in list(self._listeners):
+            update()
+
+
+class _ReportStart:
+    """Passes everything to the output and reports a successful start."""
+
+    def __init__(self, output: LightOutput, on_started: Callable[[], None]) -> None:
+        self._output = output
+        self._on_started = on_started
+        self.max_rate_hz = output.max_rate_hz
+
+    async def start(self) -> list[Channel]:
+        channels = await self._output.start()
+        self._on_started()
+        return channels
+
+    def send(self, colors: list[ChannelColor]) -> None:
+        self._output.send(colors)
+
+    async def check(self) -> None:
+        await self._output.check()
+
+    async def stop(self) -> None:
+        await self._output.stop()
+
+    async def close(self) -> None:
+        await self._output.close()
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
-    """Set up Glowcast from a config entry."""
-    entry.runtime_data = GlowcastData()
+    """Set up Glowcast from a config entry; syncing is off until switched on."""
+    entry.runtime_data = data = GlowcastData(hass, entry)
+
+    async def _async_ha_stop(event: Event) -> None:
+        # HA does not unload entries on shutdown: release the lights here.
+        await data.async_stop()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_ha_stop)
+    )
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
-    """Unload a config entry."""
-    return True
+    """Stop syncing, release the lights and unload."""
+    await entry.runtime_data.async_stop()
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
+    """Remove the entry's repair issues."""
+    for key in ISSUES:
+        ir.async_delete_issue(hass, DOMAIN, f"{key}_{entry.entry_id}")
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
+    """New settings: restart only the pipeline if it runs (no entry reload)."""
+    await entry.runtime_data.async_restart()
