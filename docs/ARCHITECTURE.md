@@ -105,7 +105,7 @@ For each channel:
 3. **Black picture:** if almost the whole region is black, return black; the pipeline turns that into the minimal glow (3.5).
 4. **Intensity:** scale saturation (0 = nearly white, 1 = as on screen, up to 2 = boosted).
 
-**Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is a later issue.
+**Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is issue #23.
 
 **Performance:** 16 channels on a 64x36 frame in under 20 ms on a GitHub Actions runner (asserted in a test). Target hardware is a Raspberry Pi 4 class CPU.
 
@@ -122,7 +122,7 @@ For each channel:
 **`HueEntertainmentOutput`** (`outputs/hue_entertainment.py`)
 - Library `hue-entertainment==0.1.2` (Apache-2.0, pure-Python DTLS): `EntertainmentSession(host, app_key, client_key, idle_timeout=0)`.
 - **Bridge host:** the `hue` config entry is resolved **by its unique id** (the bridge id) at runtime; HA keeps its host current.
-- **Colours:** convert to **0-255** before building `LightColorCommand`s. Never send 16-bit values: the library maps values above 255 down but sends values of 255 or less as-is, so 16-bit dark values would flash. (Upstream bug, tracked in its own issue.)
+- **Colours:** convert to **0-255** before building `LightColorCommand`s. Never send 16-bit values: the library maps values above 255 down but sends values of 255 or less as-is, so 16-bit dark values would flash. (Upstream bug, #22.)
 - **Before starting:** list all entertainment areas. If **any** area on the bridge is active (a bridge allows one stream in total):
   - streamed by Glowcast's own application id (a stale stream, for example after an HA crash) → stop it and continue;
   - otherwise → raise `OutputBusy` and start nothing.
