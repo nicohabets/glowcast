@@ -7,7 +7,11 @@ from collections.abc import Callable
 
 import pytest
 
-from custom_components.glowcast.core.color_engine import channel_region, compute
+from custom_components.glowcast.core.color_engine import (
+    channel_region,
+    compute,
+    is_black,
+)
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
 
 WIDTH, HEIGHT = 64, 36
@@ -125,6 +129,25 @@ def test_dark_picture_that_is_not_black_keeps_its_colour() -> None:
     assert_close(colour_of(solid((60, 20, 20)), channel(0, 0)), (60, 20, 20))
 
 
+def test_whole_frame_black() -> None:
+    assert is_black(solid(BLACK))
+    assert is_black(solid((20, 24, 18)))  # video black and noise
+    assert not is_black(solid((60, 20, 20)))  # dark, but a picture
+
+
+def test_a_small_bright_element_does_not_make_the_frame_a_picture() -> None:
+    # 4 % of the frame lit (under the 5 % share), all in one corner.
+    frame = make_frame(lambda u, v: (230, 230, 230) if u < 0.2 and v < 0.2 else BLACK)
+    assert is_black(frame)
+    # ... even though that corner's channel is not black.
+    assert colour_of(frame, channel(-1, 1)) != (0.0, 0.0, 0.0)
+
+
+def test_letterboxed_film_is_not_black() -> None:
+    frame = make_frame(lambda u, v: BLACK if v < 0.13 or v > 0.87 else (90, 60, 40))
+    assert not is_black(frame)
+
+
 # Intensity
 
 
@@ -184,15 +207,17 @@ def test_tv_strip_channels_sample_the_inner_area() -> None:
     """
     edge = 0.12
     frame = make_frame(
-        lambda u, v: RED
-        if u < edge
-        else BLUE
-        if u > 1 - edge
-        else GREEN
-        if v < edge
-        else YELLOW
-        if v > 1 - edge
-        else GREY
+        lambda u, v: (
+            RED
+            if u < edge
+            else BLUE
+            if u > 1 - edge
+            else GREEN
+            if v < edge
+            else YELLOW
+            if v > 1 - edge
+            else GREY
+        )
     )
     for x in (-0.4, 0.4):
         for z in (-0.4, 0.4):

@@ -45,6 +45,7 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 | DRM app returns black frames (#5) | Prime Video in the TV's own app: every capture is completely black (all pixels 0), at about 6.9 captures per second because the JPEG is tiny. The pipeline then shows the minimal glow (at the time a dim neutral white; a warm white since #38). No workaround in v0.1; telling the user is #14. |
 | HDMI streamer with a DRM app (#5) | Prime Video on a streaming stick over HDMI: captures show the real picture (not black). Letterbox bars in that film were pure black (0-7 of 255) and changed width between scenes. |
 | `Pipeline` on real hardware (#5) | Real source and output, update rate High, brightness 80 %: first colour 4.1-4.3 s after start (mostly the Hue handshake), 23.9 sends and 2.87-2.90 captures per second over 27 s, no failed captures. With the TV off: `TV_OFF` after 10.0 s, no area touched. TV switched off with the remote during a run: `TV_OFF` through `is_on()` before any capture failed, area released. A Hue app sync running: `OUTPUT_BUSY` 0.9 s after start (after the TV came up), no sends, the sync kept running. |
+| Black before "off" (#39) | Switching the TV off with the remote: the TV first shows an almost black switch-off animation (1-2 % of the pixels lit, some nearly white) for 2.7-3.0 s, then `is_on()` turns false (4 tries with whole-frame black: 2.99, 2.84, 2.87, 2.72 s; the last frame with a picture 2.96-3.24 s before). No capture failed in between. A first measurement that counted a frame as black only when every channel region was black found 0.3-0.6 s, because the animation's bright element kept one region lit. `output.stop()` then takes about 1.2 s before the bridge restores the lights. |
 | Not yet tested | Other DRM apps (Netflix etc.) and HDCP-protected HDMI sources may also return black frames. `executeOneShot` is undocumented and could disappear in a firmware update. |
 
 ## 3. Architecture: ports and adapters
@@ -118,6 +119,8 @@ For each channel:
 
 **Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is issue #23.
 
+`is_black(frame)` applies the same black level and 5 % share to the whole frame; the pipeline uses it for the hold on sudden black (3.5).
+
 **Performance:** 16 channels on a 64x36 frame in under 20 ms on a GitHub Actions runner (asserted in a test). Target hardware is a Raspberry Pi 4 class CPU.
 
 ### 3.4 Adapters (v0.1)
@@ -165,6 +168,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
 - **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.78, 0.50)`: a dim warm white of about 2700K on the lights at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.078, 0.050); a black picture at 80 % gives (0.10, 0.078, 0.050). Both were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) too red, especially in a dark room, so the ratio is two steps cooler in sRGB.
+- **Hold on sudden black:** when the whole frame turns (almost) black after a picture, keep the last colours for 3.5 s before fading to the glow. "Whole frame black" uses the colour engine's black level and 5 % share over the whole frame (`is_black()` in 3.3's module), so a small bright element such as a TV's switch-off animation does not count as a picture. A TV being switched off shows such an animation for up to 3.0 s before it reports off (see "Verified facts"), so the lights go straight from the picture to their previous state; a genuinely black scene reaches the glow 3.5 s later. Starting on black shows the glow at once. The hold only changes colours, never when the pipeline stops. A constant, not an option (#39).
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
