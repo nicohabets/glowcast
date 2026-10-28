@@ -73,6 +73,7 @@ When the TV turns off, syncing stops and the lights are released. If another app
 - **Streaming apps with DRM** (Netflix and similar) and copy-protected HDMI sources may return a black frame. Not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
+- **Other TV brands** are not supported yet. Samsung, Roku, Apple TV and Chromecast offer no local way to read the picture, so they are unlikely to be supported directly. See [docs/research/other-tvs.md](docs/research/other-tvs.md) for what was checked and what might work later.
 
 ## Privacy
 

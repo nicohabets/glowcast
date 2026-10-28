@@ -313,7 +313,7 @@ Rule for v0.1 to keep this open: **no code outside `outputs/` may know about Hue
 
 ### 8.2 Other TVs
 
-Planned as new **source adapters** behind `FrameSource`. Candidates, each still to be researched:
+Planned as new **source adapters** behind `FrameSource`. Desk research per brand (#12) is in [`docs/research/other-tvs.md`](research/other-tvs.md); the table below is the starting point it answers:
 
 | Source | How it could capture | Known limits |
 |---|---|---|
