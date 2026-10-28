@@ -2,7 +2,6 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "fonttools==4.68.0",
-#     "imagequant==1.1.5",
 #     "uharfbuzz==0.57.0",
 #     "resvg-py==0.5.0",
 #     "pyoxipng==9.1.1",
@@ -14,9 +13,8 @@
 With --font, first rebuilds docs/brand/logo.svg and logo-dark.svg: the icon
 followed by the wordmark "Glowcast" in Outfit SemiBold, converted to outlines.
 Then renders the PNGs in custom_components/glowcast/brand/ with resvg (which
-supports the feGaussianBlur glow), reduces them to 256 colours with dithering
-(libimagequant; lossless PNGs of the @2x logos are over 100 kB), compresses
-them (interlaced) with oxipng and checks that each is trimmed. See docs/brand/README.md.
+supports the feGaussianBlur glow), checks that each is trimmed, and compresses
+them losslessly (interlaced) with oxipng. See docs/brand/README.md.
 
     uv run scripts/render_brand.py --font "Outfit[wght].ttf"  # wordmark + PNGs
     uv run scripts/render_brand.py                            # PNGs only
@@ -28,7 +26,6 @@ import math
 import re
 from pathlib import Path
 
-import imagequant
 import oxipng
 import resvg_py
 import uharfbuzz as hb
@@ -128,20 +125,16 @@ def render_pngs() -> None:
                 svg_path=str(SOURCES / source), height=height, skip_system_fonts=True
             )
         )
-        image = imagequant.quantize_pil_image(
-            Image.open(io.BytesIO(png)), dithering_level=1.0, max_colors=256
-        )
-        buf = io.BytesIO()
-        image.save(buf, "PNG")
         png = oxipng.optimize_from_memory(
-            buf.getvalue(),
+            png,
             level=6,
             interlace=oxipng.Interlacing.Adam7,
             strip=oxipng.StripChunks.safe(),
+            force=True,  # keep the interlaced result, though it is larger
         )
-        image = Image.open(io.BytesIO(png)).convert("RGBA")
-        if image.height != height:
-            raise SystemExit(f"{output}: unexpected size {image.size}")
+        image = Image.open(io.BytesIO(png))
+        if image.mode != "RGBA" or image.height != height:
+            raise SystemExit(f"{output}: unexpected {image.mode} {image.size}")
         if image.getchannel("A").getbbox() != (0, 0, *image.size):
             raise SystemExit(f"{output}: not trimmed")
         (OUTPUT / output).write_bytes(png)

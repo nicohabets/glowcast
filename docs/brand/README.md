@@ -47,9 +47,7 @@ The glow is two layers of the same shapes blurred with `feGaussianBlur` (a wide 
 uv run scripts/render_brand.py
 ```
 
-It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It reduces each image to 256 colours with dithering (libimagequant, the library behind pngquant) and compresses it, interlaced, with oxipng. Then it checks that each image is trimmed: no fully transparent row or column at the edges.
-
-The colour reduction is lossy, but you cannot see it (on average less than 1/255 per channel). Lossless PNGs of the @2x logos are about 104 kB, or 136 kB interlaced, while the reduced ones are under 60 kB.
+It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It checks that each image is trimmed (no fully transparent row or column at the edges), then compresses it losslessly and interlaced with oxipng, as Home Assistant prefers. The interlaced files are 45-50% larger than non-interlaced ones; the @2x logos are about 155 kB.
 
 To change the wordmark, also pass the font. This rebuilds `logo.svg` and `logo-dark.svg` from `icon.svg` first:
 
