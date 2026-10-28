@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
@@ -15,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from PIL import Image
 
+from ..const import CONF_SOURCE, CONF_UNIQUE_ID
 from ..core.models import Frame
 from ..core.ports import SourceUnavailable
 
@@ -179,6 +181,26 @@ class WebOsFrameSource:
                 self._lost = True
                 return
             _LOGGER.debug("Reconnected to the TV")
+
+
+def create(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> WebOsFrameSource:
+    """Build the source from a Glowcast entry's data (architecture 5)."""
+    return WebOsFrameSource(hass, data[CONF_SOURCE][CONF_UNIQUE_ID])
+
+
+def is_missing(hass: HomeAssistant, data: Mapping[str, Any]) -> bool:
+    """Whether the referenced webostv entry is removed or not loaded."""
+    entry = hass.config_entries.async_entry_for_domain_unique_id(
+        WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID]
+    )
+    return entry is None or entry.state is not ConfigEntryState.LOADED
+
+
+def device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
+    """The TV's device in Home Assistant, to link Glowcast's device to."""
+    return (WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
 
 
 def tvs(hass: HomeAssistant) -> dict[str, str]:
