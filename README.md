@@ -8,7 +8,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 
 ## Why
 
-Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the €300 Hue Play HDMI Sync Box. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
+At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
 
 ## How it works
 
@@ -17,7 +17,7 @@ LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-
 ```
 
 1. Glowcast reuses the pairing of Home Assistant's existing **LG webOS Smart TV** integration, so there is no extra pairing prompt on the TV.
-2. It asks the TV for a screen capture (a local call that LG's own remote apps also use) and downloads the small JPEG the TV serves on your LAN, about 3 times per second.
+2. It asks the TV for a screen capture through its local network API and downloads the small JPEG the TV serves on your LAN, about 3 times per second.
 3. Each light gets the average colour of the part of the screen that matches its position, ignoring black bars.
 4. The colours go to the Hue Bridge: Glowcast streams to an entertainment area you set up in the Hue app, up to 25 times per second, fading smoothly between frames. Lights use the positions you gave them in the Hue app, left/right and floor/ceiling. A gradient lightstrip shows several colours along its length.
 
@@ -70,7 +70,8 @@ When the TV turns off, syncing stops and the lights are released. If another app
 
 - **About 3 frames per second.** That is the TV's capture limit. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
-- **Streaming apps with DRM** (Netflix and similar) may return a black frame. Not tested yet.
+- **Streaming apps with DRM** (Netflix and similar) and copy-protected HDMI sources may return a black frame. Not tested yet.
+- **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
 
 ## Privacy

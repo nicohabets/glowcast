@@ -12,17 +12,17 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 
 ## Code rules
 
-- `custom_components/glowcast/core/` must not import `homeassistant`. Keep it pure and synchronous where possible.
+- `custom_components/glowcast/core/` (models, ports, colour engine and pipeline) must not import `homeassistant`. Inject the blocking-call runner and the clock so it can be tested with plain fakes.
 - Never block the event loop: JPEG decoding and resizing go through `hass.async_add_executor_job`.
-- All I/O is async (`aiohttp` via `async_get_clientsession`, `aiowebostv`, `hue-entertainment`).
-- `LightOutput.stop()` must run on every exit path (switch off, TV off, error, unload, HA stop) and be safe to call twice.
+- All I/O is async. Use HA's session (`async_get_clientsession`) for your own HTTP calls and pass it to `aiowebostv`. `hue-entertainment` opens its own session; close it in `LightOutput.close()`.
+- `LightOutput.stop()` and `close()` must run on every exit path (switch off, TV off, error, unload, HA stop) and be safe to call twice. Send colours to Hue as 0-255 values, never 16-bit (architecture 3.4).
 - No code outside `outputs/` may know about Hue, and no code outside `sources/` may know about webOS (architecture section 8).
 - Store source and output config as typed blocks (`{"type": ...}`), as in architecture section 5.
-- Read the TV's `host` and `client_secret` from the `webostv` config entry at runtime. Do not copy them into Glowcast's config entry.
+- Reference the `webostv` and `hue` entries by unique id and read the TV's `host` and `client_secret` at runtime. Do not copy them into Glowcast's config entry.
 - Store the Hue `app_key` and `client_key` from Glowcast's own pairing in Glowcast's config entry data.
 - Do not log secrets, image URLs with tokens, or frame contents.
-- Type hints everywhere; follow Home Assistant's integration conventions (config flow, `strings.json`, entity naming with `has_entity_name = True`, unique ids).
-- User-facing text in English, with a Dutch translation in `translations/nl.json`.
+- Type hints everywhere; follow Home Assistant's integration conventions (config flow, reauth, entity naming with `has_entity_name = True`, unique ids).
+- User-facing text in `translations/en.json`, with a Dutch translation in `translations/nl.json`.
 - Use a plain hyphen (-) in docs and strings, not an em dash.
 
 ## Things to verify early, before building on them
