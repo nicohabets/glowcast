@@ -1,0 +1,86 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose the TV",
+        "description": "Glowcast uses the picture of an LG webOS TV that is set up in the LG webOS Smart TV integration.",
+        "data": {
+          "tv": "TV"
+        }
+      },
+      "bridge": {
+        "title": "Choose the Hue bridge",
+        "description": "Glowcast streams colours to a Hue bridge that is set up in the Philips Hue integration.",
+        "data": {
+          "bridge": "Hue bridge"
+        }
+      },
+      "link": {
+        "title": "Pair with the Hue bridge",
+        "description": "Streaming needs its own key from the bridge. Press the link button on your bridge, then click Submit. You then have 30 seconds."
+      },
+      "area": {
+        "title": "Choose the entertainment area",
+        "description": "The lights in this area follow the picture. Which lights take part, and where they stand, is set up in the Hue app.",
+        "data": {
+          "area": "Entertainment area"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pair with the Hue bridge again",
+        "description": "The Hue bridge no longer accepts Glowcast's key. Press the link button on your bridge, then click Submit. Your settings are kept."
+      }
+    },
+    "progress": {
+      "pair": "Waiting for the link button on the Hue bridge (up to 30 seconds)."
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
+      "button_not_pressed": "The link button was not pressed in time. Press it, then click Submit again.",
+      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then click Submit."
+    },
+    "abort": {
+      "no_tv": "No LG webOS TV found. Set up your TV with the LG webOS Smart TV integration first.",
+      "no_bridge": "No Hue bridge that can stream found. Set up a Hue Bridge v2 or Hue Bridge Pro with the Philips Hue integration first.",
+      "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
+      "already_configured": "Glowcast is already set up for this TV.",
+      "reauth_successful": "Glowcast is paired with the Hue bridge again.",
+      "already_in_progress": "Glowcast is already being set up for this TV. Finish or close that setup first.",
+      "all_tvs_configured": "Glowcast is already set up for every LG webOS TV in Home Assistant."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Glowcast settings",
+        "data": {
+          "area": "Entertainment area",
+          "brightness": "Brightness",
+          "intensity": "Intensity",
+          "update_rate": "Update rate"
+        },
+        "data_description": {
+          "area": "The lights in this area follow the picture.",
+          "brightness": "How bright the lights are at most.",
+          "intensity": "How vivid the colours are: 0% is almost white, 100% is as on screen, 200% is extra vivid.",
+          "update_rate": "How often the picture is read. The lights always fade smoothly in between."
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Could not reach the Hue bridge. Check that it is on and set up in the Philips Hue integration.",
+      "no_areas": "This Hue bridge has no entertainment areas. Create one in the Hue app (Settings, Entertainment areas).",
+      "reauth_required": "The Hue bridge no longer accepts Glowcast's key. Home Assistant asks you to pair again."
+    }
+  },
+  "selector": {
+    "update_rate": {
+      "options": {
+        "low": "Low (1 per second)",
+        "medium": "Medium (2 per second)",
+        "high": "High (3 per second)",
+        "maximum": "Maximum (as fast as the TV allows)"
+      }
+    }
+  }
+}

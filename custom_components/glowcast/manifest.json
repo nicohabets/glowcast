@@ -2,7 +2,7 @@
   "domain": "glowcast",
   "name": "Glowcast",
   "codeowners": ["@nicohabets"],
-  "config_flow": false,
+  "config_flow": true,
   "dependencies": ["webostv", "hue"],
   "documentation": "https://github.com/nicohabets/glowcast",
   "integration_type": "service",

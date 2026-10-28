@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 import aiohttp
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_VERSION, CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -34,6 +34,10 @@ START_TIMEOUT = 30.0
 STOP_TIMEOUT = 10.0
 STATUS_INTERVAL = 5.0
 STATUS_TIMEOUT = 4.0
+REACHABLE_TIMEOUT = 10.0
+AREAS_TIMEOUT = 15.0
+# The bridge allows 20 characters before the # of a devicetype and 19 after.
+DEVICE_NAME_LENGTH = 19
 
 
 class HueEntertainmentOutput:
@@ -134,10 +138,8 @@ class HueEntertainmentOutput:
 
     def _bridge_host(self) -> str:
         """Return the bridge's current host from HA's hue entry."""
-        entry = self._hass.config_entries.async_entry_for_domain_unique_id(
-            HUE_DOMAIN, self._bridge_unique_id
-        )
-        if entry is None or entry.state is not ConfigEntryState.LOADED:
+        entry = _loaded_bridge(self._hass, self._bridge_unique_id)
+        if entry is None:
             raise OutputUnavailable(
                 "The Hue bridge is not set up in the Philips Hue integration "
                 "(or not loaded)"
@@ -205,20 +207,7 @@ class HueEntertainmentOutput:
     async def _async_get(
         self, host: str, path: str, *, body: bool = True
     ) -> tuple[Any, Any]:
-        """GET a CLIP resource with HA's session (self-signed certificate)."""
-        session = async_get_clientsession(self._hass)
-        try:
-            async with session.get(
-                f"https://{host}{path}",
-                headers={"hue-application-key": self._app_key},
-                ssl=False,
-            ) as response:
-                response.raise_for_status()
-                return response.headers, await response.json() if body else None
-        except aiohttp.ClientResponseError as err:
-            raise _response_error(err) from None
-        except (aiohttp.ClientError, OSError):
-            raise OutputUnavailable("Could not reach the Hue bridge") from None
+        return await _async_clip_get(self._hass, host, self._app_key, path, body=body)
 
     async def _async_release(self) -> None:
         try:
@@ -235,6 +224,113 @@ class HueEntertainmentOutput:
         self._status_failures += 1
         if self._status_failures >= 2:
             raise OutputLost("The Hue bridge stopped answering")
+
+
+class PairingFailed(Exception):
+    """The bridge did not hand out a key (link button not pressed in time)."""
+
+
+def bridges(hass: HomeAssistant) -> dict[str, str]:
+    """Return {unique id: title} of loaded hue entries that can stream (API v2)."""
+    return {
+        entry.unique_id: entry.title
+        for entry in hass.config_entries.async_loaded_entries(HUE_DOMAIN)
+        if entry.unique_id is not None and entry.data.get(CONF_API_VERSION) == 2
+    }
+
+
+def bridge_host(hass: HomeAssistant, bridge_unique_id: str) -> str | None:
+    """Return the host of a loaded hue entry, or None if it is not loaded."""
+    entry = _loaded_bridge(hass, bridge_unique_id)
+    return None if entry is None else entry.data[CONF_HOST]
+
+
+def _loaded_bridge(hass: HomeAssistant, bridge_unique_id: str) -> ConfigEntry | None:
+    """Return the hue entry with this unique id if it is loaded."""
+    entry = hass.config_entries.async_entry_for_domain_unique_id(
+        HUE_DOMAIN, bridge_unique_id
+    )
+    if entry is None or entry.state is not ConfigEntryState.LOADED:
+        return None
+    return entry
+
+
+async def async_bridge_reachable(hass: HomeAssistant, host: str) -> bool:
+    """Return whether the bridge answers an unauthenticated request.
+
+    pair() raises the same TimeoutError for every failure, so this tells an
+    unreachable bridge apart from a link button that was not pressed.
+    """
+    session = async_get_clientsession(hass)
+    try:
+        async with asyncio.timeout(REACHABLE_TIMEOUT):
+            async with session.get(f"https://{host}/api/config", ssl=False) as response:
+                response.raise_for_status()
+    except (TimeoutError, aiohttp.ClientError, OSError):
+        return False
+    return True
+
+
+async def async_pair(host: str, name: str) -> tuple[str, str]:
+    """Pair with the bridge; return (app_key, client_key).
+
+    Takes up to 30 s while the bridge waits for its link button. Raises
+    PairingFailed, or OutputUnavailable when the bridge drops out.
+    """
+    api = HueEntertainmentAPI(host)
+    try:
+        result = await api.pair(device_type=_device_type(name))
+        return result["username"], result["clientkey"]
+    except TimeoutError:
+        raise PairingFailed from None
+    except (aiohttp.ClientError, OSError, KeyError, TypeError, ValueError):
+        # ValueError: a reply that is not valid JSON.
+        raise OutputUnavailable("Could not pair with the Hue bridge") from None
+    finally:
+        await api.close()
+
+
+async def async_areas(hass: HomeAssistant, host: str, app_key: str) -> dict[str, str]:
+    """Return {area id: name} of the bridge's entertainment areas.
+
+    One raw request: the library's area listing also fetches every device and
+    light to name the channels. Raises OutputAuthFailed or OutputUnavailable.
+    """
+    try:
+        async with asyncio.timeout(AREAS_TIMEOUT):
+            _, result = await _async_clip_get(hass, host, app_key, AREAS_PATH)
+    except TimeoutError:
+        raise OutputUnavailable("The Hue bridge did not respond in time") from None
+    except OutputNotFound:
+        raise OutputUnavailable("The Hue bridge has no entertainment API") from None
+    return {
+        area["id"]: area.get("metadata", {}).get("name") or area["id"]
+        for area in result.get("data", [])
+    }
+
+
+async def _async_clip_get(
+    hass: HomeAssistant, host: str, app_key: str, path: str, *, body: bool = True
+) -> tuple[Any, Any]:
+    """GET a CLIP resource with HA's session (self-signed certificate)."""
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(
+            f"https://{host}{path}",
+            headers={"hue-application-key": app_key},
+            ssl=False,
+        ) as response:
+            response.raise_for_status()
+            return response.headers, await response.json() if body else None
+    except aiohttp.ClientResponseError as err:
+        raise _response_error(err) from None
+    except (aiohttp.ClientError, OSError, ValueError):
+        raise OutputUnavailable("Could not reach the Hue bridge") from None
+
+
+def _device_type(name: str) -> str:
+    """The app name the bridge shows: glowcast#<name>, within the bridge's limit."""
+    return f"glowcast#{name.replace('#', '').strip()[:DEVICE_NAME_LENGTH]}"
 
 
 def _response_error(err: aiohttp.ClientResponseError) -> Exception:
