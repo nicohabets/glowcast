@@ -7,7 +7,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 ## Scope rules
 
 - Build **v0.1 only**: webOS source, Hue entertainment-area output, one switch, and the options screen (area, brightness, intensity, update rate).
-- Only work on issues in the **Todo** column of the project board (see "How we work"). Everything in milestones **v0.2** and **Later** stays out.
+- Only work on issues in the **Todo** column of the project board (see "How we work"). Everything in milestones **v0.2**, **v0.3** and **v99 Later** stays out.
 - Keep the ports (`FrameSource`, `LightOutput`) so later features can be added without rewrites, but do not build placeholders or stub adapters for them.
 - Prefer the simplest thing that works. No speculative options, no config knobs that are not in the architecture.
 
@@ -48,7 +48,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 The product owner (the repository owner) decides what gets built and when. Claude Code builds; it does not plan.
 
 ### The board
-Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → In Review → Done**, swimlanes per milestone (v0.1, v0.2, Later).
+Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → In Review → Done**, swimlanes per milestone (v0.1, v0.2, v0.3, v99 Later).
 
 | Column | Meaning | Who moves items here |
 |---|---|---|
