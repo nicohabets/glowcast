@@ -122,7 +122,7 @@ class FakeOutput:
     def __init__(self, clock: FakeClock, log: list[str]) -> None:
         self.clock = clock
         self.log = log
-        self.start_errors: list[Exception | None] = []
+        self.start_errors: list[Any] = []  # None, an exception, or "hang"
         self.check_error: Exception | None = None
         self.check_hangs = False
         self.sent: list[tuple[float, list[ChannelColor]]] = []
@@ -131,6 +131,8 @@ class FakeOutput:
     async def start(self) -> list[Channel]:
         self.log.append("output.start")
         if self.start_errors and (error := self.start_errors.pop(0)):
+            if error == "hang":
+                await asyncio.Event().wait()
             raise error
         return [CHANNEL]
 
@@ -169,11 +171,12 @@ class Harness:
         self.source = FakeSource(self.clock, self.log)
         self.output = FakeOutput(self.clock, self.log)
         self.reasons: list[StopReason] = []
+        self.compute_error: Exception | None = None
         self.pipeline = Pipeline(
             self.source,
             self.output,
             Settings(brightness, intensity, rate),
-            _runner,
+            self._runner,
             self.clock,
             self.reasons.append,
         )
@@ -199,9 +202,10 @@ class Harness:
         self.pipeline.stop()
         return await self.finish()
 
-
-async def _runner(func: Callable[..., Any], *args: Any) -> Any:
-    return func(*args)
+    async def _runner(self, func: Callable[..., Any], *args: Any) -> Any:
+        if self.compute_error is not None:
+            raise self.compute_error
+        return func(*args)
 
 
 def approx_rgb(rgb: tuple[float, float, float]) -> Any:
@@ -447,6 +451,92 @@ async def test_stream_lost_and_the_retry_fails(
     await h.clock.advance(1)
     h.output.check_error = OutputLost("dropped")
     assert await h.finish() == reason
+    assert h.log[-3:] == CLEANUP
+
+
+async def lose_stream(h: Harness) -> None:
+    """Make the next check raise OutputLost once."""
+    h.output.check_error = OutputLost("dropped")
+    await h.clock.advance(0.1)
+    h.output.check_error = None
+
+
+async def test_switched_off_during_the_retry_wait() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    await lose_stream(h)
+    await h.clock.advance(2)
+    assert await h.stop() == StopReason.USER
+    assert h.log.count("output.start") == 1  # the lights are not claimed again
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_switched_off_while_the_retry_starts() -> None:
+    h = Harness()
+    h.output.start_errors = [None, "hang"]
+    await h.start()
+    await h.clock.advance(1)
+    await lose_stream(h)
+    await h.clock.advance(6)
+    assert h.log.count("output.start") == 2
+    assert await h.stop() == StopReason.USER
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_tv_turns_off_during_the_retry_wait() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    await lose_stream(h)
+    await h.clock.advance(2)
+    h.source.on = False
+    assert await h.finish() == StopReason.TV_OFF
+    assert h.log.count("output.start") == 1
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_stream_lost_again_soon_after_a_retry() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.output.check_error = OutputLost("keeps dropping")
+    assert await h.finish(limit=120) == StopReason.OUTPUT_LOST
+    assert h.log.count("output.start") == 2  # one retry, then stop
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_stream_lost_again_after_a_minute_gets_a_new_retry() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    await lose_stream(h)
+    await h.clock.advance(70)  # retried after 5 s, then a minute of good streaming
+    await lose_stream(h)
+    await h.clock.advance(6)
+    assert h.log.count("output.start") == 3
+    assert not h.task.done()
+    assert await h.stop() == StopReason.USER
+
+
+async def test_colours_continue_after_a_retry() -> None:
+    h = Harness(rate=UpdateRate.LOW)
+    await h.start()
+    await h.clock.advance(1)
+    await lose_stream(h)
+    await h.clock.advance(5.05)  # just after the retry, before the next capture
+    after = [c for t, c in h.output.sent if t > 6]
+    assert after
+    assert all(colors == [ChannelColor("1", (1.0, 0.05, 0.05))] for colors in after)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_compute_error_stops_with_source_unavailable() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.compute_error = ValueError("odd frame")
+    assert await h.finish() == StopReason.SOURCE_UNAVAILABLE
     assert h.log[-3:] == CLEANUP
 
 

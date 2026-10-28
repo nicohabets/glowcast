@@ -33,6 +33,8 @@ STARTUP_GRACE = 10.0  # seconds for the TV to start and deliver a frame
 START_RETRY_INTERVAL = 1.0
 MAX_CAPTURE_FAILURES = 5  # in a row, after the startup grace
 LOST_RETRY_DELAY = 5.0
+# Lost again this soon after a successful retry: stop instead of retrying.
+LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
 GLOW = 0.05  # the minimal glow: a dim neutral white
 
@@ -144,6 +146,7 @@ class Pipeline:
         self._fade_start = 0.0
         self._fade_duration = 0.0
         self._last_capture: float | None = None
+        self._retried_at: float | None = None
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the reason once.
@@ -186,6 +189,12 @@ class Pipeline:
                 try:
                     await self._async_stream()
                 except OutputLost as err:
+                    if (
+                        self._retried_at is not None
+                        and self._clock.now() - self._retried_at < LOST_AGAIN_WINDOW
+                    ):
+                        _LOGGER.warning("%s again soon after a retry; stopping", err)
+                        raise _Stop(StopReason.OUTPUT_LOST) from err
                     _LOGGER.warning("%s; retrying in %.0f s", err, LOST_RETRY_DELAY)
                     await self._async_retry_output()
         except _Stop as stop:
@@ -248,20 +257,47 @@ class Pipeline:
             raise _Stop(StopReason.OUTPUT_UNAVAILABLE) from err
 
     async def _async_retry_output(self) -> None:
-        """One retry after OutputLost; stop if the bridge is not free."""
+        """One retry after OutputLost; stop if the bridge is not free.
+
+        A stop by the user or the TV turning off during the wait means the
+        lights are not claimed again.
+        """
         await self._async_release_output()
-        await self._clock.sleep(LOST_RETRY_DELAY)
+        await self._async_unless_stopped(self._clock.sleep(LOST_RETRY_DELAY))
+        if not self._source.is_on():
+            raise _Stop(StopReason.TV_OFF)
         try:
-            self._channels = await self._output.start()
+            channels = await self._async_unless_stopped(self._output.start())
         except OutputAuthFailed as err:
             raise _Stop(StopReason.AUTH_FAILED) from err
+        except _Stop:
+            raise
         except Exception as err:
             _LOGGER.warning("The retry failed (%s); stopping", err)
             raise _Stop(StopReason.OUTPUT_LOST) from err
-        # Start the fade afresh on the new channels.
-        self._current.clear()
-        self._target = {}
-        self._last_capture = None
+        self._retried_at = self._clock.now()
+        # Keep showing the last colours on the channels that still exist.
+        ids = {channel.id for channel in channels}
+        self._channels = channels
+        self._target = {i: rgb for i, rgb in self._target.items() if i in ids}
+        self._current = {i: rgb for i, rgb in self._current.items() if i in ids}
+        self._fade_from = dict(self._current)
+
+    async def _async_unless_stopped(self, awaitable: Awaitable[Any]) -> Any:
+        """Await something, but give up with USER as soon as stop() is called."""
+        work = asyncio.ensure_future(awaitable)
+        stop = asyncio.ensure_future(self._stop_requested.wait())
+        try:
+            await asyncio.wait({work, stop}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (work, stop):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(stop, return_exceptions=True)
+        if self._stop_requested.is_set():
+            await asyncio.gather(work, return_exceptions=True)
+            raise _Stop(StopReason.USER)
+        return work.result()
 
     async def _async_release_output(self) -> None:
         with suppress(Exception):
@@ -334,9 +370,13 @@ class Pipeline:
                     await check
 
     async def _async_set_target(self, frame: Frame) -> None:
-        colors = await self._runner(
-            compute, frame, self._channels, self._settings.intensity / 100
-        )
+        try:
+            colors = await self._runner(
+                compute, frame, self._channels, self._settings.intensity / 100
+            )
+        except Exception as err:
+            _LOGGER.exception("Unexpected error computing the colours")
+            raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
         now = self._clock.now()
         if self._last_capture is not None:
             self._fade_duration = now - self._last_capture
