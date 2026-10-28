@@ -28,19 +28,25 @@ jobs:
       matrix:
         include:
           # Minimum supported Home Assistant (2025.3.0, architecture D17).
+          # aiowebostv: the version HA's webostv integration pins in that release.
           - name: minimum
             python: "3.13"
             phcc: "0.13.221"
+            aiowebostv: "0.7.3"
           # Latest tested Home Assistant release (2026.10.4).
           - name: latest
             python: "3.14"
             phcc: "0.13.375"
+            aiowebostv: "0.10.0"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install pytest-homeassistant-custom-component==${{ matrix.phcc }}
+      - run: >-
+          pip install
+          pytest-homeassistant-custom-component==${{ matrix.phcc }}
+          aiowebostv==${{ matrix.aiowebostv }}
       - run: pytest
 
   hassfest:
