@@ -1,0 +1,13 @@
+{
+  "domain": "glowcast",
+  "name": "Glowcast",
+  "codeowners": ["@nicohabets"],
+  "config_flow": false,
+  "dependencies": ["webostv", "hue"],
+  "documentation": "https://github.com/nicohabets/glowcast",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/nicohabets/glowcast/issues",
+  "requirements": ["hue-entertainment==0.1.2"],
+  "version": "0.1.0"
+}
