@@ -14,7 +14,7 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -104,17 +104,26 @@ class FakePipeline:
         FakePipeline.instances.append(self)
 
     async def run(self) -> None:
-        await self.source.start()
-        if (error := FakePipeline.start_error) is not None:
-            FakePipeline.start_error = None
-            self.reason = error
-        else:
-            await self.output.start()
-            await self._stop.wait()
+        try:
+            await self.source.start()
+            if (error := FakePipeline.start_error) is not None:
+                FakePipeline.start_error = None
+                self.reason = error
+            else:
+                await self.output.start()
+                await self._stop.wait()
+        except asyncio.CancelledError:
+            # Like the real pipeline: release, report USER, re-raise.
+            await asyncio.shield(self._release())
+            self.on_stopped(StopReason.USER)
+            raise
+        await self._release()
+        self.on_stopped(self.reason)
+
+    async def _release(self) -> None:
         await self.output.stop()
         await self.output.close()
         await self.source.close()
-        self.on_stopped(self.reason)
 
     def stop(self) -> None:
         self._stop.set()
@@ -452,6 +461,21 @@ async def test_unload_while_syncing_releases_the_lights(
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_home_assistant_shutdown_cancels_and_releases(
+    hass: HomeAssistant, fakes: Fakes, caplog: pytest.LogCaptureFixture
+) -> None:
+    """What HA really does: cancel background tasks, then fire the stop event."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    hass.set_state(CoreState.stopping)
+    entry.runtime_data._task.cancel("Home Assistant is stopping")
+    await settle(hass)
+    assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
+    assert state(hass) == STATE_OFF
+    assert "stopped: Home Assistant is stopping" in caplog.text
+    hass.set_state(CoreState.running)
 
 
 async def test_home_assistant_stop_releases_the_lights(

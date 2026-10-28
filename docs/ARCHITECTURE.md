@@ -247,7 +247,7 @@ Failure handling:
 - **`OutputAuthFailed`:** switch off and start reauth.
 - **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): checked before starting (and after a stop that may be caused by it); do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again. Cleared after the next successful start.
 - **Every stop reason** turns the switch off and is logged once (info for `USER` and `TV_OFF`, warning for the rest). Changing options while syncing restarts only the pipeline; that stop is not logged and the switch stays on.
-- **HA stops:** HA does not unload entries on shutdown, so a listener on `EVENT_HOMEASSISTANT_STOP` stops the pipeline and releases the lights.
+- **HA stops:** HA does not unload entries on shutdown. It first cancels all background tasks and then fires `EVENT_HOMEASSISTANT_STOP`, waiting for both (checked in HA's `core.py`, 2025.7 and 2026.10). Cancelling the pipeline's task makes it release the lights (its shielded cleanup, 3.5); a listener on `EVENT_HOMEASSISTANT_STOP` also stops it and waits for the release, as a backstop. The log says "Home Assistant is stopping".
 - **HA crashed while streaming:** the next start finds Glowcast's own stale stream, stops it and starts normally (3.4).
 
 ## 5. Configuration data model - built for growth

@@ -119,10 +119,12 @@ class GlowcastData:
         """Stop syncing and wait until the lights are released."""
         if self._pipeline is not None:
             self._pipeline.stop()
-        task, self._task = self._task, None
+        task = self._task
         if task is not None:
             with suppress(asyncio.CancelledError):
                 await task
+            if self._task is task:
+                self._task = None
 
     async def async_restart(self) -> None:
         """Restart a running pipeline with the new settings; the switch stays on."""
@@ -176,7 +178,12 @@ class GlowcastData:
             _LOGGER.debug("Glowcast %s restarting with new settings", self._entry.title)
             return
         log = _LOGGER.info if reason in _ROUTINE_STOPS else _LOGGER.warning
-        log("Glowcast %s stopped: %s", self._entry.title, _STOP_MESSAGES[reason])
+        message = _STOP_MESSAGES[reason]
+        if reason is StopReason.USER and self._hass.is_stopping:
+            # HA cancels background tasks on shutdown; the pipeline then
+            # releases the lights and reports USER.
+            message = "Home Assistant is stopping"
+        log("Glowcast %s stopped: %s", self._entry.title, message)
         if reason is StopReason.AUTH_FAILED:
             self._entry.async_start_reauth(self._hass)
         elif reason is StopReason.OUTPUT_TOO_MANY_CHANNELS:
@@ -246,7 +253,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> 
     entry.runtime_data = data = GlowcastData(hass, entry)
 
     async def _async_ha_stop(event: Event) -> None:
-        # HA does not unload entries on shutdown: release the lights here.
+        # HA does not unload entries on shutdown. It cancels background tasks
+        # first, which makes the pipeline release the lights; this waits for
+        # that release as a backstop.
         await data.async_stop()
 
     entry.async_on_unload(
