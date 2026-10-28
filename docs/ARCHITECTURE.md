@@ -182,12 +182,12 @@ The TV cannot go faster than about 4 per second, so there is no level above Maxi
 
 ### 4.1 Config flow (first setup)
 
-1. **TV:** pick a loaded `webostv` config entry.
+1. **TV:** pick a loaded `webostv` config entry that has no Glowcast entry yet.
 2. **Hue bridge:** pick a loaded `hue` config entry with `api_version == 2` (older bridges cannot stream).
    - First check that the bridge answers (unauthenticated `GET https://<host>/api/config`, `ssl=False`); if not → "could not reach the bridge". (`pair()` raises the same `TimeoutError` for every failure, so reachability must be checked first.)
-   - Then a form "press the link button on your bridge, then click Submit", followed by a **progress step** running `HueEntertainmentAPI(host).pair(device_type=...)` (up to 30 s). The returned `username` is stored as `app_key`, `clientkey` as `client_key`. Timeout → "button not pressed, try again". Always call `api.close()` afterwards.
+   - Then a form "press the link button on your bridge, then click Submit", followed by a **progress step** running `HueEntertainmentAPI(host).pair(device_type=...)` (up to 30 s). The returned `username` is stored as `app_key`, `clientkey` as `client_key`. Timeout → "button not pressed, try again", unless the bridge no longer answers (checked again, because the library retries network errors until its deadline and then raises the same timeout) → "could not reach the bridge". Always call `api.close()` afterwards; closing the flow cancels the pairing.
    - `device_type` is `glowcast#<name>`, truncated to the bridge's limit (20 characters before `#`, 19 after).
-3. **Entertainment area:** pick from the bridge's list (close the API client afterwards, here and in the options flow). If there are none, keep the screen open with a message explaining how to create one in the Hue app; Submit reads the list again, so the user does not pair a second time (which would add another app on the bridge).
+3. **Entertainment area:** pick from the bridge's list, read with one raw `GET /clip/v2/resource/entertainment_configuration` (HA's session, `ssl=False`), here and in the options flow; the library's area listing also fetches every device and light. If there are none, or the list cannot be read, keep the screen open with a message (for none: how to create one in the Hue app); Submit reads the list again, so the user does not pair a second time (which would add another app on the bridge).
 
 Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.

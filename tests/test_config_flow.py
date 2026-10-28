@@ -5,18 +5,19 @@ import json
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import aiohttp
 import pytest
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType, InvalidData
-from hue_entertainment.models import EntertainmentArea
+from homeassistant.data_entry_flow import FlowHandler, FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
+    AiohttpClientMockResponse,
 )
+from yarl import URL
 
 from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.outputs.hue_entertainment import _device_type
@@ -27,18 +28,19 @@ TV_ID = "tv-unique-id"
 BRIDGE_ID = "bridge-unique-id"
 HOST = "bridge.example"
 CONFIG_URL = f"https://{HOST}/api/config"
+AREAS_URL = f"https://{HOST}/clip/v2/resource/entertainment_configuration"
 TRANSLATIONS = Path(__file__).parent.parent / "custom_components/glowcast/translations"
 
 
-# A pair() result that waits for the link button until cancelled.
-WAIT_FOREVER = object()
+# A pair() result that waits for the link button (a few seconds, so a test that
+# fails does not hang) unless cancelled.
+WAIT_FOR_BUTTON = object()
 
 
 class FakeHueAPI:
-    """Stands in for hue_entertainment.HueEntertainmentAPI."""
+    """Stands in for hue_entertainment.HueEntertainmentAPI (pairing only)."""
 
     pair_results: list[Any] = []
-    areas: list[EntertainmentArea] = []
     instances: list["FakeHueAPI"] = []
 
     def __init__(self, host: str, app_key: str | None = None) -> None:
@@ -46,15 +48,16 @@ class FakeHueAPI:
         self.app_key = app_key
         self.device_type = ""
         self.closed = False
+        self.closed_event = asyncio.Event()
         self.cancelled = False
         FakeHueAPI.instances.append(self)
 
     async def pair(self, device_type: str) -> dict[str, str]:
         self.device_type = device_type
         result = FakeHueAPI.pair_results.pop(0)
-        if result is WAIT_FOREVER:
+        if result is WAIT_FOR_BUTTON:
             try:
-                await asyncio.Future()
+                await asyncio.sleep(3)
             except asyncio.CancelledError:
                 self.cancelled = True
                 raise
@@ -62,24 +65,66 @@ class FakeHueAPI:
             raise result
         return result
 
-    async def get_entertainment_areas(self) -> list[EntertainmentArea]:
-        return FakeHueAPI.areas
-
     async def close(self) -> None:
         self.closed = True
+        self.closed_event.set()
 
 
 PAIRED = {"username": "new-app-key", "clientkey": "new-client-key"}
 
 
+def area(area_id: str, name: str) -> dict[str, Any]:
+    """An entertainment_configuration resource as the bridge returns it."""
+    return {
+        "id": area_id,
+        "type": "entertainment_configuration",
+        "metadata": {"name": name},
+    }
+
+
+class FakeBridge:
+    """The bridge's HTTP side: the unauthenticated check and the area list."""
+
+    def __init__(self) -> None:
+        self.reachable = True
+        self.areas = [area("area-tv", "TV area"), area("area-other", "Other area")]
+        self.areas_status = 200
+
+    async def config(self, method: str, url: URL, data: Any) -> Any:
+        if not self.reachable:
+            raise aiohttp.ClientConnectionError
+        return AiohttpClientMockResponse(method, url, json={"name": "Hue Bridge"})
+
+    async def area_list(self, method: str, url: URL, data: Any) -> Any:
+        if not self.reachable:
+            raise aiohttp.ClientConnectionError
+        return AiohttpClientMockResponse(
+            method, url, status=self.areas_status, json={"data": self.areas}
+        )
+
+
+@pytest.fixture(autouse=True)
+def bridge(aioclient_mock: AiohttpClientMocker) -> FakeBridge:
+    """A bridge that answers; tests change its state."""
+    fake = FakeBridge()
+    aioclient_mock.get(CONFIG_URL, side_effect=fake.config)
+    aioclient_mock.get(AREAS_URL, side_effect=fake.area_list)
+    return fake
+
+
+def area_list_keys(aioclient_mock: AiohttpClientMocker) -> list[str]:
+    """The application keys the area list was requested with."""
+    return [
+        headers["hue-application-key"]
+        for _, url, _, headers in aioclient_mock.mock_calls
+        if str(url) == AREAS_URL
+    ]
+
+
 @pytest.fixture(autouse=True)
 def fake_api() -> Generator[type[FakeHueAPI]]:
-    """Replace the Hue library and reset the fake bridge."""
+    """Replace the Hue library's pairing."""
     FakeHueAPI.pair_results = [PAIRED]
-    FakeHueAPI.areas = [
-        EntertainmentArea(id="area-tv", name="TV area"),
-        EntertainmentArea(id="area-other", name="Other area"),
-    ]
     FakeHueAPI.instances = []
     with patch(
         "custom_components.glowcast.outputs.hue_entertainment.HueEntertainmentAPI",
@@ -112,12 +157,6 @@ def other_integrations(hass: HomeAssistant) -> Generator[None]:
     # Keep Home Assistant from unloading integrations that were never set up.
     for entry in (tv, bridge):
         entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
-
-
-@pytest.fixture(autouse=True)
-def bridge_answers(aioclient_mock: AiohttpClientMocker) -> None:
-    """The bridge answers the unauthenticated request."""
-    aioclient_mock.get(CONFIG_URL, json={"name": "Hue Bridge"})
 
 
 def glowcast_entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -174,7 +213,9 @@ async def press_and_wait(hass: HomeAssistant, flow_id: str) -> dict[str, Any]:
     return await hass.config_entries.flow.async_configure(flow_id)
 
 
-async def test_happy_path(hass: HomeAssistant) -> None:
+async def test_happy_path(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
     """TV, bridge, link button, area: the entry stores section 5's data model."""
     flow_id = await start_to_link(hass)
     result = await press_and_wait(hass, flow_id)
@@ -207,26 +248,59 @@ async def test_happy_path(hass: HomeAssistant) -> None:
     assert entry.version == 1
     assert entry.state is ConfigEntryState.LOADED
 
-    pairing, listing = FakeHueAPI.instances
+    (pairing,) = FakeHueAPI.instances
     assert pairing.host == HOST
     assert pairing.device_type == "glowcast#Living room TV"
-    assert listing.app_key == "new-app-key"
     assert pairing.closed
-    assert listing.closed
+    assert area_list_keys(aioclient_mock) == ["new-app-key"]
 
 
 async def test_already_configured(hass: HomeAssistant) -> None:
-    """A second Glowcast entry for the same TV aborts."""
+    """A TV with a Glowcast entry is not offered; with none left, setup stops."""
     glowcast_entry(hass)
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "all_tvs_configured"
+
+
+async def test_configured_tv_not_offered(hass: HomeAssistant) -> None:
+    """Only TVs without a Glowcast entry are in the list."""
+    glowcast_entry(hass)
+    other = MockConfigEntry(
+        domain="webostv",
+        title="Bedroom TV",
+        unique_id="other-tv",
+        data={"host": "tv2.example", "client_secret": "tv-secret"},
+        state=ConfigEntryState.LOADED,
+    )
+    other.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    options = result["data_schema"].schema["tv"].config["options"]
+    assert [option["value"] for option in options] == ["other-tv"]
+    other.mock_state(hass, ConfigEntryState.NOT_LOADED)
+
+
+async def test_same_tv_in_two_setups(hass: HomeAssistant) -> None:
+    """A second setup for a TV that is already being set up stops."""
+    first = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    second = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    await hass.config_entries.flow.async_configure(first["flow_id"], {"tv": TV_ID})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"tv": TV_ID}
+        second["flow_id"], {"tv": TV_ID}
     )
 
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
+    assert result["reason"] == "already_in_progress"
 
 
 async def test_no_tv(hass: HomeAssistant) -> None:
@@ -258,12 +332,9 @@ async def test_no_api_v2_bridge(hass: HomeAssistant) -> None:
     assert result["reason"] == "no_bridge"
 
 
-async def test_bridge_unreachable(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
+async def test_bridge_unreachable(hass: HomeAssistant, bridge: FakeBridge) -> None:
     """An unreachable bridge is reported before pairing starts."""
-    aioclient_mock.clear_requests()
-    aioclient_mock.get(CONFIG_URL, exc=TimeoutError)
+    bridge.reachable = False
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
@@ -295,10 +366,17 @@ async def test_button_not_pressed(hass: HomeAssistant) -> None:
     assert result["step_id"] == "area"
 
 
-async def test_bridge_drops_out_during_pairing(hass: HomeAssistant) -> None:
-    """A network error while pairing says so; the next try continues."""
-    FakeHueAPI.pair_results = [aiohttp.ClientConnectionError(), PAIRED]
+async def test_bridge_drops_out_during_pairing(
+    hass: HomeAssistant, bridge: FakeBridge
+) -> None:
+    """A bridge gone during pairing says so, not "button not pressed".
+
+    The library retries network errors until its deadline and then raises the
+    same timeout as for an unpressed button, so the flow checks the bridge.
+    """
+    FakeHueAPI.pair_results = [TimeoutError("Cannot connect"), PAIRED]
     flow_id = await start_to_link(hass)
+    bridge.reachable = False
 
     result = await press_and_wait(hass, flow_id)
     assert result["type"] is FlowResultType.FORM
@@ -306,38 +384,57 @@ async def test_bridge_drops_out_during_pairing(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "cannot_connect"}
     assert FakeHueAPI.instances[0].closed
 
+    bridge.reachable = True
+    result = await press_and_wait(hass, flow_id)
+    assert result["step_id"] == "area"
+
+
+async def test_malformed_pairing_reply(hass: HomeAssistant) -> None:
+    """A reply that is not JSON does not crash the flow."""
+    FakeHueAPI.pair_results = [ValueError("not JSON"), PAIRED]
+    flow_id = await start_to_link(hass)
+
+    result = await press_and_wait(hass, flow_id)
+    assert result["step_id"] == "link"
+    assert result["errors"] == {"base": "cannot_connect"}
+
     result = await press_and_wait(hass, flow_id)
     assert result["step_id"] == "area"
 
 
 async def test_closing_the_flow_stops_pairing(hass: HomeAssistant) -> None:
-    """Closing setup during the progress step cancels the pairing."""
-    FakeHueAPI.pair_results = [WAIT_FOREVER]
+    """Closing setup during the progress step cancels the pairing.
+
+    Home Assistant also cancels a flow's progress task; that is switched off
+    here so the test covers the flow's own async_remove().
+    """
+    FakeHueAPI.pair_results = [WAIT_FOR_BUTTON]
     flow_id = await start_to_link(hass)
     result = await hass.config_entries.flow.async_configure(flow_id, {})
     assert result["type"] is FlowResultType.SHOW_PROGRESS
 
-    hass.config_entries.flow.async_abort(flow_id)
-    await hass.async_block_till_done()
-
+    with patch.object(FlowHandler, "async_cancel_progress_task", lambda self: None):
+        hass.config_entries.flow.async_abort(flow_id)
     pairing = FakeHueAPI.instances[0]
+    async with asyncio.timeout(1):
+        await pairing.closed_event.wait()
+
     assert pairing.cancelled
     assert pairing.closed
     assert hass.config_entries.async_entries(DOMAIN) == []
 
 
-async def test_no_areas(hass: HomeAssistant) -> None:
+async def test_no_areas(hass: HomeAssistant, bridge: FakeBridge) -> None:
     """Without areas the screen explains what to do; Submit looks again."""
-    FakeHueAPI.areas = []
+    bridge.areas = []
     flow_id = await start_to_link(hass)
     result = await press_and_wait(hass, flow_id)
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "area"
     assert result["errors"] == {"base": "no_areas"}
-    assert all(api.closed for api in FakeHueAPI.instances)
 
-    FakeHueAPI.areas = [EntertainmentArea(id="area-new", name="New area")]
+    bridge.areas = [area("area-new", "New area")]
     result = await hass.config_entries.flow.async_configure(flow_id, {})
     assert result["step_id"] == "area"
     assert not result["errors"]
@@ -349,7 +446,30 @@ async def test_no_areas(hass: HomeAssistant) -> None:
     assert result["options"]["output"]["area_id"] == "area-new"
     assert result["data"]["bridge"]["app_key"] == "new-app-key"
     # Paired once: the retry did not create another app on the bridge.
-    assert sum(1 for api in FakeHueAPI.instances if api.device_type) == 1
+    assert len(FakeHueAPI.instances) == 1
+
+
+async def test_area_list_fails_after_pairing(
+    hass: HomeAssistant, bridge: FakeBridge
+) -> None:
+    """A failed area list keeps the pairing; Submit tries again."""
+    flow_id = await start_to_link(hass)
+    bridge.areas_status = 503
+    result = await press_and_wait(hass, flow_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "area"
+    assert result["errors"] == {"base": "cannot_connect"}
+
+    bridge.areas_status = 200
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert result["step_id"] == "area"
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {"area": "area-tv"}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert len(FakeHueAPI.instances) == 1
 
 
 async def test_reauth(hass: HomeAssistant) -> None:
@@ -382,7 +502,9 @@ async def test_reauth(hass: HomeAssistant) -> None:
     assert FakeHueAPI.instances[-1].device_type == "glowcast#Living room TV"
 
 
-async def test_options_flow(hass: HomeAssistant) -> None:
+async def test_options_flow(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
     """The settings screen shows the current values and stores whole numbers."""
     entry = glowcast_entry(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -393,8 +515,7 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     assert schema["area"].default() == "area-tv"
     assert schema["brightness"].default() == 50
     assert schema["update_rate"].default() == "low"
-    assert FakeHueAPI.instances[0].app_key == "old-app-key"
-    assert FakeHueAPI.instances[0].closed
+    assert area_list_keys(aioclient_mock) == ["old-app-key"]
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -434,15 +555,13 @@ async def test_options_flow_rejects_out_of_range(hass: HomeAssistant) -> None:
             )
 
 
-async def test_options_flow_key_revoked(hass: HomeAssistant) -> None:
+async def test_options_flow_key_revoked(
+    hass: HomeAssistant, bridge: FakeBridge
+) -> None:
     """A revoked key says so and starts the reauth flow."""
     entry = glowcast_entry(hass)
-
-    async def revoked(self: FakeHueAPI) -> list[EntertainmentArea]:
-        raise aiohttp.ClientResponseError(Mock(), (), status=403)
-
-    with patch.object(FakeHueAPI, "get_entertainment_areas", revoked):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+    bridge.areas_status = 403
+    result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
@@ -452,19 +571,16 @@ async def test_options_flow_key_revoked(hass: HomeAssistant) -> None:
     assert flows[0]["context"]["entry_id"] == entry.entry_id
 
 
-async def test_options_flow_bridge_unreachable(hass: HomeAssistant) -> None:
+async def test_options_flow_bridge_unreachable(
+    hass: HomeAssistant, bridge: FakeBridge
+) -> None:
     """Without the bridge the area list cannot be shown."""
     entry = glowcast_entry(hass)
-
-    async def unreachable(self: FakeHueAPI) -> list[EntertainmentArea]:
-        raise TimeoutError
-
-    with patch.object(FakeHueAPI, "get_entertainment_areas", unreachable):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
+    bridge.reachable = False
+    result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "cannot_connect"
-    assert FakeHueAPI.instances[0].closed
 
 
 async def test_setup_and_unload(hass: HomeAssistant) -> None:

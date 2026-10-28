@@ -44,7 +44,9 @@
       "no_bridge": "No Hue bridge that can stream found. Set up a Hue Bridge v2 or Hue Bridge Pro with the Philips Hue integration first.",
       "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
       "already_configured": "Glowcast is already set up for this TV.",
-      "reauth_successful": "Glowcast is paired with the Hue bridge again."
+      "reauth_successful": "Glowcast is paired with the Hue bridge again.",
+      "already_in_progress": "Glowcast is already being set up for this TV. Finish or close that setup first.",
+      "all_tvs_configured": "Glowcast is already set up for every LG webOS TV in Home Assistant."
     }
   },
   "options": {

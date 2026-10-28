@@ -44,7 +44,9 @@
       "no_bridge": "Geen Hue Bridge gevonden die kan streamen. Stel eerst een Hue Bridge v2 of Hue Bridge Pro in met de integratie Philips Hue.",
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
       "already_configured": "Glowcast is al ingesteld voor deze tv.",
-      "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge."
+      "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge.",
+      "already_in_progress": "Glowcast wordt al ingesteld voor deze tv. Rond die installatie eerst af of sluit hem.",
+      "all_tvs_configured": "Glowcast is al ingesteld voor elke LG webOS-tv in Home Assistant."
     }
   },
   "options": {

@@ -84,10 +84,14 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the TV."""
-        available = tvs(self.hass)
-        if not available:
+        """Pick the TV; TVs that already have a Glowcast entry are not offered."""
+        loaded = tvs(self.hass)
+        if not loaded:
             return self.async_abort(reason="no_tv")
+        configured = self._async_current_ids()
+        available = {k: v for k, v in loaded.items() if k not in configured}
+        if not available:
+            return self.async_abort(reason="all_tvs_configured")
         if user_input is not None:
             unique_id = user_input[FIELD_TV]
             await self.async_set_unique_id(unique_id)
@@ -139,7 +143,7 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._pair_task is None or not self._pair_task.done():
             if self._pair_task is None:
                 self._pair_task = self.hass.async_create_task(
-                    async_pair(self._host, self._tv_name), "glowcast hue pairing"
+                    self._async_pair(), "glowcast hue pairing"
                 )
             return self.async_show_progress(
                 step_id="pair", progress_action="pair", progress_task=self._pair_task
@@ -160,13 +164,27 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
             next_step_id="reauth_save" if reauth else "area"
         )
 
+    async def _async_pair(self) -> tuple[str, str]:
+        """Pair; tell an unreachable bridge apart from an unpressed button.
+
+        The library retries network errors until its 30 s deadline and then
+        raises the same timeout as for an unpressed button.
+        """
+        try:
+            return await async_pair(self._host, self._tv_name)
+        except PairingFailed:
+            if not await async_bridge_reachable(self.hass, self._host):
+                raise OutputUnavailable("The Hue bridge stopped answering") from None
+            raise
+
     async def async_step_area(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Pick the entertainment area and create the entry.
 
-        Without areas the form stays open, so the user can create one in the
-        Hue app and continue without pairing again.
+        Without areas, or when the list cannot be read, the form stays open so
+        the user can try again without pairing again (which would add another
+        app on the bridge).
         """
         if user_input is not None and FIELD_AREA in user_input:
             app_key, client_key = self._keys
@@ -191,9 +209,11 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
                 ),
             )
         try:
-            areas = await async_areas(self._host, self._keys[0])
+            areas = await async_areas(self.hass, self._host, self._keys[0])
         except (OutputAuthFailed, OutputUnavailable):
-            return self.async_abort(reason="cannot_connect")
+            return self.async_show_form(
+                step_id="area", errors={"base": "cannot_connect"}
+            )
         if not areas:
             return self.async_show_form(step_id="area", errors={"base": "no_areas"})
         return self.async_show_form(
@@ -276,7 +296,7 @@ class GlowcastOptionsFlow(OptionsFlow):
         if host is None:
             return self.async_abort(reason="cannot_connect")
         try:
-            areas = await async_areas(host, bridge[CONF_APP_KEY])
+            areas = await async_areas(self.hass, host, bridge[CONF_APP_KEY])
         except OutputAuthFailed:
             self.config_entry.async_start_reauth(self.hass)
             return self.async_abort(reason="reauth_required")
