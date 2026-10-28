@@ -531,6 +531,18 @@ async def test_colours_continue_after_a_retry() -> None:
     assert await h.stop() == StopReason.USER
 
 
+async def test_first_fade_after_a_retry_is_not_stretched_over_the_gap() -> None:
+    h = Harness(rate=UpdateRate.LOW)
+    await h.start()
+    await h.clock.advance(1.6)  # two captures, measured interval 1 s
+    await lose_stream(h)
+    h.source.default = solid(BLUE)  # the first capture after the retry
+    await h.clock.advance(5.1)  # retried
+    await h.clock.advance(1.3)  # blue fades in over about 1 s, not over the 5 s gap
+    assert h.output.rgb_at(-1) == pytest.approx((0.05, 0.05, 1.0), abs=0.01)
+    assert await h.stop() == StopReason.USER
+
+
 async def test_compute_error_stops_with_source_unavailable() -> None:
     h = Harness()
     await h.start()

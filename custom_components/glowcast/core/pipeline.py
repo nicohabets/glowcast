@@ -218,12 +218,11 @@ class Pipeline:
                 for task in (attempt, timer, stop):
                     if not task.done():
                         task.cancel()
-                await asyncio.gather(timer, stop, return_exceptions=True)
+                # Wait for a cancelled attempt too, so nothing is left running.
+                await asyncio.gather(attempt, timer, stop, return_exceptions=True)
             if self._stop_requested.is_set():
-                await asyncio.gather(attempt, return_exceptions=True)
                 raise _Stop(StopReason.USER)
-            if attempt.cancelled() or not attempt.done():
-                await asyncio.gather(attempt, return_exceptions=True)
+            if attempt.cancelled():
                 return None  # the startup grace ran out
             started, frame = attempt.result()
             if frame is not None:
@@ -282,6 +281,8 @@ class Pipeline:
         self._target = {i: rgb for i, rgb in self._target.items() if i in ids}
         self._current = {i: rgb for i, rgb in self._current.items() if i in ids}
         self._fade_from = dict(self._current)
+        # The gap during the retry is not a capture interval to fade over.
+        self._last_capture = None
 
     async def _async_unless_stopped(self, awaitable: Awaitable[Any]) -> Any:
         """Await something, but give up with USER as soon as stop() is called."""
@@ -293,9 +294,9 @@ class Pipeline:
             for task in (work, stop):
                 if not task.done():
                     task.cancel()
-            await asyncio.gather(stop, return_exceptions=True)
+            # Wait for cancelled work too, so it is not still running during cleanup.
+            await asyncio.gather(work, stop, return_exceptions=True)
         if self._stop_requested.is_set():
-            await asyncio.gather(work, return_exceptions=True)
             raise _Stop(StopReason.USER)
         return work.result()
 
