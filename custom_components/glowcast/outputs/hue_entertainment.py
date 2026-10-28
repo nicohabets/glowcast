@@ -283,16 +283,19 @@ async def async_bridge_reachable(hass: HomeAssistant, host: str) -> bool:
 async def async_pair(host: str, name: str) -> tuple[str, str]:
     """Pair with the bridge; return (app_key, client_key).
 
-    Takes up to 30 s while the bridge waits for its link button.
+    Takes up to 30 s while the bridge waits for its link button. Raises
+    PairingFailed, or OutputUnavailable when the bridge drops out.
     """
     api = HueEntertainmentAPI(host)
     try:
         result = await api.pair(device_type=_device_type(name))
+        return result["username"], result["clientkey"]
     except TimeoutError:
         raise PairingFailed from None
+    except (aiohttp.ClientError, OSError, KeyError, TypeError):
+        raise OutputUnavailable("Could not pair with the Hue bridge") from None
     finally:
         await api.close()
-    return result["username"], result["clientkey"]
 
 
 async def async_areas(host: str, app_key: str) -> dict[str, str]:

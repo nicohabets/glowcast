@@ -20,10 +20,10 @@
         "description": "Voor streamen is een eigen sleutel van de bridge nodig. Druk op de koppelknop van je bridge en klik daarna op Verzenden. Je hebt dan 30 seconden."
       },
       "area": {
-        "title": "Kies het entertainmentgebied",
-        "description": "De lampen in dit gebied volgen het beeld. Welke lampen meedoen en waar ze staan, stel je in de Hue-app in.",
+        "title": "Kies de entertainmentruimte",
+        "description": "De lampen in deze ruimte volgen het beeld. Welke lampen meedoen en waar ze staan, stel je in de Hue-app in.",
         "data": {
-          "area": "Entertainmentgebied"
+          "area": "Entertainmentruimte"
         }
       },
       "reauth_confirm": {
@@ -37,11 +37,11 @@
     "error": {
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
       "button_not_pressed": "De koppelknop is niet op tijd ingedrukt. Druk erop en klik daarna opnieuw op Verzenden.",
-      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentgebieden. Maak er een aan in de Hue-app (Instellingen, Entertainmentgebieden) en klik daarna op Verzenden."
+      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes) en klik daarna op Verzenden."
     },
     "abort": {
       "no_tv": "Geen LG webOS-tv gevonden. Stel je tv eerst in met de integratie LG webOS Smart TV.",
-      "no_bridge": "Geen Hue Bridge gevonden die kan streamen. Stel eerst een Hue Bridge (de vierkante, tweede generatie of nieuwer) in met de integratie Philips Hue.",
+      "no_bridge": "Geen Hue Bridge gevonden die kan streamen. Stel eerst een Hue Bridge v2 of Hue Bridge Pro in met de integratie Philips Hue.",
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
       "already_configured": "Glowcast is al ingesteld voor deze tv.",
       "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge."
@@ -52,13 +52,13 @@
       "init": {
         "title": "Instellingen van Glowcast",
         "data": {
-          "area": "Entertainmentgebied",
+          "area": "Entertainmentruimte",
           "brightness": "Helderheid",
           "intensity": "Intensiteit",
-          "update_rate": "Updatesnelheid"
+          "update_rate": "Updatefrequentie"
         },
         "data_description": {
-          "area": "De lampen in dit gebied volgen het beeld.",
+          "area": "De lampen in deze ruimte volgen het beeld.",
           "brightness": "Hoe fel de lampen maximaal zijn.",
           "intensity": "Hoe levendig de kleuren zijn: 0% is bijna wit, 100% is zoals op het scherm, 200% is extra levendig.",
           "update_rate": "Hoe vaak het beeld wordt gelezen. De lampen faden er altijd vloeiend tussendoor."
@@ -67,7 +67,8 @@
     },
     "abort": {
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en is ingesteld in de integratie Philips Hue.",
-      "no_areas": "Deze Hue Bridge heeft geen entertainmentgebieden. Maak er een aan in de Hue-app (Instellingen, Entertainmentgebieden)."
+      "no_areas": "Deze Hue Bridge heeft geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes).",
+      "reauth_required": "De Hue Bridge accepteert de sleutel van Glowcast niet meer. Home Assistant vraagt je om opnieuw te koppelen."
     }
   },
   "selector": {

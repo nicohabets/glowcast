@@ -192,7 +192,7 @@ The TV cannot go faster than about 4 per second, so there is no level above Maxi
 Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
-- **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept.
+- **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
 - **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Redact it in diagnostics. The README explains how to remove it in the Hue app after uninstalling Glowcast.
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 

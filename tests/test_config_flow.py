@@ -1,11 +1,13 @@
 """Setup, options and reauth flows, with a fake bridge and no network."""
 
+import asyncio
 import json
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import aiohttp
 import pytest
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -28,6 +30,10 @@ CONFIG_URL = f"https://{HOST}/api/config"
 TRANSLATIONS = Path(__file__).parent.parent / "custom_components/glowcast/translations"
 
 
+# A pair() result that waits for the link button until cancelled.
+WAIT_FOREVER = object()
+
+
 class FakeHueAPI:
     """Stands in for hue_entertainment.HueEntertainmentAPI."""
 
@@ -40,11 +46,18 @@ class FakeHueAPI:
         self.app_key = app_key
         self.device_type = ""
         self.closed = False
+        self.cancelled = False
         FakeHueAPI.instances.append(self)
 
     async def pair(self, device_type: str) -> dict[str, str]:
         self.device_type = device_type
         result = FakeHueAPI.pair_results.pop(0)
+        if result is WAIT_FOREVER:
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
         if isinstance(result, Exception):
             raise result
         return result
@@ -282,6 +295,37 @@ async def test_button_not_pressed(hass: HomeAssistant) -> None:
     assert result["step_id"] == "area"
 
 
+async def test_bridge_drops_out_during_pairing(hass: HomeAssistant) -> None:
+    """A network error while pairing says so; the next try continues."""
+    FakeHueAPI.pair_results = [aiohttp.ClientConnectionError(), PAIRED]
+    flow_id = await start_to_link(hass)
+
+    result = await press_and_wait(hass, flow_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "link"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert FakeHueAPI.instances[0].closed
+
+    result = await press_and_wait(hass, flow_id)
+    assert result["step_id"] == "area"
+
+
+async def test_closing_the_flow_stops_pairing(hass: HomeAssistant) -> None:
+    """Closing setup during the progress step cancels the pairing."""
+    FakeHueAPI.pair_results = [WAIT_FOREVER]
+    flow_id = await start_to_link(hass)
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+
+    hass.config_entries.flow.async_abort(flow_id)
+    await hass.async_block_till_done()
+
+    pairing = FakeHueAPI.instances[0]
+    assert pairing.cancelled
+    assert pairing.closed
+    assert hass.config_entries.async_entries(DOMAIN) == []
+
+
 async def test_no_areas(hass: HomeAssistant) -> None:
     """Without areas the screen explains what to do; Submit looks again."""
     FakeHueAPI.areas = []
@@ -388,6 +432,24 @@ async def test_options_flow_rejects_out_of_range(hass: HomeAssistant) -> None:
                 }
                 | bad,
             )
+
+
+async def test_options_flow_key_revoked(hass: HomeAssistant) -> None:
+    """A revoked key says so and starts the reauth flow."""
+    entry = glowcast_entry(hass)
+
+    async def revoked(self: FakeHueAPI) -> list[EntertainmentArea]:
+        raise aiohttp.ClientResponseError(Mock(), (), status=403)
+
+    with patch.object(FakeHueAPI, "get_entertainment_areas", revoked):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_required"
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+    assert flows[0]["context"]["entry_id"] == entry.entry_id
 
 
 async def test_options_flow_bridge_unreachable(hass: HomeAssistant) -> None:

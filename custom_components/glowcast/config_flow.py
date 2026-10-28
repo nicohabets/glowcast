@@ -150,6 +150,9 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
             self._keys = task.result()
         except PairingFailed:
             self._error = "button_not_pressed"
+        except OutputUnavailable:
+            self._error = "cannot_connect"
+        if self._error:
             return self.async_show_progress_done(
                 next_step_id="reauth_confirm" if reauth else "link"
             )
@@ -236,6 +239,15 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    @callback
+    def async_remove(self) -> None:
+        """Stop pairing when the user closes the flow.
+
+        Otherwise a later button press would still add an app on the bridge.
+        """
+        if self._pair_task is not None:
+            self._pair_task.cancel()
+
     def _pop_error(self) -> dict[str, str]:
         """Return the error left by a failed pairing, once."""
         error, self._error = self._error, None
@@ -265,7 +277,10 @@ class GlowcastOptionsFlow(OptionsFlow):
             return self.async_abort(reason="cannot_connect")
         try:
             areas = await async_areas(host, bridge[CONF_APP_KEY])
-        except (OutputAuthFailed, OutputUnavailable):
+        except OutputAuthFailed:
+            self.config_entry.async_start_reauth(self.hass)
+            return self.async_abort(reason="reauth_required")
+        except OutputUnavailable:
             return self.async_abort(reason="cannot_connect")
         if not areas:
             return self.async_abort(reason="no_areas")
