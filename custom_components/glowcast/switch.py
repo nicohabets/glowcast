@@ -4,6 +4,7 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -18,7 +19,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add the switch for this entry."""
-    async_add_entities([GlowcastSwitch(entry)])
+    async_add_entities([GlowcastSwitch(hass, entry)])
 
 
 class GlowcastSwitch(SwitchEntity):
@@ -31,17 +32,22 @@ class GlowcastSwitch(SwitchEntity):
     _attr_translation_key = "sync"
     _attr_should_poll = False
 
-    def __init__(self, entry: GlowcastConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
         """Initialize for one Glowcast entry."""
         self._data = entry.runtime_data
         self._attr_unique_id = entry.entry_id
-        source = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=f"Glowcast {entry.title}",
             entry_type=DeviceEntryType.SERVICE,
-            via_device=source.device_identifier(entry.data),
         )
+        tv = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]].device_identifier(entry.data)
+        if "via_device_id" in DeviceInfo.__annotations__:
+            # Newer HA versions link by device id; via_device is deprecated there.
+            if device := dr.async_get(hass).async_get_device(identifiers={tv}):
+                self._attr_device_info["via_device_id"] = device.id
+        else:
+            self._attr_device_info["via_device"] = tv
 
     @property
     def is_on(self) -> bool:
