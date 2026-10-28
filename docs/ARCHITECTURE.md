@@ -119,6 +119,8 @@ For each channel:
 
 **Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is issue #23.
 
+`is_black(frame)` applies the same black level and 5 % share to the whole frame; the pipeline uses it for the hold on sudden black (3.5).
+
 **Performance:** 16 channels on a 64x36 frame in under 20 ms on a GitHub Actions runner (asserted in a test). Target hardware is a Raspberry Pi 4 class CPU.
 
 ### 3.4 Adapters (v0.1)

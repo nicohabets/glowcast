@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from .color_engine import compute, is_black
+from .color_engine import BLACK, compute, is_black
 from .models import Channel, ChannelColor, Frame
 from .ports import (
     FrameSource,
@@ -44,7 +44,6 @@ GLOW_COLOR = (1.0, 0.78, 0.50)
 # switch-off animation for up to 3.0 s before it reports that it is off
 # (measured, see "Verified facts").
 BLACK_HOLD = 3.5
-BLACK = (0.0, 0.0, 0.0)
 
 RGB = tuple[float, float, float]
 Runner = Callable[..., Awaitable[Any]]
@@ -384,6 +383,7 @@ class Pipeline:
             colors = await self._runner(
                 compute, frame, self._channels, self._settings.intensity / 100
             )
+            frame_black = await self._runner(is_black, frame)
         except Exception as err:
             _LOGGER.exception("Unexpected error computing the colours")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -392,7 +392,7 @@ class Pipeline:
             self._fade_duration = now - self._last_capture
         self._last_capture = now
         target = {color.channel_id: color.rgb for color in colors}
-        if self._hold_black(is_black(frame), now):
+        if self._hold_black(frame_black, now):
             return
         if not self._current:
             # The first target is shown straight away.
