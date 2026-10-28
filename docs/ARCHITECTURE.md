@@ -164,7 +164,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 ```
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
-- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.05, brightness)` and `warm = (1.0, 0.65, 0.35)`: a dim warm white of about 2700K at 5 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.0325, 0.0175); a black picture at 80 % gives (0.05, 0.0325, 0.0175).
+- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.65, 0.35)`: a dim warm white of about 2700K at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.065, 0.035); a black picture at 80 % gives (0.10, 0.065, 0.035). The level is 10 % rather than the neutral glow's earlier 5 % because the warm ratio gives less light at the same level; chosen on real hardware (#38).
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate

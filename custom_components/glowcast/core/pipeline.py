@@ -36,7 +36,7 @@ LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
-GLOW = 0.05  # level of the minimal glow
+GLOW = 0.10  # level of the minimal glow
 # Colour of the minimal glow: a warm white of about 2700K (D11).
 GLOW_COLOR = (1.0, 0.65, 0.35)
 
