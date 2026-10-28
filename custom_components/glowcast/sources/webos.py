@@ -181,6 +181,15 @@ class WebOsFrameSource:
             _LOGGER.debug("Reconnected to the TV")
 
 
+def tvs(hass: HomeAssistant) -> dict[str, str]:
+    """Return {unique id: title} of loaded webostv entries."""
+    return {
+        entry.unique_id: entry.title
+        for entry in hass.config_entries.async_loaded_entries(WEBOSTV_DOMAIN)
+        if entry.unique_id is not None
+    }
+
+
 def _decode(data: bytes) -> Frame:
     """Decode a JPEG and downscale it to FRAME_SIZE (runs in the executor)."""
     with Image.open(io.BytesIO(data)) as image:
