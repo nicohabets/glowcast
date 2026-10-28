@@ -6,7 +6,9 @@ from homeassistant.loader import async_get_integration
 from custom_components.glowcast.const import DOMAIN
 
 
-async def test_integration_loads(hass: HomeAssistant) -> None:
+async def test_integration_loads(
+    hass: HomeAssistant, enable_custom_integrations: None
+) -> None:
     """The manifest is valid for this Home Assistant version."""
     integration = await async_get_integration(hass, DOMAIN)
 
