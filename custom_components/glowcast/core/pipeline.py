@@ -38,7 +38,7 @@ LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
 GLOW = 0.10  # level of the minimal glow
 # Colour of the minimal glow: a warm white of about 2700K (D11).
-GLOW_COLOR = (1.0, 0.72, 0.42)
+GLOW_COLOR = (1.0, 0.78, 0.50)
 
 RGB = tuple[float, float, float]
 Runner = Callable[..., Awaitable[Any]]
