@@ -17,6 +17,10 @@ class OutputNotFound(Exception):
     """The chosen area (or group of lights) no longer exists."""
 
 
+class OutputTooManyChannels(Exception):
+    """The chosen area has more channels than the output can drive."""
+
+
 class OutputUnavailable(Exception):
     """The output cannot be reached or used."""
 
@@ -57,7 +61,8 @@ class LightOutput(Protocol):
     async def start(self) -> list[Channel]:
         """Claim the lights (at most 20 channels) and return the channels to drive.
 
-        Raises OutputBusy, OutputAuthFailed, OutputNotFound or OutputUnavailable.
+        Raises OutputBusy, OutputAuthFailed, OutputNotFound, OutputTooManyChannels
+        or OutputUnavailable.
         """
 
     def send(self, colors: list[ChannelColor]) -> None:

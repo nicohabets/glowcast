@@ -21,6 +21,7 @@ from custom_components.glowcast.core.ports import (
     OutputBusy,
     OutputLost,
     OutputNotFound,
+    OutputTooManyChannels,
     OutputUnavailable,
 )
 from custom_components.glowcast.outputs import hue_entertainment as hue
@@ -325,7 +326,9 @@ async def test_too_many_channels(
 ) -> None:
     add_bridge()
     mock_bridge(aioclient_mock, [_area(channels=21)])
-    with pytest.raises(OutputUnavailable, match="at most 20"):
+    with pytest.raises(
+        OutputTooManyChannels, match="21 channels; Hue streams at most 20"
+    ):
         await output.start()
     assert FakeSession.instances == []
 

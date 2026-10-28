@@ -18,6 +18,7 @@ from ..core.ports import (
     OutputBusy,
     OutputLost,
     OutputNotFound,
+    OutputTooManyChannels,
     OutputUnavailable,
 )
 
@@ -153,7 +154,7 @@ class HueEntertainmentOutput:
             raise OutputNotFound("The entertainment area no longer exists")
         channels = area.get("channels", [])
         if len(channels) > MAX_CHANNELS:
-            raise OutputUnavailable(
+            raise OutputTooManyChannels(
                 f"The entertainment area has {len(channels)} channels; "
                 f"Hue streams at most {MAX_CHANNELS}"
             )
