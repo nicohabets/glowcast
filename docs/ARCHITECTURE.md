@@ -13,7 +13,7 @@ Glowcast only translates picture into colour into light. Everything Home Assista
 - **Source:** an LG webOS TV that is already set up in HA through the core `webostv` integration.
 - **Output:** one Hue **entertainment area** (for example the living room). Which lights take part, and where they stand, is set up in the Hue app. Gradient lightstrips work per segment.
 - **Control:** one switch entity. Starting is done by the user, a dashboard or an **automation** (for example "TV turns on → switch on"). Glowcast never starts by itself.
-- **Settings screen:** the integration's options (Settings → Devices & services → Glowcast → Configure): TV, entertainment area, brightness, intensity, update rate.
+- **Settings screen:** the integration's options (Settings → Devices & services → Glowcast → Configure): entertainment area, brightness, intensity, update rate. The TV and bridge are chosen once, during setup.
 
 ### Not in v0.1
 
@@ -92,14 +92,15 @@ Brightness is applied before `send()` (in the pipeline), so outputs stay dumb.
 
 ### 3.3 ColorEngine (`core/color_engine.py`)
 
-Pure, synchronous, fully unit-testable.
+Pure, synchronous, fully unit-testable. Performance budget: 16 channels on a 64x36 frame in under 5 ms on a Raspberry Pi 4 class CPU, so it never stalls the 25 Hz loop.
 
 `compute(frame, channels, intensity) -> list[ChannelColor]`
 
 For each channel:
 1. **Region:** map `x` to a horizontal band and `z` to a vertical band of the frame (band size: a constant, start with 30%).
-2. **Average** the pixels in the region, skipping near-black pixels (letterbox bars). If almost everything is black, the colour is black.
-3. **Intensity:** scale saturation (0 = nearly white, 1 = as on screen, up to 2 = boosted).
+2. **Average** the pixels in the region, skipping near-black pixels (letterbox bars).
+3. **Black picture:** if almost the whole region is black, the channel gets a **minimal glow** instead of black: a dim neutral white at about 5 % (a constant, not an option), so the room never goes fully dark between scenes.
+4. **Intensity:** scale saturation (0 = nearly white, 1 = as on screen, up to 2 = boosted).
 
 ### 3.4 Adapters (v0.1)
 
@@ -107,11 +108,17 @@ For each channel:
 - Reads `host` and `client_secret` from the chosen `webostv` config entry at runtime. Never copies them.
 - `aiowebostv.WebOsClient` (already in HA) for `tv/executeOneShot`; downloads `imageUri` with HA's aiohttp session, `ssl=False`.
 - Decodes and downscales (to about 64x36) with Pillow in the executor.
+- If the websocket to the TV drops while the TV is on, reconnect once before counting it as a failed capture.
 
 **`HueEntertainmentOutput`** (`outputs/hue_entertainment.py`)
 - Library `hue-entertainment` (Apache-2.0, pure-Python DTLS): `EntertainmentSession(host, app_key, client_key)`.
 - `start()`: `session.start(area_id)`, map the area's channels to `Channel(x, z)`.
 - `send()`: 16-bit RGB `LightColorCommand`s. `max_rate_hz = 25`.
+- **Bridge host:** read at runtime from the chosen `hue` config entry (HA keeps it current when the bridge's IP changes). Glowcast stores only its own `app_key` and `client_key`.
+- **Another app is streaming** (Hue Sync app, a Sync Box, another Glowcast): check the area's status first and **refuse to start** with a clear message. Never stop someone else's stream (`stop_others=False`).
+- **Our own stale stream** (for example after an HA crash, the area is still active for Glowcast's own app key): stop it and start again.
+- **Area removed in the Hue app:** refuse to start with a message pointing to the options screen.
+- **App key revoked** (the user removed Glowcast in the Hue app): raise a reauth so HA asks the user to press the bridge button again.
 
 ### 3.5 Pipeline (`pipeline.py`)
 
@@ -145,7 +152,12 @@ The TV cannot go faster than about 3.4 per second, so there is no level above Ma
 
 1. **TV:** pick a loaded `webostv` config entry.
 2. **Hue bridge:** pick a loaded `hue` config entry (for the host), then "press the link button" → `HueEntertainmentAPI.pair(device_type="glowcast#<ha-name>")` → store `app_key` and `client_key`. (HA's own Hue pairing has no client key, so this one-time step is needed.)
-3. **Entertainment area:** pick from the bridge's list.
+3. **Entertainment area:** pick from the bridge's list. If the bridge has no entertainment areas, stop with a message explaining how to create one in the Hue app.
+
+Rules:
+- One Glowcast entry per TV: the config entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
+- **Reauth flow:** when the bridge rejects Glowcast's key, HA shows "Reconfigure"; the user presses the bridge button again and the new keys are stored.
+- **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
 ### 4.2 Options (the settings screen)
 
@@ -179,7 +191,10 @@ actions:
 ### 4.4 Lifecycle
 
 - **TV off** (`SourceUnavailable` 5 times in a row, or its `media_player` goes `off`): stop, release the lights, switch off.
+- **TV connection drops while the TV is on:** reconnect once; only then count failures.
 - **Hue stream lost:** one retry after 5 s; if that fails, stop and switch off. Errors go to the HA log.
+- **Another app took over the area:** stop, switch off, log it. Do not fight for the area.
+- **HA crashed while streaming:** the next start finds Glowcast's own stale stream and restarts it (see 3.4).
 - **Always** call `output.stop()` on every exit path.
 
 ## 5. Configuration data model - built for growth
@@ -222,6 +237,9 @@ custom_components/glowcast/
 tests/
   test_color_engine.py
   test_pipeline.py         # fake source + fake output
+.github/
+  workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
+  ISSUE_TEMPLATE/  pull_request_template.md
 docs/ARCHITECTURE.md
 hacs.json  README.md  LICENSE  CLAUDE.md
 ```
@@ -232,8 +250,9 @@ The Dutch translation stays in v0.1 so the levels show as Laag / Middel / Hoog /
 
 ## 7. Testing
 
-- **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black).
+- **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black → minimal glow), plus the performance budget.
 - **Pipeline:** fake source and output; start/stop, TV off, stream lost, and that `stop()` is always called.
+- **Soak test:** two hours of real viewing; no crash, no memory growth, recovers from a TV standby and a bridge restart.
 - **Manual end-to-end:** an LG webOS TV, a Hue bridge and an entertainment area with a gradient lightstrip.
 
 ## 8. Room to grow (not built in v0.1)
@@ -273,3 +292,6 @@ Rule for v0.1 to keep this open: **no code outside `sources/` may know about web
 | D6 | `hue-entertainment` library | Pure-Python DTLS, no C build problems on HA OS |
 | D7 | Read TV credentials from the `webostv` entry at runtime | No duplicate secrets, survives a re-pair |
 | D8 | Update rate as levels, fixed 25 Hz fade | Simple choice for the user; smooth lights at every level |
+| D9 | Own Hue pairing next to HA's | HA's Hue entry has no `clientkey`, which streaming needs and which cannot be retrieved later |
+| D10 | Refuse when another app streams | Never take lights away from something the user started elsewhere |
+| D11 | Minimal glow on a black picture | The room does not go fully dark between scenes or on black screens |

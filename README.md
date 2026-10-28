@@ -2,7 +2,7 @@
 
 **Let your Philips Hue lights follow what's on your LG webOS TV - no subscription, no HDMI box, nothing leaves your home.**
 
-Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the dominant colour for each zone of the screen (left, right, ...) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
+Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
 > **Status: design phase.** The capture path has been tested on an LG OLED65G36LA (2023, G3); the integration itself is not built yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of v0.1. Expect breaking changes until v1.0.
 
@@ -28,7 +28,7 @@ Everything stays on your local network.
 - Home Assistant 2025.1 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
 - A Philips Hue Bridge with colour lights, set up in Home Assistant with the **Philips Hue** integration
-- For entertainment mode: an entertainment area set up in the Hue app
+- An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
 - [HACS](https://hacs.xyz/)
 
 ## Installation
@@ -45,7 +45,7 @@ Everything stays on your local network.
 During setup you pick:
 
 1. **TV** - one of your LG webOS TVs in Home Assistant
-2. **Hue Bridge** - and press its link button once, so Glowcast can stream to it
+2. **Hue Bridge** - and press its link button once. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself.
 3. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand
 
 Under the integration's options you can change the area, brightness, intensity (how vivid the colours are) and the update rate: Low (1 per second), Medium (2), High (3) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates.
@@ -64,7 +64,7 @@ actions:
       entity_id: switch.glowcast_living_room_tv
 ```
 
-When the TV turns off, syncing stops and the lights are released.
+When the TV turns off, syncing stops and the lights are released. If another app (the Hue Sync app or a Sync Box) is already streaming to the area, Glowcast does not take over; it tells you instead. On a black picture the lights keep a faint glow instead of going dark.
 
 ## Known limits
 

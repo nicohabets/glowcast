@@ -46,25 +46,27 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 The product owner (the repository owner) decides what gets built and when. Claude Code builds; it does not plan.
 
 ### The board
-Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → Done**, swimlanes per milestone (v0.1, v0.2, Later).
+Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → In Review → Done**, swimlanes per milestone (v0.1, v0.2, Later).
 
 | Column | Meaning | Who moves items here |
 |---|---|---|
 | Backlog | Not ready to be picked up. New issues land here automatically. | automatic |
 | Todo | Refined and ready to build, in priority order. | **only the product owner** |
 | In Progress | Being built. | Claude Code, when it starts |
-| Done | Merged; the issue is closed by the pull request. | automatic, when the PR closes the issue |
+| In Review | Pull request open, waiting for the product owner to test and accept. | Claude Code, when the PR is ready |
+| Done | Accepted and merged; the issue is closed by the pull request. | automatic, when the product owner merges |
 
 ### Rules
 1. **Only pick up issues from Todo**, top to bottom. Never move anything into Todo, and never start on an issue that is still in Backlog, even if it looks easy or related.
 2. Move the issue to **In Progress** when you start (if your tools allow it; otherwise say so in the issue).
 3. One issue per branch (`<number>-<short-name>`, for example `3-colour-engine`) and one pull request per issue, with `Closes #<number>` in the description.
-4. Work through the issue's **acceptance criteria** and **Definition of Done**; tick the checkboxes in the PR description.
-5. **Respect dependencies.** If an issue depends on one that is not Done, stop and say so.
-6. **Do not decide product questions.** If an acceptance criterion is unclear, conflicts with the architecture, or turns out to be impossible, comment on the issue with the question and options, and stop on that issue.
-7. **Found extra work?** Create a new issue (it lands in Backlog) in the format below and link it. Do not widen the current issue.
-8. Small commits with clear messages. Run `pytest` and `ruff check` before every commit.
-9. Update `README.md` and `docs/ARCHITECTURE.md` when behaviour visible to users changes; record new verified hardware facts in the architecture's "Verified facts" table.
+4. Work through the issue's **acceptance criteria** and **Definition of Done**; tick the checkboxes in the PR description. Then move the issue to **In Review** and describe in the PR how to test it on real hardware.
+5. **Never merge.** The product owner tests the PR on real hardware, accepts it and merges it. Review comments are handled in the same PR.
+6. **Respect dependencies.** If an issue depends on one that is not Done, stop and say so.
+7. **Do not decide product questions.** If an acceptance criterion is unclear, conflicts with the architecture, or turns out to be impossible, comment on the issue with the question and options, and stop on that issue.
+8. **Found extra work?** Create a new issue (it lands in Backlog) in the format below and link it. Do not widen the current issue.
+9. Small commits with clear messages. Run `pytest` and `ruff check` before every commit.
+10. Update `README.md` and `docs/ARCHITECTURE.md` when behaviour visible to users changes; record new verified hardware facts in the architecture's "Verified facts" table.
 
 ### Writing new issues
 New issues follow the same format as the existing ones:
