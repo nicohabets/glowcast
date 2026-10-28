@@ -74,7 +74,7 @@ Work is tracked as GitHub issues on the project board **Glowcast** (https://gith
 New issues follow the same format as the existing ones:
 - **Story:** "As a … I want … so that …", context, acceptance criteria as Given/When/Then scenarios, out of scope, notes for the developer, Definition of Done, dependencies. Label `story`.
 - **Spike:** context, question, approach, timebox, possible outcomes, Definition of Done. Label `spike`.
-- Add a component label (`source`, `color-engine`, `output`, `ha`, `quality`, `research`) and, if clear, a milestone.
+- Add a component label (`source`, `color-engine`, `pipeline`, `output`, `ha`, `quality`, `research`); small non-story work gets `task`. Add a milestone if clear.
 
 ### Public repository
 This repository is public. Never put personal details in code, docs, issues, commits or PRs: no room or device names from the owner's home, no IP addresses, entity ids, credentials, names or locations. Use generic examples such as `media_player.living_room_tv`.
