@@ -384,6 +384,78 @@ async def test_intensity_is_passed_as_a_factor() -> None:
     assert await h.stop() == StopReason.USER
 
 
+# Holding the last colours when the picture suddenly turns black (#39)
+
+WARM_RED = (1.0, 0.072, 0.042)  # red with the glow floor
+GLOW_ONLY = (0.10, 0.072, 0.042)  # black at brightness 100 %
+
+
+async def test_tv_switched_off_during_the_hold_never_shows_the_glow() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(BLACK)  # the screen goes black ...
+    await h.clock.advance(0.6)
+    off_at = h.clock.now()
+    h.source.on = False  # ... then the TV reports that it is off
+    assert await h.finish() == StopReason.TV_OFF
+    after_black = [c[0].rgb for t, c in h.output.sent if t >= 2]
+    assert after_black
+    assert all(rgb == approx_rgb(WARM_RED) for rgb in after_black)
+    assert h.output.sent[-1][0] <= off_at + TICK  # TV_OFF is not delayed
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_a_black_scene_longer_than_the_hold_fades_to_the_glow() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(BLACK)
+    await h.clock.advance(1.2)  # black arrives at about 2.25 s, held for 1 s
+    assert h.output.rgb_at(-1) == approx_rgb(WARM_RED)
+    await h.clock.advance(1.5)
+    assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.frames = [solid(BLACK), solid(BLACK)]  # about 0.67 s of black
+    h.source.default = solid(BLUE)
+    await h.clock.advance(3)
+    sent = [c[0].rgb for t, c in h.output.sent if t >= 2]
+    assert not any(rgb == approx_rgb(GLOW_ONLY) for rgb in sent)
+    assert sent[-1] == approx_rgb((0.10, 0.072, 1.0))
+    assert await h.stop() == StopReason.USER
+
+
+async def test_starting_on_a_black_picture_shows_the_glow_at_once() -> None:
+    h = Harness()
+    h.source.default = solid(BLACK)
+    await h.start()
+    await h.clock.advance(0.3)
+    assert h.output.rgb_at(0) == approx_rgb(GLOW_ONLY)
+    assert await h.stop() == StopReason.USER
+
+
+async def _stop_moment_after_failures(last_frame: Frame) -> float:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.frames = [last_frame]
+    h.source.default = SourceUnavailable("gone")
+    assert await h.finish() == StopReason.TV_OFF
+    return h.output.sent[-1][0]
+
+
+async def test_five_failed_captures_stop_at_the_same_moment_during_a_hold() -> None:
+    held = await _stop_moment_after_failures(solid(BLACK))
+    not_held = await _stop_moment_after_failures(solid(RED))
+    assert held == pytest.approx(not_held)
+
+
 # The TV turns off
 
 

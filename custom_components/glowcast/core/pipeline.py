@@ -39,6 +39,11 @@ MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spin
 GLOW = 0.10  # level of the minimal glow
 # Colour of the minimal glow: a warm white of about 2700K (D11).
 GLOW_COLOR = (1.0, 0.78, 0.50)
+# When the whole picture suddenly turns black, keep the last colours this long
+# before fading to the glow: a TV being switched off shows black for up to
+# 0.63 s before it reports that it is off (measured, see "Verified facts").
+BLACK_HOLD = 1.0
+BLACK = (0.0, 0.0, 0.0)
 
 RGB = tuple[float, float, float]
 Runner = Callable[..., Awaitable[Any]]
@@ -149,6 +154,7 @@ class Pipeline:
         self._fade_duration = 0.0
         self._last_capture: float | None = None
         self._retried_at: float | None = None
+        self._black_since: float | None = None
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the reason once.
@@ -385,6 +391,8 @@ class Pipeline:
             self._fade_duration = now - self._last_capture
         self._last_capture = now
         target = {color.channel_id: color.rgb for color in colors}
+        if self._hold_black(target, now):
+            return
         if not self._current:
             # The first target is shown straight away.
             self._current = dict(target)
@@ -392,6 +400,24 @@ class Pipeline:
         self._fade_from = dict(self._current)
         self._target = target
         self._fade_start = now
+
+    def _hold_black(self, target: dict[str, RGB], now: float) -> bool:
+        """Whether to keep the last colours instead of an all-black target.
+
+        Only a picture that suddenly turns black is held (for BLACK_HOLD), so
+        the lights go straight from the picture to their previous state when
+        the TV is switched off. Starting on black shows the glow at once.
+        """
+        all_black = bool(target) and all(rgb == BLACK for rgb in target.values())
+        showing_picture = any(rgb != BLACK for rgb in self._target.values())
+        if not all_black:
+            self._black_since = None
+            return False
+        if not showing_picture:
+            return False
+        if self._black_since is None:
+            self._black_since = now
+        return now - self._black_since < BLACK_HOLD
 
     def _colors(self, now: float) -> list[ChannelColor]:
         """The faded colours at `now`, with brightness and glow applied."""
