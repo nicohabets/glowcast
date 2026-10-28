@@ -1,6 +1,6 @@
 # Research: other TV brands as a Glowcast source (#12)
 
-Status: **part 1 (desk research) done, part 2 (hands-on) pending.** Desk research done on 2026-10-28. Nothing in this document has been tested on hardware; hands-on results go into the "Verified facts" table in [`ARCHITECTURE.md`](../ARCHITECTURE.md#2-verified-facts-tested-2026-10-28-on-an-lg-oled65g36la-2023).
+Status: **desk research done (2026-10-28); hands-on testing postponed.** The questions meant for hands-on testing were answered from online reports instead (see "Open questions answered from online reports"). Nothing in this document has been tested on hardware; hands-on results go into the "Verified facts" table in [`ARCHITECTURE.md`](../ARCHITECTURE.md#2-verified-facts-tested-2026-10-28-on-an-lg-oled65g36la-2023).
 
 ## The bar
 
@@ -26,7 +26,7 @@ For comparison, the LG webOS source reaches about 4.1 captures per second with n
 | **Any HA camera entity** backed by MJPEG (USB HDMI grabber through go2rtc, the Hyperion camera entity, a camera with a still-image URL) | `camera.async_get_image()` | yes | several per second likely [inference]; capped by the camera platform | high: extra hardware, splitter, go2rtc setup | grabber: protected HDMI is black unless the splitter strips HDCP; a camera filming the screen sees everything | **feasible** (with hardware) |
 | **Any HA camera entity** backed by H.264/RTSP (an IP camera aimed at the screen) | same | yes | about one frame per keyframe interval (often 1-4 s) | low if the camera exists | works (optical) | **not useful** for ambient light: too slow, 1 s or more of delay |
 | **Philips with Ambilight** (Saphi and Android) | JointSpace `ambilight/measured` / `processed`: edge colours computed by the TV, not a picture | yes | no measured rate; community projects poll at 8-15 Hz (configurable 0.25-30) [reported] | low: reuses `philips_js` (no developer mode) | likely works, computed by the TV [inference] | **feasible, but not a frame** (product question, see below) |
-| **Android TV / Google TV / Fire TV** (Sony, Philips, TCL, Hisense, Chromecast with Google TV, Google TV Streamer) | ADB `screencap` or `screenrecord --output-format=raw-frames` | yes | unknown on TV chips; 0.3-2 s per frame on phones [reported] | high: developer mode, network debugging, accept ADB prompt; newer Google TV builds may only offer Wireless Debugging with a pairing code | secure video layers are skipped, so Netflix is black [verified: source, reported] | **partly**: pending part 2 |
+| **Android TV / Google TV / Fire TV** (Sony, Philips, TCL, Hisense, Chromecast with Google TV, Google TV Streamer) | ADB `screencap` or `screenrecord --output-format=raw-frames` | yes | no TV measurement; about 0.6-0.9 s per raw `screencap` on phones, 2 s with PNG [reported] | high: developer mode, network debugging, accept ADB prompt; on the Google TV Streamer ADB reportedly drops and is off after every reboot | Netflix black [verified: source, reported]; on a Sony Android TV `screencap` returned nothing on the HDMI/TV screen and in Netflix [reported] | **not feasible for TVs** (no video picture); streamers only through an H.264 stream (scrcpy), too heavy for now |
 | **LG Netcast** (2012-2013 only) | UDAP `GET /udap/api/data?target=screen_image` (960x540 JPEG) | yes | unknown; the spec says the call "does not occur frequently" | low: reuses `lg_netcast` pairing key | unknown | feasible, **not recommended** (old TVs, small audience) |
 | **Enigma2 receivers** (Vu+, Dreambox) with OpenWebif | `GET /grab?mode=all&format=jpg&r=<width>` | yes | unknown: each grab starts a process | low: reuses `enigma2` entry | unknown | feasible, **not recommended** (set-top box, small audience) |
 | **Samsung Tizen** | no local capture API; only a sideloaded app sampling 16 points (HyperTizen) | (yes) | unknown | very high: developer mode, Tizen Studio, sideloading, re-signing | unknown | **not feasible** |
@@ -40,7 +40,7 @@ For comparison, the LG webOS source reaches about 4.1 captures per second with n
 ## Recommendation, in order of value
 
 1. **Any HA camera entity** (generic `CameraFrameSource`). It works for every TV brand and every app, uses only HA's public camera API, and the user decides the hardware. It only reaches 3 or more frames per second with low delay when an MJPEG source backs the entity (a USB HDMI grabber through go2rtc, or the Hyperion camera entity). The README must say plainly that RTSP cameras are too slow, and Glowcast should not recommend HDCP-stripping splitters.
-2. **Android TV / Google TV over ADB**, if part 2 shows at least 1 frame per second of real picture on a TV chip. It covers the largest number of non-LG TVs, but needs developer mode and gives black frames for DRM apps. The most promising route is `screenrecord --output-format=raw-frames --size 64x36` (scaled on the device, one long-running stream) rather than `screencap` (full-resolution PNG or raw RGBA per call). Decide after part 2.
+2. **Android TV / Google TV over ADB: do not build now.** Online reports say that on an Android TV panel (Sony) `screencap` returns nothing while the HDMI/TV screen or Netflix plays, and Hyperion's Android grabber on a Bravia stays dark in YouTube and Netflix, so the picture people actually watch is not captured. On streamers (Chromecast with Google TV, Shield) only an H.264 screen stream (scrcpy) is fast, which means video decoding inside Home Assistant, and DRM apps are still black. A one-hour hands-on check on the Sony could confirm this; it is not needed to decide.
 3. **Philips Ambilight**, after a product decision (below). It is easy to set up and probably works with DRM content, but it gives edge colours rather than a picture, and `philips_js` can already make the TV drive Hue itself ("Ambilight + Hue" switch), which lowers the value for Glowcast.
 4. **LG Netcast and Enigma2**: feasible, but small audiences. Only worth building if someone asks.
 5. **Samsung, Roku, Apple TV, Chromecast, other brands**: not feasible with any public local API. README note added.
@@ -124,9 +124,20 @@ Prior art: no HA integration found that turns a camera entity into Hue entertain
 - **Sony (non-Android) / Panasonic / Hisense VIDAA / Vizio:** no capture in pybravia 0.5.3, panasonic-viera 0.4.6, hisensetv or vizaio 0.7.0 [verified: source]; Sony's Pro Bravia API index lists no capture service [verified: docs, [index](https://pro-bravia.sony.net/develop/integrate/rest-api/spec/index.html), index page only]. Sharp: not checked in depth.
 - **Xbox Device Portal** has `/ext/screenshot`, but Device Portal is a developer-mode feature [verified: docs, [Microsoft](https://learn.microsoft.com/en-us/windows/uwp/xbox-apps/wdp-media-capture-api)].
 
-## Part 2 - hands-on (pending)
+## Open questions answered from online reports
 
-Hardware available in the test home besides the LG: a Sony BRAVIA with Google TV, Chromecast with Google TV units and a Google TV Streamer (connected through HA's `androidtv_remote` and `cast` integrations, no ADB integration). No Samsung or Philips TVs. Planned measurement, only with the owner's go and with developer mode switched on by the owner:
+Hands-on testing was postponed by the product owner; these answers come from online reports and are **not verified on hardware**.
+
+- **Does ADB capture show video on an Android TV panel?** Mostly no. On a Sony KDL-49W800G (Android 9) `screencap -p` returned zero bytes "while Sony's native HDMI/TV screen or Netflix was active" and worked again "after returning Home" [reported, [cleanyourtv #92](https://github.com/Gathin23/cleanyourtv/issues/92), 2026]. Users of the Hyperion Android grabber on Bravia TVs report it works "only in menu and turns dark in Kodi, Moonlight, Youtube", stays black in YouTube and Netflix, and switches off when changing HDMI inputs [reported, [Hyperion forum](https://hyperion-project.org/forum/index.php?thread/2708-android-screen-grabber/), about 2018]. On Android TV, HDMI inputs are handled by a dedicated hardware session that draws onto the app's surface [verified: docs, [TvInputService.HardwareSession](https://developer.android.com/reference/android/media/tv/TvInputService.HardwareSession)]; that this video bypasses screen capture would explain these reports [inference].
+- **How fast is `screencap`?** No measurement on TV hardware found. On an Android 15 emulator: median 2.1 s with `-p` (PNG), 0.68 s raw; physical devices "typically 600-900 ms" on the raw path [reported, [handsets.dev](https://handsets.dev/blog/why-adb-screencap-is-slow/), May 2026]. That is about 1 frame per second at best, before decoding a full-size raw frame.
+- **Is there a faster ADB route?** scrcpy (H.264 screen stream over ADB) gives "a rock-solid 30fps" from an Nvidia Shield TV into HyperHDR [reported, [Hackaday.io](https://hackaday.io/project/205729-diy-ambilight-for-any-tv), 2026]. Glowcast would have to decode H.264 inside Home Assistant. `screenrecord --output-format=raw-frames` (no H.264) exists [verified: source] but nobody reports using it as a live feed.
+- **Does it work on Chromecast with Google TV?** The Hyperion Android grabber app (installed on the device, not ADB) is reported to work on a Chromecast with Google TV [reported, [WLED forum](https://wled.discourse.group/t/wled-ambilight-hyperion/102?page=2)]; DRM apps are black [reported, [hyperion-android-reborn wiki](https://github.com/evanwhitt/hyperion-android-reborn/wiki)].
+- **Google TV Streamer and ADB:** a user could not keep HA's ADB integration connected to a Google TV Streamer: Wireless Debugging dropped after seconds, cannot be enabled while Ethernet is connected, and was off after a reboot; they gave up [reported, [HA community](https://community.home-assistant.io/t/android-debug-bridge-google-tv-streamer-not-working/955714), Nov 2025 - Jun 2026]. On retail Android TV devices ADB over the network needs `adb tcpip 5555` first [verified: docs, [Google Cast Android TV debugging](https://developers.google.com/cast/docs/android_tv_receiver/debugging)].
+
+## Part 2 - hands-on (postponed)
+
+
+Hardware available in the test home besides the LG: a Sony BRAVIA with Google TV, Chromecast with Google TV units and a Google TV Streamer (connected through HA's `androidtv_remote` and `cast` integrations, no ADB integration). No Samsung or Philips TVs. If hands-on testing is picked up later: planned measurement, only with the owner's go and with developer mode switched on by the owner:
 
 - From the development machine with Android platform-tools (no change to Home Assistant).
 - 30 sequential frames each of `screencap -p`, raw `screencap` and `screenrecord --output-format=raw-frames --size 64x36`, with decoding to 64x36 included, as in #2.
@@ -189,7 +200,7 @@ Research #12 (`docs/research/other-tvs.md`): no other TV brand offers a usable l
 - v0.1 done (#5, #6, #7)
 ```
 
-### Draft 2 - Story: Android TV / Google TV source over ADB (only if part 2 passes)
+### Draft 2 - Story: Android TV / Google TV source over ADB (not recommended; only if a hands-on test contradicts the reports above)
 
 **Labels:** `story`, `source` - **Milestone:** Later
 
@@ -200,7 +211,7 @@ Research #12 (`docs/research/other-tvs.md`): no other TV brand offers a usable l
 **so that** my lights follow the TV without extra hardware.
 
 ## Context
-Research #12: ADB capture is local but needs developer mode and gives black frames for DRM apps. Part 2 measured <fill in from part 2: frames per second, which method, HDMI and Live TV behaviour>. HA's `androidtv` integration stores an authorised ADB key in `.storage/androidtv_adbkey`.
+Research #12: ADB capture is local but needs developer mode and gives black frames for DRM apps. Online reports say ADB capture misses HDMI, tuner and DRM video on Android TV panels and reaches about 1 frame per second at best; this story only makes sense if a hands-on test shows otherwise: <fill in: frames per second, method, HDMI and Live TV behaviour>. HA's `androidtv` integration stores an authorised ADB key in `.storage/androidtv_adbkey`.
 
 ## Acceptance criteria
 **Scenario: pick an Android TV**
@@ -236,7 +247,7 @@ Research #12: ADB capture is local but needs developer mode and gives black fram
 - [ ] README and `docs/ARCHITECTURE.md` updated if behaviour visible to users changed
 
 ## Depends on
-- #12 part 2 showing at least 1 frame per second of real picture
+- A hands-on test showing at least 1 frame per second of real video picture
 - v0.1 done
 ```
 
