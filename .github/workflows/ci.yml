@@ -55,6 +55,7 @@ jobs:
           pip install
           pytest-homeassistant-custom-component==${{ matrix.phcc }}
           aiowebostv==${{ matrix.aiowebostv }}
+          hue-entertainment==0.1.2
           $EXTRA
       - run: pytest
 

@@ -40,6 +40,8 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 | `aiowebostv` behaviour (source code, v0.10.0) | `WebOsClient(host, client_key=..., client_session=...)` accepts HA's session. `tv_state.is_on` / `is_screen_on` come from the TV's power-state subscription. Default request timeout is 20 s. `connect()` also subscribes to apps, inputs and volume, so a second connection costs a few seconds. On any websocket drop the client clears `tv_state`, so `is_on` turns false until it reconnects; `connect()` raises at once when the TV is unreachable. |
 | `WebOsFrameSource` on the TV (#2) | With aiowebostv 0.10.0 on an HDMI input: `start()` 0.20-0.50 s (median 0.22 s over 5 runs), `start()` plus first frame 0.56 s, 4.1 captures per second including download and decode to 64x36, a forced websocket drop reconnected in 0.34 s with `is_on()` on throughout, and a capture started right after a drop waited for the reconnect and succeeded after 0.52 s, an unreachable host fails `start()` after 2.0 s (aiowebostv's connect timeout). HA's own TV entity was unaffected. |
 | aiowebostv before 0.7.4 | Cannot connect to this TV's current firmware: the TV never answers the `hello` message, which aiowebostv up to 0.7.3 sends without a payload. Fixed in 0.7.4 ("Fix hello message payload", July 2025), first pinned by HA 2025.7.2. On older HA releases HA's own `webostv` integration has the same problem. |
+| Glowcast's own stream (#4) | `GET /auth/v1` with the `hue-application-key` header returns a `hue-application-id` response header. While Glowcast streams, the area's `active_streamer` is `{rid: <that id>, rtype: "auth_v1"}` in both the raw `entertainment_configuration` and `remote_status()`; after the stop it is inactive with no streamer. So Glowcast can recognise its own (stale) stream. |
+| `HueEntertainmentOutput` on the bridge (#4) | On a test area with a gradient TV strip (16 channels): `start()` 3.5-4.4 s including the DTLS handshake; `check()` stays fine after 11 s without `send()` (`idle_timeout=0`); after a run killed without stopping, the area stays active and the next `start()` stops that stale stream and starts normally; after `stop()` the area is inactive. |
 | Not yet tested | DRM apps (Netflix etc.) and HDCP-protected HDMI sources may return black frames. `executeOneShot` is undocumented and could disappear in a firmware update. |
 
 ## 3. Architecture: ports and adapters
@@ -91,8 +93,8 @@ class FrameSource(Protocol):
 
 class LightOutput(Protocol):
     max_rate_hz: float                             # how often send() may be called
-    async def start(self) -> list[Channel]: ...    # claims the lights (at most 20 channels);
-                                                   # raises OutputBusy / OutputAuthFailed / OutputNotFound / OutputUnavailable
+    async def start(self) -> list[Channel]: ...    # claims the lights (at most 20 channels); raises OutputBusy /
+                                                   # OutputAuthFailed / OutputNotFound / OutputTooManyChannels / OutputUnavailable
     def send(self, colors: list[ChannelColor]) -> None: ...   # non-blocking
     async def check(self) -> None: ...             # raises OutputLost (gone / taken over) or OutputAuthFailed
     async def stop(self) -> None: ...              # releases the lights; safe to call twice
@@ -135,7 +137,7 @@ For each channel:
   Glowcast's own application id comes from `GET /auth/v1` with the `hue-application-key` header (response header `hue-application-id`). **Verify early in #4** that `active_streamer.rid` matches this id.
 - Then `session.start(area_id, stop_others=False)` inside `asyncio.timeout(30)`; on timeout raise `OutputUnavailable`. Never stop someone else's stream.
 - **`stop()` always sends a stop for the chosen area** (`stop_entertainment(area_id)`, shielded from cancellation), even when `start()` was cancelled halfway; otherwise the lights stay in entertainment mode.
-- At most 20 channels per area (the HueStream limit); raise a clear error above that.
+- At most 20 channels per area (the HueStream limit); above that raise `OutputTooManyChannels` with the number of channels.
 - **Area removed** → `OutputNotFound`. **HTTP 401/403 from the bridge** (key revoked), at start or in `check()` → `OutputAuthFailed`. Bridge or `hue` entry not available → `OutputUnavailable`.
 - `check()`: `session.is_streaming` must be true, and every 5 s `session.remote_status()` must still report `active` with Glowcast as streamer; otherwise raise `OutputLost`. One failed status request is tolerated; two in a row count as lost. This also catches a wrong key, which the handshake does not detect.
 - The library opens its own aiohttp session (documented exception to the "use HA's session" rule); `close()` calls `session.aclose()`.
@@ -160,7 +162,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
 - **Minimal glow:** then `out = max(c, g)` per RGB component, with `g = min(0.05, brightness)`: a dim neutral white at 5 %, never brighter than the brightness setting. A constant, not an option.
-- **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
+- **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
 
@@ -233,7 +235,7 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 Failure handling:
 - **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
 - **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area. **Recovery means: Glowcast stops cleanly and the next switch-on works.** A bridge reboot takes longer than the retry, so Glowcast stops; it does not wait for the bridge.
-- **`OutputBusy` / `OutputNotFound` / `OutputUnavailable`:** do not start; switch off; log a clear message.
+- **`OutputBusy` / `OutputNotFound` / `OutputTooManyChannels` / `OutputUnavailable`:** do not start; switch off; log a clear message.
 - **`OutputAuthFailed`:** switch off and start reauth.
 - **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again.
 - **HA stops:** HA does not unload entries on shutdown, so a listener on `EVENT_HOMEASSISTANT_STOP` stops the pipeline and releases the lights.
