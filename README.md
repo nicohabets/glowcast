@@ -25,7 +25,7 @@ Everything stays on your local network.
 
 ## Requirements
 
-- Home Assistant 2025.1 or newer
+- Home Assistant 2025.3 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
 - A Philips Hue Bridge with colour lights, set up in Home Assistant with the **Philips Hue** integration
 - An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
@@ -75,6 +75,9 @@ When the TV turns off, syncing stops and the lights are released. If another app
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
 
 ## Privacy
+
+Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. After removing Glowcast, you can also remove it from the bridge: in the Hue app, look for "glowcast" in the list of connected apps (or in your Hue account) and delete it.
+
 
 The TV's capture call only works on your local network, after the TV pairing you already approved for Home Assistant. Frames are kept in memory and never stored or sent anywhere. Separately: if privacy matters to you, consider turning off **Live Plus** (LG's ACR feature) in your TV settings. That one does send viewing data to LG.
 
