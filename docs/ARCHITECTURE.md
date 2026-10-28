@@ -164,7 +164,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 ```
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
-- **Minimal glow:** then `out = max(c, g)` per RGB component, with `g = min(0.05, brightness)`: a dim neutral white at 5 %, never brighter than the brightness setting. A constant, not an option.
+- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.05, brightness)` and `warm = (1.0, 0.65, 0.35)`: a dim warm white of about 2700K at 5 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.0325, 0.0175); a black picture at 80 % gives (0.05, 0.0325, 0.0175).
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
@@ -342,7 +342,7 @@ Rule for v0.1 to keep this open: **no code outside `sources/` may know about web
 | D8 | Update rate as levels, fixed 25 Hz fade | Simple choice for the user; smooth lights at every level |
 | D9 | Own Hue pairing next to HA's | HA's Hue entry has no `clientkey`, which streaming needs and which cannot be retrieved later |
 | D10 | Refuse when another app streams | Never take lights away from something the user started elsewhere |
-| D11 | Minimal glow on a black picture | The room does not go fully dark between scenes or on black screens |
+| D11 | Minimal glow on a black picture: a dim warm white, about 2700K | The room does not go fully dark between scenes or on black screens, and a warm white feels cosy where a neutral one looks grey |
 | D12 | Linear position mapping in v0.1 | Simple and predictable; stretching TV-strip channels to the screen edges is a later improvement |
 | D13 | Pipeline in `core/` with injected runner and clock | Testable with plain fakes, no Home Assistant test framework needed |
 | D14 | Reference other integrations by unique id | Survives removing and re-adding the TV or bridge in HA |
