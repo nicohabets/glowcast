@@ -213,7 +213,7 @@ The TV and bridge are fixed after setup (remove and re-add to change them). Savi
 
 ### 4.3 Entities
 
-One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). Off after an HA restart. The switch can be used in automations, dashboards and voice.
+One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). The switch is the device's main feature, so it has no name of its own and its id is `switch.glowcast_<tv name>`. Off after an HA restart (no state restore). The switch can be used in automations, dashboards and voice.
 
 Example automation (goes in the README):
 
@@ -242,9 +242,11 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 Failure handling:
 - **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
 - **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area. **Recovery means: Glowcast stops cleanly and the next switch-on works.** A bridge reboot takes longer than the retry, so Glowcast stops; it does not wait for the bridge.
-- **`OutputBusy` / `OutputNotFound` / `OutputTooManyChannels` / `OutputUnavailable`:** do not start; switch off; log a clear message.
+- **`OutputBusy` / `OutputUnavailable`:** do not start; switch off; log a clear message.
+- **`OutputNotFound` / `OutputTooManyChannels`:** settings problems the user must fix: do not start, switch off, log, and raise a repair issue ("the entertainment area no longer exists; choose another one in Glowcast's settings" / "the entertainment area has more than 20 channels; choose or create a smaller area"). Cleared after the next successful start.
 - **`OutputAuthFailed`:** switch off and start reauth.
-- **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again.
+- **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): checked before starting (and after a stop that may be caused by it); do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again. Cleared after the next successful start.
+- **Every stop reason** turns the switch off and is logged once (info for `USER` and `TV_OFF`, warning for the rest). Changing options while syncing restarts only the pipeline; that stop is not logged and the switch stays on.
 - **HA stops:** HA does not unload entries on shutdown, so a listener on `EVENT_HOMEASSISTANT_STOP` stops the pipeline and releases the lights.
 - **HA crashed while streaming:** the next start finds Glowcast's own stale stream, stops it and starts normally (3.4).
 
@@ -266,9 +268,11 @@ options = {     # everything the user can change in the settings screen
 The selectable output (type and its settings) lives entirely in `options`, so a later output type (loose lights, #9) can be chosen in the settings screen without a migration. Adapters are looked up in two small registries:
 
 ```python
-SOURCES = {"webos": WebOsFrameSource}
-OUTPUTS = {"hue_entertainment": HueEntertainmentOutput}
+SOURCES = {"webos": SourceType(create, is_missing, device_identifier)}      # sources/__init__.py
+OUTPUTS = {"hue_entertainment": OutputType(create, is_missing)}              # outputs/__init__.py
 ```
+
+Each adapter module provides these functions itself, so `__init__.py` and `switch.py` never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), and the source's `device_identifier(data)` names the TV's device for `via_device` (4.3).
 
 Config entry `VERSION = 1`, so later changes get a proper migration.
 
