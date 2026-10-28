@@ -36,13 +36,13 @@
     },
     "error": {
       "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
-      "button_not_pressed": "The link button was not pressed in time. Press it, then click Submit again."
+      "button_not_pressed": "The link button was not pressed in time. Press it, then click Submit again.",
+      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then click Submit."
     },
     "abort": {
       "no_tv": "No LG webOS TV found. Set up your TV with the LG webOS Smart TV integration first.",
       "no_bridge": "No Hue bridge that can stream found. Set up a Hue bridge (the square, second generation one or newer) with the Philips Hue integration first.",
       "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
-      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then add Glowcast again.",
       "already_configured": "Glowcast is already set up for this TV.",
       "reauth_successful": "Glowcast is paired with the Hue bridge again."
     }

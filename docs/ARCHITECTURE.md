@@ -184,7 +184,7 @@ The TV cannot go faster than about 4 per second, so there is no level above Maxi
    - First check that the bridge answers (unauthenticated `GET https://<host>/api/config`, `ssl=False`); if not → "could not reach the bridge". (`pair()` raises the same `TimeoutError` for every failure, so reachability must be checked first.)
    - Then a form "press the link button on your bridge, then click Submit", followed by a **progress step** running `HueEntertainmentAPI(host).pair(device_type=...)` (up to 30 s). The returned `username` is stored as `app_key`, `clientkey` as `client_key`. Timeout → "button not pressed, try again". Always call `api.close()` afterwards.
    - `device_type` is `glowcast#<name>`, truncated to the bridge's limit (20 characters before `#`, 19 after).
-3. **Entertainment area:** pick from the bridge's list (close the API client afterwards, here and in the options flow). If there are none, stop with a message explaining how to create one in the Hue app.
+3. **Entertainment area:** pick from the bridge's list (close the API client afterwards, here and in the options flow). If there are none, keep the screen open with a message explaining how to create one in the Hue app; Submit reads the list again, so the user does not pair a second time (which would add another app on the bridge).
 
 Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.

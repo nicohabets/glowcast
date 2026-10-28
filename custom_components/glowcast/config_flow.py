@@ -160,8 +160,12 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_area(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the entertainment area and create the entry."""
-        if user_input is not None:
+        """Pick the entertainment area and create the entry.
+
+        Without areas the form stays open, so the user can create one in the
+        Hue app and continue without pairing again.
+        """
+        if user_input is not None and FIELD_AREA in user_input:
             app_key, client_key = self._keys
             return self.async_create_entry(
                 title=self._tv_name,
@@ -188,7 +192,7 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
         except (OutputAuthFailed, OutputUnavailable):
             return self.async_abort(reason="cannot_connect")
         if not areas:
-            return self.async_abort(reason="no_areas")
+            return self.async_show_form(step_id="area", errors={"base": "no_areas"})
         return self.async_show_form(
             step_id="area",
             data_schema=vol.Schema({vol.Required(FIELD_AREA): _select(areas)}),

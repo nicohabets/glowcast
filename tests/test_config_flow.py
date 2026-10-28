@@ -19,6 +19,8 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.outputs.hue_entertainment import _device_type
 
+pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+
 TV_ID = "tv-unique-id"
 BRIDGE_ID = "bridge-unique-id"
 HOST = "bridge.example"
@@ -281,14 +283,29 @@ async def test_button_not_pressed(hass: HomeAssistant) -> None:
 
 
 async def test_no_areas(hass: HomeAssistant) -> None:
-    """A bridge without entertainment areas stops setup with an explanation."""
+    """Without areas the screen explains what to do; Submit looks again."""
     FakeHueAPI.areas = []
     flow_id = await start_to_link(hass)
     result = await press_and_wait(hass, flow_id)
 
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_areas"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "area"
+    assert result["errors"] == {"base": "no_areas"}
     assert all(api.closed for api in FakeHueAPI.instances)
+
+    FakeHueAPI.areas = [EntertainmentArea(id="area-new", name="New area")]
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert result["step_id"] == "area"
+    assert not result["errors"]
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {"area": "area-new"}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"]["output"]["area_id"] == "area-new"
+    assert result["data"]["bridge"]["app_key"] == "new-app-key"
+    # Paired once: the retry did not create another app on the bridge.
+    assert sum(1 for api in FakeHueAPI.instances if api.device_type) == 1
 
 
 async def test_reauth(hass: HomeAssistant) -> None:

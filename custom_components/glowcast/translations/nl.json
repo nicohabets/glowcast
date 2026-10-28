@@ -36,13 +36,13 @@
     },
     "error": {
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
-      "button_not_pressed": "De koppelknop is niet op tijd ingedrukt. Druk erop en klik daarna opnieuw op Verzenden."
+      "button_not_pressed": "De koppelknop is niet op tijd ingedrukt. Druk erop en klik daarna opnieuw op Verzenden.",
+      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentgebieden. Maak er een aan in de Hue-app (Instellingen, Entertainmentgebieden) en klik daarna op Verzenden."
     },
     "abort": {
       "no_tv": "Geen LG webOS-tv gevonden. Stel je tv eerst in met de integratie LG webOS Smart TV.",
       "no_bridge": "Geen Hue Bridge gevonden die kan streamen. Stel eerst een Hue Bridge (de vierkante, tweede generatie of nieuwer) in met de integratie Philips Hue.",
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
-      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentgebieden. Maak er een aan in de Hue-app (Instellingen, Entertainmentgebieden) en voeg Glowcast daarna opnieuw toe.",
       "already_configured": "Glowcast is al ingesteld voor deze tv.",
       "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge."
     }
