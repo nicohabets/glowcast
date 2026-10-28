@@ -25,7 +25,7 @@ Everything stays on your local network.
 
 ## Requirements
 
-- Home Assistant 2025.3 or newer
+- Home Assistant 2025.7.2 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
 - A Philips Hue Bridge with colour lights, set up in Home Assistant with the **Philips Hue** integration
 - An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
