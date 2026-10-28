@@ -42,7 +42,7 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 | aiowebostv before 0.7.4 | Cannot connect to this TV's current firmware: the TV never answers the `hello` message, which aiowebostv up to 0.7.3 sends without a payload. Fixed in 0.7.4 ("Fix hello message payload", July 2025), first pinned by HA 2025.7.2. On older HA releases HA's own `webostv` integration has the same problem. |
 | Glowcast's own stream (#4) | `GET /auth/v1` with the `hue-application-key` header returns a `hue-application-id` response header. While Glowcast streams, the area's `active_streamer` is `{rid: <that id>, rtype: "auth_v1"}` in both the raw `entertainment_configuration` and `remote_status()`; after the stop it is inactive with no streamer. So Glowcast can recognise its own (stale) stream. |
 | `HueEntertainmentOutput` on the bridge (#4) | On a test area with a gradient TV strip (16 channels): `start()` 3.5-4.4 s including the DTLS handshake; `check()` stays fine after 11 s without `send()` (`idle_timeout=0`); after a run killed without stopping, the area stays active and the next `start()` stops that stale stream and starts normally; after `stop()` the area is inactive. |
-| DRM app returns black frames (#5) | Prime Video in the TV's own app: every capture is completely black (all pixels 0), at about 6.9 captures per second because the JPEG is tiny. The pipeline then shows the minimal glow (a dim neutral white). No workaround in v0.1; telling the user is #14. |
+| DRM app returns black frames (#5) | Prime Video in the TV's own app: every capture is completely black (all pixels 0), at about 6.9 captures per second because the JPEG is tiny. The pipeline then shows the minimal glow (at the time a dim neutral white; a warm white since #38). No workaround in v0.1; telling the user is #14. |
 | HDMI streamer with a DRM app (#5) | Prime Video on a streaming stick over HDMI: captures show the real picture (not black). Letterbox bars in that film were pure black (0-7 of 255) and changed width between scenes. |
 | `Pipeline` on real hardware (#5) | Real source and output, update rate High, brightness 80 %: first colour 4.1-4.3 s after start (mostly the Hue handshake), 23.9 sends and 2.87-2.90 captures per second over 27 s, no failed captures. With the TV off: `TV_OFF` after 10.0 s, no area touched. TV switched off with the remote during a run: `TV_OFF` through `is_on()` before any capture failed, area released. A Hue app sync running: `OUTPUT_BUSY` 0.9 s after start (after the TV came up), no sends, the sync kept running. |
 | Not yet tested | Other DRM apps (Netflix etc.) and HDCP-protected HDMI sources may also return black frames. `executeOneShot` is undocumented and could disappear in a firmware update. |
@@ -164,7 +164,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 ```
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
-- **Minimal glow:** then `out = max(c, g)` per RGB component, with `g = min(0.05, brightness)`: a dim neutral white at 5 %, never brighter than the brightness setting. A constant, not an option.
+- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.78, 0.50)`: a dim warm white of about 2700K on the lights at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.078, 0.050); a black picture at 80 % gives (0.10, 0.078, 0.050). Both were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) too red, especially in a dark room, so the ratio is two steps cooler in sRGB.
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
@@ -342,7 +342,7 @@ Rule for v0.1 to keep this open: **no code outside `sources/` may know about web
 | D8 | Update rate as levels, fixed 25 Hz fade | Simple choice for the user; smooth lights at every level |
 | D9 | Own Hue pairing next to HA's | HA's Hue entry has no `clientkey`, which streaming needs and which cannot be retrieved later |
 | D10 | Refuse when another app streams | Never take lights away from something the user started elsewhere |
-| D11 | Minimal glow on a black picture | The room does not go fully dark between scenes or on black screens |
+| D11 | Minimal glow on a black picture: a dim warm white, about 2700K | The room does not go fully dark between scenes or on black screens, and a warm white feels cosy where a neutral one looks grey |
 | D12 | Linear position mapping in v0.1 | Simple and predictable; stretching TV-strip channels to the screen edges is a later improvement |
 | D13 | Pipeline in `core/` with injected runner and clock | Testable with plain fakes, no Home Assistant test framework needed |
 | D14 | Reference other integrations by unique id | Survives removing and re-adding the TV or bridge in HA |

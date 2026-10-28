@@ -36,7 +36,9 @@ LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
-GLOW = 0.05  # the minimal glow: a dim neutral white
+GLOW = 0.10  # level of the minimal glow
+# Colour of the minimal glow: a warm white of about 2700K (D11).
+GLOW_COLOR = (1.0, 0.78, 0.50)
 
 RGB = tuple[float, float, float]
 Runner = Callable[..., Awaitable[Any]]
@@ -398,7 +400,8 @@ class Pipeline:
         else:
             progress = 1.0
         brightness = self._settings.brightness / 100
-        glow = min(GLOW, brightness)
+        level = min(GLOW, brightness)
+        glow = tuple(level * c for c in GLOW_COLOR)
         colors = []
         for channel_id, (tr, tg, tb) in self._target.items():
             sr, sg, sb = self._fade_from.get(channel_id, (tr, tg, tb))
@@ -408,7 +411,9 @@ class Pipeline:
                 sb + (tb - sb) * progress,
             )
             self._current[channel_id] = rgb
-            r, g, b = (max(c * brightness, glow) for c in rgb)
+            r, g, b = (
+                max(c * brightness, floor) for c, floor in zip(rgb, glow, strict=True)
+            )
             colors.append(ChannelColor(channel_id, (r, g, b)))
         return colors
 
