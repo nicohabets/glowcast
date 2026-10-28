@@ -164,7 +164,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 ```
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
-- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.65, 0.35)`: a dim warm white of about 2700K at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.065, 0.035); a black picture at 80 % gives (0.10, 0.065, 0.035). The level is 10 % rather than the neutral glow's earlier 5 % because the warm ratio gives less light at the same level; chosen on real hardware (#38).
+- **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.72, 0.42)`: a dim warm white of about 2700K on the lights at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.072, 0.042); a black picture at 80 % gives (0.10, 0.072, 0.042). Both were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) slightly too red, so the ratio is a step cooler in sRGB.
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate

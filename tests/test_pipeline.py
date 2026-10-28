@@ -271,7 +271,7 @@ async def test_first_frame_is_shown_straight_away() -> None:
     h = Harness()
     await h.start()
     await h.clock.advance(0.3)
-    assert h.output.rgb_at(0) == approx_rgb((1.0, 0.065, 0.035))
+    assert h.output.rgb_at(0) == approx_rgb((1.0, 0.072, 0.042))
     assert await h.stop() == StopReason.USER
 
 
@@ -289,11 +289,11 @@ async def test_fades_linearly_over_the_measured_capture_interval() -> None:
     for t, rgb in sends:
         p = min(1.0, (t - blue_at) / interval)
         assert rgb[0] == pytest.approx(max(1.0 - p, 0.10), abs=0.01)
-        assert rgb[2] == pytest.approx(max(p, 0.035), abs=0.01)
+        assert rgb[2] == pytest.approx(max(p, 0.042), abs=0.01)
     await h.clock.advance(1.0)
     # The next capture arrives one tick before a fade ends, so the colour
     # trails the target by a fraction and converges.
-    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.10, 0.065, 1.0), abs=0.01)
+    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.10, 0.072, 1.0), abs=0.01)
     steps = [t for t, _ in h.output.sent if blue_at <= t <= blue_at + interval]
     assert all(b - a == pytest.approx(TICK) for a, b in itertools.pairwise(steps))
     assert await h.stop() == StopReason.USER
@@ -354,13 +354,13 @@ async def test_update_rate(rate: UpdateRate, per_second: int) -> None:
 @pytest.mark.parametrize(
     ("brightness", "frame", "expected"),
     [
-        (80, solid(BLACK), (0.10, 0.065, 0.035)),
-        (40, solid(RED), (0.40, 0.065, 0.035)),
-        (40, solid(BLACK), (0.10, 0.065, 0.035)),
-        (8, solid(BLACK), (0.08, 0.052, 0.028)),
-        (3, solid(BLACK), (0.03, 0.0195, 0.0105)),
-        (3, solid(RED), (0.03, 0.0195, 0.0105)),
-        (100, solid(RED), (1.0, 0.065, 0.035)),
+        (80, solid(BLACK), (0.10, 0.072, 0.042)),
+        (40, solid(RED), (0.40, 0.072, 0.042)),
+        (40, solid(BLACK), (0.10, 0.072, 0.042)),
+        (8, solid(BLACK), (0.08, 0.0576, 0.0336)),
+        (3, solid(BLACK), (0.03, 0.0216, 0.0126)),
+        (3, solid(RED), (0.03, 0.0216, 0.0126)),
+        (100, solid(RED), (1.0, 0.072, 0.042)),
     ],
 )
 async def test_brightness_and_minimal_glow(
@@ -529,7 +529,7 @@ async def test_colours_continue_after_a_retry() -> None:
     await h.clock.advance(5.05)  # just after the retry, before the next capture
     after = [c for t, c in h.output.sent if t > 6]
     assert after
-    assert all(colors[0].rgb == approx_rgb((1.0, 0.065, 0.035)) for colors in after)
+    assert all(colors[0].rgb == approx_rgb((1.0, 0.072, 0.042)) for colors in after)
     assert await h.stop() == StopReason.USER
 
 
@@ -541,7 +541,7 @@ async def test_first_fade_after_a_retry_is_not_stretched_over_the_gap() -> None:
     h.source.default = solid(BLUE)  # the first capture after the retry
     await h.clock.advance(5.1)  # retried
     await h.clock.advance(1.3)  # blue fades in over about 1 s, not over the 5 s gap
-    assert h.output.rgb_at(-1) == pytest.approx((0.10, 0.065, 1.0), abs=0.01)
+    assert h.output.rgb_at(-1) == pytest.approx((0.10, 0.072, 1.0), abs=0.01)
     assert await h.stop() == StopReason.USER
 
 
