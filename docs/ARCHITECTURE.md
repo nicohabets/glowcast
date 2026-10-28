@@ -280,6 +280,7 @@ custom_components/glowcast/
   config_flow.py           # setup, options, reauth
   switch.py
   translations/en.json  translations/nl.json
+  brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
   core/                    # NO homeassistant imports
     models.py  ports.py  color_engine.py  pipeline.py
   sources/webos.py
@@ -291,7 +292,9 @@ tests/
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
+scripts/                   # developer tools, not installed (render_brand.py builds brand/)
 docs/ARCHITECTURE.md
+docs/brand/                # icon and logo sources (SVG), colours, font
 hacs.json  README.md  LICENSE  CLAUDE.md
 ```
 
