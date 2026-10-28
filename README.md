@@ -40,17 +40,19 @@ Everything stays on your local network.
 3. Install **Glowcast** and restart Home Assistant.
 4. Go to **Settings → Devices & services → Add integration → Glowcast**.
 
-## Configuration (planned)
+## Configuration
 
 During setup you pick:
 
 1. **TV** - one of your LG webOS TVs in Home Assistant
-2. **Hue Bridge** - and press its link button once. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself.
+2. **Hue Bridge** - and press its link button when asked, then click Submit within 30 seconds. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself. It shows up in the Hue app as an app called "glowcast".
 3. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand
 
-Under the integration's options you can change the area, brightness, intensity (how vivid the colours are) and the update rate: Low (1 per second), Medium (2), High (3) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates.
+Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcast's key (for example because you removed the app in the Hue app), Home Assistant asks you to press the link button again; your settings are kept.
 
-Glowcast creates one **switch** to start and stop syncing. It never starts by itself, so start it from a dashboard or an automation, for example when the TV turns on:
+Under **Configure** you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
+
+*Planned, not built yet:* Glowcast creates one **switch** to start and stop syncing. It never starts by itself, so start it from a dashboard or an automation, for example when the TV turns on:
 
 ```yaml
 triggers:
