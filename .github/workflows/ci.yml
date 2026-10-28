@@ -27,17 +27,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Minimum supported Home Assistant (2025.3.0, architecture D17).
+          # Minimum supported Home Assistant (2025.7.2, architecture D17).
           # aiowebostv: the version HA's webostv integration pins in that release.
+          # pycares<5: HA 2025.7.2 pins aiodns 3.5.0, which breaks on pycares 5
+          # (released after 2025.7.2) but does not exclude it.
           - name: minimum
             python: "3.13"
-            phcc: "0.13.221"
-            aiowebostv: "0.7.3"
+            phcc: "0.13.262"
+            aiowebostv: "0.7.4"
+            extra: "'pycares<5'"
           # Latest tested Home Assistant release (2026.10.4).
           - name: latest
             python: "3.14"
             phcc: "0.13.375"
             aiowebostv: "0.10.0"
+            extra: ""
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -47,6 +51,7 @@ jobs:
           pip install
           pytest-homeassistant-custom-component==${{ matrix.phcc }}
           aiowebostv==${{ matrix.aiowebostv }}
+          ${{ matrix.extra }}
       - run: pytest
 
   hassfest:
