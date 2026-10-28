@@ -34,8 +34,9 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 | Gradient strips | Appear as several channels with their own positions (a TV gradient strip: 4 channels). The test area had 16 channels in total. |
 | Position axes | In the test area the TV strip sits at y = 0.8 and a lamp in the far corner at y = -0.95, so y = +1 is the TV side. x and z behave as documented. |
 | TV strip positions | The four channels of the TV gradient strip in the test area sit at x = -0.4 to 0.4 and z = -0.4 to 0.4, not at the edges (-1/+1). See 3.3. |
-| `hue-entertainment` behaviour (source code, v0.1.2) | Colours go out as **8-bit**: values above 255 are shifted down, values of 255 or less are sent as-is, so mixing scales is wrong (see 3.4). `EntertainmentSession` defaults to `stop_others=True` and `idle_timeout=10` s. The DTLS stream is one-way UDP; a dropped stream is not detected by the library. `HueEntertainmentAPI` opens its own aiohttp session. |
-| `aiowebostv` behaviour (source code, v0.10.0) | `WebOsClient(host, client_key=..., client_session=...)` accepts HA's session. `tv_state.is_on` / `is_screen_on` come from the TV's power-state subscription. Default request timeout is 20 s. `connect()` also subscribes to apps, inputs and volume, so a second connection costs a few seconds. |
+| `hue-entertainment` behaviour (source code, v0.1.2) | Colours go out as **8-bit**: values above 255 are shifted down, values of 255 or less are sent as-is, so mixing scales is wrong (see 3.4). `EntertainmentSession` defaults to `stop_others=True` and `idle_timeout=10` s. The DTLS stream is one-way UDP; a dropped stream is not detected by the library, and the handshake does not verify the bridge's Finished message, so a wrong key also looks connected. `start()` can block up to about 23 s against an unreachable bridge. `pair()` raises `TimeoutError` for every failure, including an unreachable bridge. Area listing has no status; `remote_status()` covers only the session's own area. `MAX_LIGHTS_PER_MESSAGE = 20` is not enforced. `HueEntertainmentAPI` opens its own aiohttp session and logs the bridge host at INFO. |
+| Minimum Home Assistant version | **2025.3.0.** Glowcast needs `aiowebostv` >= 0.7 (`client_session=`, `tv_state.is_on`). HA's `webostv` integration pins 0.4.2 in 2025.1, 0.6.1 in 2025.2 and 0.7.3 from 2025.3 (checked in HA core's `webostv/manifest.json` per release tag). |
+| `aiowebostv` behaviour (source code, v0.10.0) | `WebOsClient(host, client_key=..., client_session=...)` accepts HA's session. `tv_state.is_on` / `is_screen_on` come from the TV's power-state subscription. Default request timeout is 20 s. `connect()` also subscribes to apps, inputs and volume, so a second connection costs a few seconds. On any websocket drop the client clears `tv_state`, so `is_on` turns false until it reconnects; `connect()` raises at once when the TV is unreachable. |
 | Not yet tested | DRM apps (Netflix etc.) and HDCP-protected HDMI sources may return black frames. `executeOneShot` is undocumented and could disappear in a firmware update. |
 
 ## 3. Architecture: ports and adapters
@@ -79,16 +80,18 @@ class ChannelColor:
 
 ```python
 class FrameSource(Protocol):
-    async def start(self) -> None: ...             # connect; may take a few seconds
-    def is_on(self) -> bool: ...                   # the source's own view of "TV is on and showing a picture"
+    async def start(self) -> None: ...             # connect; may take a few seconds; raises SourceUnavailable
+    def is_on(self) -> bool: ...                   # "TV is on and showing a picture"; false only after the
+                                                   # source's own reconnect attempt has failed
     async def capture(self) -> Frame: ...          # raises SourceUnavailable (off/unreachable) within 5 s
     async def close(self) -> None: ...
 
 class LightOutput(Protocol):
     max_rate_hz: float                             # how often send() may be called
-    async def start(self) -> list[Channel]: ...    # claims the lights; raises OutputBusy / OutputAuthFailed / OutputNotFound
+    async def start(self) -> list[Channel]: ...    # claims the lights (at most 20 channels);
+                                                   # raises OutputBusy / OutputAuthFailed / OutputNotFound / OutputUnavailable
     def send(self, colors: list[ChannelColor]) -> None: ...   # non-blocking
-    async def check(self) -> None: ...             # raises OutputLost when the stream is gone or taken over
+    async def check(self) -> None: ...             # raises OutputLost (gone / taken over) or OutputAuthFailed
     async def stop(self) -> None: ...              # releases the lights; safe to call twice
     async def close(self) -> None: ...             # releases network resources; after stop()
 ```
@@ -117,40 +120,44 @@ For each channel:
 - `is_on()` uses the client's own `tv_state.is_on` and `is_screen_on` (power-state subscription), so the pipeline never needs to know which `media_player` belongs to the TV.
 - `capture()`: `tv/executeOneShot`, then download `imageUri` with HA's session and `ssl=False`; wrapped in `asyncio.timeout(5)` (aiowebostv's own timeout is 20 s).
 - Decodes with Pillow in the executor; use `Image.draft()` for a fast JPEG downscale to about 64x36.
-- If the websocket drops while the TV is on, reconnect once before failures count.
+- **The source owns reconnecting.** aiowebostv clears its state on every websocket drop, so a raw `is_on` would read "off" during a hiccup. The source reconnects once; `is_on()` reports off only when that reconnect fails or the TV's power state says off.
 
 **`HueEntertainmentOutput`** (`outputs/hue_entertainment.py`)
 - Library `hue-entertainment==0.1.2` (Apache-2.0, pure-Python DTLS): `EntertainmentSession(host, app_key, client_key, idle_timeout=0)`.
 - **Bridge host:** the `hue` config entry is resolved **by its unique id** (the bridge id) at runtime; HA keeps its host current.
 - **Colours:** convert to **0-255** before building `LightColorCommand`s. Never send 16-bit values: the library maps values above 255 down but sends values of 255 or less as-is, so 16-bit dark values would flash. (Upstream bug, #22.)
-- **Before starting:** list all entertainment areas. If **any** area on the bridge is active (a bridge allows one stream in total):
-  - streamed by Glowcast's own application id (a stale stream, for example after an HA crash) → stop it and continue;
+- **Before starting:** one raw `GET /clip/v2/resource/entertainment_configuration` (HA's session, `ssl=False`, `hue-application-key` header) returns every area with its `status` and `active_streamer` (the library's area listing has no status). If **any** area is active (a bridge allows one stream in total):
+  - streamed by Glowcast's own application id (a stale stream, for example after an HA crash) → stop it with `HueEntertainmentAPI.stop_entertainment(that_area_id)` and continue (`session.stop()` only stops what that session started);
   - otherwise → raise `OutputBusy` and start nothing.
-  Glowcast's own application id comes from `GET /auth/v1` with the `hue-application-key` header (response header `hue-application-id`); the library has no call for it. **Verify early in #4** that `active_streamer.rid` from the area's status matches this id.
-- Then `session.start(area_id, stop_others=False)`. Never stop someone else's stream.
-- **Area removed** → `OutputNotFound`. **HTTP 401/403 from the bridge** (key revoked) → `OutputAuthFailed`.
-- `check()`: `session.is_streaming` must be true, and every 5 s `session.remote_status()` must still report `active` with Glowcast as streamer; otherwise raise `OutputLost`.
+  Glowcast's own application id comes from `GET /auth/v1` with the `hue-application-key` header (response header `hue-application-id`). **Verify early in #4** that `active_streamer.rid` matches this id.
+- Then `session.start(area_id, stop_others=False)` inside `asyncio.timeout(30)`; on timeout raise `OutputUnavailable`. Never stop someone else's stream.
+- **`stop()` always sends a stop for the chosen area** (`stop_entertainment(area_id)`, shielded from cancellation), even when `start()` was cancelled halfway; otherwise the lights stay in entertainment mode.
+- At most 20 channels per area (the HueStream limit); raise a clear error above that.
+- **Area removed** → `OutputNotFound`. **HTTP 401/403 from the bridge** (key revoked), at start or in `check()` → `OutputAuthFailed`. Bridge or `hue` entry not available → `OutputUnavailable`.
+- `check()`: `session.is_streaming` must be true, and every 5 s `session.remote_status()` must still report `active` with Glowcast as streamer; otherwise raise `OutputLost`. One failed status request is tolerated; two in a row count as lost. This also catches a wrong key, which the handshake does not detect.
 - The library opens its own aiohttp session (documented exception to the "use HA's session" rule); `close()` calls `session.aclose()`.
 - `max_rate_hz = 25`.
 
 ### 3.5 Pipeline (`core/pipeline.py`)
 
-One asyncio task per config entry, started and stopped by the switch. Not a `DataUpdateCoordinator`. The blocking-call runner and the clock are injected.
+One supervisor task per config entry, started and stopped by the switch. Not a `DataUpdateCoordinator`. The blocking-call runner and the clock are injected, and the pipeline reports why it stopped through an injected callback (`on_stopped(reason)`), so the Home Assistant side can turn the switch off or start reauth.
 
 ```
-start:   source.start()
-         wait up to 10 s (startup grace) until source.is_on() and one capture succeeds
-         → if not: stop, report "TV off"; the lights were never touched
-         channels = output.start()
-loop:    every 1/update_rate s: frame = source.capture() → target = engine.compute(...)
-         every 1/25 s: fade current → target over the measured capture interval,
-                       apply brightness, apply the minimal glow, output.send()
-         every 5 s:    output.check()
-stop:    output.stop() → output.close() → source.close()   (on every exit path)
+start:    try source.start() and one good capture, retrying, for up to 10 s (startup grace)
+          → if not: stop with reason TV_OFF; the lights were never touched
+          channels = output.start()
+run:      two concurrent sub-tasks under the supervisor:
+            capture loop: every 1/update_rate s: frame = source.capture() → target = engine.compute(...)
+            send loop:    every 1/25 s: fade current → target over the measured capture interval,
+                          apply brightness, apply the minimal glow, output.send();
+                          every 5 s: output.check()
+          the send loop keeps its 1/25 s rhythm even while a capture hangs (up to its 5 s timeout)
+stop:     cancel both sub-tasks → output.stop() → output.close() → source.close()   (on every exit path)
 ```
 
-- **Minimal glow:** a channel never goes below a dim neutral white at 5 % absolute brightness, capped by the brightness setting (with brightness 3 %, the glow is 3 %). A constant, not an option.
-- **Brightness:** scales all colours; 100 % = as computed.
+- **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
+- **Minimal glow:** then `out = max(c, g)` per RGB component, with `g = min(0.05, brightness)`: a dim neutral white at 5 %, never brighter than the brightness setting. A constant, not an option.
+- **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
 
@@ -168,13 +175,17 @@ The TV cannot go faster than about 3.4 per second, so there is no level above Ma
 ### 4.1 Config flow (first setup)
 
 1. **TV:** pick a loaded `webostv` config entry.
-2. **Hue bridge:** pick a loaded `hue` config entry with `api_version == 2` (older bridges cannot stream). Then a **progress step** "press the link button": pair with `HueEntertainmentAPI(host).pair(device_type=...)` (blocks up to 30 s; the returned `username` is stored as `app_key`, `clientkey` as `client_key`). `device_type` is `glowcast#<name>`, truncated to the bridge's limit (20 characters before `#`, 19 after). Timeout → "button not pressed, try again"; any other error → "could not reach the bridge".
-3. **Entertainment area:** pick from the bridge's list. If there are none, stop with a message explaining how to create one in the Hue app.
+2. **Hue bridge:** pick a loaded `hue` config entry with `api_version == 2` (older bridges cannot stream).
+   - First check that the bridge answers (unauthenticated `GET https://<host>/api/config`, `ssl=False`); if not → "could not reach the bridge". (`pair()` raises the same `TimeoutError` for every failure, so reachability must be checked first.)
+   - Then a form "press the link button on your bridge, then click Submit", followed by a **progress step** running `HueEntertainmentAPI(host).pair(device_type=...)` (up to 30 s). The returned `username` is stored as `app_key`, `clientkey` as `client_key`. Timeout → "button not pressed, try again". Always call `api.close()` afterwards.
+   - `device_type` is `glowcast#<name>`, truncated to the bridge's limit (20 characters before `#`, 19 after).
+3. **Entertainment area:** pick from the bridge's list (close the API client afterwards, here and in the options flow). If there are none, stop with a message explaining how to create one in the Hue app.
 
 Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
-- **Reauth:** when the output raises `OutputAuthFailed`, call `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept.
+- **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept.
+- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Redact it in diagnostics. The README explains how to remove it in the Hue app after uninstalling Glowcast.
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
 ### 4.2 Options (the settings screen)
@@ -186,11 +197,11 @@ Rules:
 | Intensity | 0-200 % | 100 % |
 | Update rate | Low / Medium / High / Maximum | High |
 
-The TV and bridge are fixed after setup (remove and re-add to change them). Saving options while syncing **restarts only the pipeline** through an update listener; the config entry is not reloaded, so the switch stays on.
+The TV and bridge are fixed after setup (remove and re-add to change them). Saving options while syncing **restarts only the pipeline** through an update listener; the config entry is not reloaded, so the switch stays on. In HA 2025.x and later an `OptionsFlow` must not assign `self.config_entry` itself.
 
 ### 4.3 Entities
 
-One device "Glowcast <TV name>" with one entity: **switch** (start/stop syncing). Off after an HA restart. The switch can be used in automations, dashboards and voice.
+One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). Off after an HA restart. The switch can be used in automations, dashboards and voice.
 
 Example automation (goes in the README):
 
@@ -212,36 +223,35 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 
 | What | Where | Story |
 |---|---|---|
-| Config flow, options flow, reauth, `async_setup_entry` / `async_unload_entry`, `entry.runtime_data`, update listener | `config_flow.py`, `__init__.py` | #6 |
-| Switch entity; starting the pipeline with `entry.async_create_background_task`; stopping it on switch off, unload and `EVENT_HOMEASSISTANT_STOP` | `switch.py`, `__init__.py` | #7 |
-| Pipeline behaviour (start order, fading, glow, failure handling) | `core/pipeline.py` | #5 |
+| Config flow, options flow and reauth flow (the screens), `async_setup_entry` / `async_unload_entry`, `entry.runtime_data` | `config_flow.py`, `__init__.py` | #6 |
+| Switch entity; running the pipeline with `entry.async_create_background_task`; stopping it on switch off, unload and `EVENT_HOMEASSISTANT_STOP`; the update listener that restarts the pipeline when options change; reacting to stop reasons (switch off, start reauth, repair issue) | `switch.py`, `__init__.py` | #7 |
+| Pipeline behaviour (start order, sub-tasks, fading, glow, failure handling, stop reasons) | `core/pipeline.py` | #5 |
 
 Failure handling:
-- **TV off:** `source.is_on()` false, or 5 failed captures in a row (after the startup grace): stop, release the lights, switch off.
-- **TV connection drops while the TV is on:** reconnect once; only then count failures.
-- **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area.
-- **`OutputBusy` / `OutputNotFound`:** do not start; switch off; log a clear message.
+- **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
+- **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area. **Recovery means: Glowcast stops cleanly and the next switch-on works.** A bridge reboot takes longer than the retry, so Glowcast stops; it does not wait for the bridge.
+- **`OutputBusy` / `OutputNotFound` / `OutputUnavailable`:** do not start; switch off; log a clear message.
 - **`OutputAuthFailed`:** switch off and start reauth.
+- **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again.
 - **HA stops:** HA does not unload entries on shutdown, so a listener on `EVENT_HOMEASSISTANT_STOP` stops the pipeline and releases the lights.
-- **HA crashed while streaming:** the next start finds Glowcast's own stale stream and restarts it (3.4).
+- **HA crashed while streaming:** the next start finds Glowcast's own stale stream, stops it and starts normally (3.4).
 
 ## 5. Configuration data model - built for growth
 
 Config entry `data` and `options` store source and output as **typed blocks**, even though v0.1 has only one type of each. Other integrations' entries are referenced by **unique id**, never by entry id, so removing and re-adding the TV or bridge in HA does not break Glowcast.
 
 ```python
-data = {
+data = {        # fixed at setup: what Glowcast is connected to, and secrets
     "source": {"type": "webos", "unique_id": "<webostv entry unique id>"},
-    "output": {"type": "hue_entertainment", "bridge_unique_id": "<hue entry unique id>",
-               "app_key": "...", "client_key": "..."},
+    "bridge": {"unique_id": "<hue entry unique id>", "app_key": "...", "client_key": "..."},
 }
-options = {
-    "output": {"area_id": "..."},
+options = {     # everything the user can change in the settings screen
+    "output": {"type": "hue_entertainment", "area_id": "..."},
     "brightness": 80, "intensity": 100, "update_rate": "high",
 }
 ```
 
-Adapters are looked up in two small registries:
+The selectable output (type and its settings) lives entirely in `options`, so a later output type (loose lights, #9) can be chosen in the settings screen without a migration. Adapters are looked up in two small registries:
 
 ```python
 SOURCES = {"webos": WebOsFrameSource}
@@ -273,16 +283,16 @@ docs/ARCHITECTURE.md
 hacs.json  README.md  LICENSE  CLAUDE.md
 ```
 
-`manifest.json`: `domain`, `name`, `version`, `codeowners`, `documentation`, `issue_tracker`, `config_flow: true`, `iot_class: "local_push"`, `dependencies: ["webostv", "hue"]`, `requirements: ["hue-entertainment==0.1.2"]`. Pillow ships with Home Assistant: do not list or pin it. Do not add `aiowebostv` to `loggers` (its debug logs print raw websocket traffic, including image URLs).
+`manifest.json` (keys ordered `domain`, `name`, then alphabetically): `codeowners`, `config_flow: true`, `dependencies: ["webostv", "hue"]`, `documentation`, `integration_type: "service"`, `iot_class: "local_polling"`, `issue_tracker`, `requirements: ["hue-entertainment==0.1.2"]`, `version`. Pillow ships with Home Assistant: do not list or pin it. Do not add `aiowebostv` to `loggers` (its debug logs print raw websocket traffic, including image URLs).
 
 Translations live in `translations/en.json` and `translations/nl.json` (custom integrations do not use `strings.json` at runtime). Dutch shows the levels as Laag / Middel / Hoog / Maximaal.
 
 ## 7. Testing
 
 - **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget.
-- **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace, fading over the measured interval, minimal glow, `OutputLost` / `OutputBusy` / `OutputAuthFailed`, and that `stop()` and `close()` run on every exit path.
+- **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula, every stop reason, and that `stop()` and `close()` run on every exit path.
 - **Config flow (minimal in v0.1):** happy path, already configured, reauth. Full coverage is a v0.2 issue.
-- **Soak test:** two hours of real viewing; no crash, no memory growth, recovers from a TV standby and a bridge restart.
+- **Soak test:** two hours of real viewing; no crash, no memory growth; after a TV standby, a bridge restart and an HA restart Glowcast has stopped cleanly and the next switch-on works.
 - **Manual end-to-end:** an LG webOS TV, a Hue bridge and an entertainment area with a gradient lightstrip.
 
 ## 8. Room to grow (not built in v0.1)
@@ -328,3 +338,6 @@ Rule for v0.1 to keep this open: **no code outside `sources/` may know about web
 | D12 | Linear position mapping in v0.1 | Simple and predictable; stretching TV-strip channels to the screen edges is a later improvement |
 | D13 | Pipeline in `core/` with injected runner and clock | Testable with plain fakes, no Home Assistant test framework needed |
 | D14 | Reference other integrations by unique id | Survives removing and re-adding the TV or bridge in HA |
+| D15 | Recovery = stop cleanly, next start works | Predictable; no long waits or fights with the bridge |
+| D16 | Selectable output lives in `options` | Output types can be switched in the settings screen without migrations |
+| D17 | Minimum Home Assistant 2025.3.0 | First release with `aiowebostv` >= 0.7 |

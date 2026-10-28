@@ -7,7 +7,8 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 ## Scope rules
 
 - Build **v0.1 only**: webOS source, Hue entertainment-area output, one switch, and the options screen (area, brightness, intensity, update rate).
-- Only work on issues in the **Todo** column of the project board (see "How we work"). Keep the ports (`FrameSource`, `LightOutput`) so it can be added without rewrites, but do not build placeholders or stub adapters for later features.
+- Only work on issues in the **Todo** column of the project board (see "How we work"). Everything in milestones **v0.2** and **Later** stays out.
+- Keep the ports (`FrameSource`, `LightOutput`) so later features can be added without rewrites, but do not build placeholders or stub adapters for them.
 - Prefer the simplest thing that works. No speculative options, no config knobs that are not in the architecture.
 
 ## Code rules
@@ -17,7 +18,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 - All I/O is async. Use HA's session (`async_get_clientsession`) for your own HTTP calls and pass it to `aiowebostv`. `hue-entertainment` opens its own session; close it in `LightOutput.close()`.
 - `LightOutput.stop()` and `close()` must run on every exit path (switch off, TV off, error, unload, HA stop) and be safe to call twice. Send colours to Hue as 0-255 values, never 16-bit (architecture 3.4).
 - No code outside `outputs/` may know about Hue, and no code outside `sources/` may know about webOS (architecture section 8).
-- Store source and output config as typed blocks (`{"type": ...}`), as in architecture section 5.
+- Store config as in architecture section 5: what Glowcast is connected to and its secrets in `data`, everything the user can change (including the output type) in `options`, with typed blocks (`{"type": ...}`).
 - Reference the `webostv` and `hue` entries by unique id and read the TV's `host` and `client_secret` at runtime. Do not copy them into Glowcast's config entry.
 - Store the Hue `app_key` and `client_key` from Glowcast's own pairing in Glowcast's config entry data.
 - Do not log secrets, image URLs with tokens, or frame contents.
@@ -38,8 +39,9 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 
 ## Test environment
 
-- Hardware: a 2023 LG OLED (G3) on webOS, a Hue Pro bridge, and a Hue entertainment area with a gradient lightstrip. Hardware details that are specific to the owner's home (names, addresses, credentials) are given in the session handover, never in this repository.
-- Measured: about 3.4 captures per second, 960x540 JPEG (see architecture section 2).
+- Hardware: an LG OLED65G36LA (2023, G3) on webOS, a Hue Pro bridge, and a Hue entertainment area with a gradient lightstrip. Hardware details that are specific to the owner's home (names, addresses, credentials) are given in the session handover, never in this repository.
+- Measured: about 3.4 to 3.5 captures per second, 960x540 JPEG (see architecture section 2).
+- Minimum Home Assistant version: 2025.3.0 (architecture section 2).
 
 ## How we work
 
