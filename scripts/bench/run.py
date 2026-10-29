@@ -83,6 +83,7 @@ PLAN = {
         "no picture through a locked screen: skipped (unattended)",
         "screen mode: brightness, intensity and update rate changed while\n"
         "    syncing, without a new handshake",
+        "screen mode: red and blue pure at brightness 20 % and 80 %",
         "screen mode: brightness changed while off is stored; Glowcast stays off",
     ],
 }
@@ -152,9 +153,10 @@ def main() -> None:
         return
     ensure_environment()
     try:
-        cfg, path = load_config(args.config)
-    except SystemExit as err:
-        print(err, file=sys.stderr)
+        cfg, _path = load_config(args.config)
+        keys, token = check_config(cfg, modes)
+    except (SystemExit, ConfigError) as err:
+        print(f"Configuration error: {err}", file=sys.stderr)
         sys.exit(rp.EXIT_USAGE)
     HOME.mkdir(parents=True, exist_ok=True)
     with open(LOCK, "w") as lock:
@@ -163,7 +165,64 @@ def main() -> None:
             sys.exit(rp.EXIT_LOCKED)
         if args.command == "snapshot":
             sys.exit(asyncio.run(snapshot(cfg)))
-        sys.exit(asyncio.run(run(cfg, args.suite, modes, args.keep_images)))
+        sys.exit(
+            asyncio.run(run(cfg, keys, token, args.suite, modes, args.keep_images))
+        )
+
+
+class ConfigError(Exception):
+    """The configuration is incomplete or a file it names cannot be read."""
+
+
+def check_config(cfg: dict[str, Any], modes: list[str]) -> tuple[dict[str, str], str]:
+    """Check the configuration; return the bench's Hue keys and the HA token."""
+    if not isinstance(cfg, dict):
+        raise ConfigError("the file is not a mapping")
+    for key in ("bridge_keys", "bench_area_id", "home_assistant", "lights", "helper"):
+        if not cfg.get(key):
+            raise ConfigError(f"`{key}` is missing")
+    ha = cfg["home_assistant"]
+    for key in ("url", "token_file"):
+        if not ha.get(key):
+            raise ConfigError(f"`home_assistant.{key}` is missing")
+    lights = cfg["lights"]
+    if not isinstance(lights, dict):
+        raise ConfigError("`lights` must map a name to an entity_id and a region")
+    for name, light in lights.items():
+        if not isinstance(light, dict) or not str(
+            light.get("entity_id", "")
+        ).startswith("light."):
+            raise ConfigError(f"`lights.{name}.entity_id` must be a light")
+        if not _box(light.get("region")):
+            raise ConfigError(f"`lights.{name}.region` must be [x, y, w, h]")
+    if "screen" in modes:
+        if not _box(cfg.get("monitor")):
+            raise ConfigError("`monitor` must be [left, top, width, height]")
+        if cfg.get("monitor_region") is not None and not _box(cfg["monitor_region"]):
+            raise ConfigError("`monitor_region` must be [x, y, w, h]")
+    helper = cfg["helper"]
+    if not str(helper.get("pairing_code", "")).isdigit() or not helper.get("port"):
+        raise ConfigError("`helper` needs a `port` and a 6-digit `pairing_code`")
+    try:
+        keys = json.loads(Path(cfg["bridge_keys"]).expanduser().read_text())
+        token = _read_token(ha["token_file"])
+    except (OSError, ValueError) as err:
+        raise ConfigError(f"cannot read a key file ({type(err).__name__})") from None
+    if not isinstance(keys, dict) or not all(
+        keys.get(k) for k in ("host", "app_key", "client_key")
+    ):
+        raise ConfigError("the bridge key file needs host, app_key and client_key")
+    if not token:
+        raise ConfigError("the token file is empty")
+    return keys, token
+
+
+def _box(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == 4
+        and all(isinstance(v, int) for v in value)
+    )
 
 
 def take_lock(lock: Any, wait: float) -> bool:
@@ -226,7 +285,12 @@ async def snapshot(cfg: dict[str, Any]) -> int:
 
 
 async def run(
-    cfg: dict[str, Any], suite_name: str, modes: list[str], keep_images: bool
+    cfg: dict[str, Any],
+    keys: dict[str, str],
+    token: str,
+    suite_name: str,
+    modes: list[str],
+    keep_images: bool,
 ) -> int:
     import aiohttp
     import clients
@@ -243,9 +307,8 @@ async def run(
     report = rp.Report(
         suite=suite_name, modes=modes, started=f"{started:%Y-%m-%d %H:%M} UTC"
     )
-    bench = suite.Bench(cfg, suite_name, report, images)
+    bench = suite.Bench(cfg, suite_name, report, images, keys)
     ha_cfg = cfg["home_assistant"]
-    token = await asyncio.to_thread(_read_token, ha_cfg["token_file"])
     loop = asyncio.get_running_loop()
     aborted = False
 
@@ -303,20 +366,30 @@ async def run(
         except suite.Skipped as err:
             outcome = (str(err), err.exit_code)
         except (suite.BenchError, clients.NotAllowed) as err:
-            report.add(
-                rp.Step("the bench could not go on", "-", rp.FAIL, note=str(err))
-            )
-            outcome = ("error: " + str(err), rp.EXIT_ERROR)
-        except Exception as err:  # noqa: BLE001 - always clean up and report
+            # The detail goes to the terminal; the report keeps fixed texts.
+            print(f"The bench could not go on: {err}", file=sys.stderr)
             report.add(
                 rp.Step(
-                    "the bench could not go on", "-", rp.FAIL, note=type(err).__name__
+                    "the bench could not go on",
+                    "-",
+                    rp.FAIL,
+                    note="see the run's output",
                 )
             )
-            outcome = (f"error: {type(err).__name__}", rp.EXIT_ERROR)
+            outcome = ("error: the bench could not go on", rp.EXIT_ERROR)
+        except Exception:  # noqa: BLE001 - always clean up and report
             import traceback
 
             traceback.print_exc()
+            report.add(
+                rp.Step(
+                    "the bench could not go on",
+                    "-",
+                    rp.FAIL,
+                    note="an unexpected error; see the run's output",
+                )
+            )
+            outcome = ("error: the bench could not go on", rp.EXIT_ERROR)
         finally:
             print("Cleaning up...", flush=True)
             await cleanup(bench, cfg, local_ha)
@@ -342,66 +415,49 @@ def _read_token(path: str) -> str:
 
 
 async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
-    """Every exit path: Glowcast off, area released, lights restored and checked,
-    the TV's Glowcast back on if the run switched it off, everything stopped."""
+    """Every exit path, in this order: the bench Glowcast off and its area
+    inactive (stopping the local Home Assistant if need be), the lights set
+    back and checked with the camera, the TV's Glowcast back on if the run
+    switched it off, then everything the run started stopped."""
     report = bench.report
-    with contextlib.suppress(Exception):
-        if bench.ha is not None:
+    ha_stopped = False
+    if bench.ha_start is not None and not bench.ha_start.done():
+        # Ctrl+C during the start: let it finish, then stop it below.
+        with contextlib.suppress(BaseException):
+            await asyncio.shield(bench.ha_start)
+    if bench.ha is not None:
+        try:
             await bench.ha.call(
                 "switch", "turn_off", {"entity_id": bench.ha.entities["switch"]}
             )
-    with contextlib.suppress(Exception):
-        await bench.bridge.wait_status(cfg["bench_area_id"], "inactive", 15)
+        except Exception as err:  # noqa: BLE001
+            print(f"Switching the bench Glowcast off failed: {err!r}", file=sys.stderr)
+    if bench.ha_start is not None:
+        inactive = await _area_inactive(bench, cfg)
+        if not inactive:
+            # Stopping Home Assistant stops Glowcast and its stream.
+            await asyncio.to_thread(local_ha.stop)
+            ha_stopped = True
+            inactive = await _area_inactive(bench, cfg)
+        report.add(
+            rp.Step(
+                "end: bench Glowcast off, area inactive",
+                "-",
+                rp.PASS if inactive else rp.FAIL,
+                note="" if inactive else "the bench area kept streaming",
+            )
+        )
+        if not inactive:
+            print("The bench area is still streaming!", file=sys.stderr)
     if bench.screen is not None:
         with contextlib.suppress(Exception):
             await bench.screen.stop()
     with contextlib.suppress(Exception):
         await bench.stop_helper()
     if bench.pre_states:
-        try:
-            start = bench.win_now()
-            await bench.restore_lights()
-            if bench.calibrated and bench.camera is not None and bench.camera.running:
-                back = await bench.wait_restored(start)
-                ok = all(v is not None for v in back.values())
-                numbers = {f"{k} back after s": v for k, v in back.items()}
-                with contextlib.suppress(Exception):
-                    numbers.update(await bench.bridge_restore_numbers())
-                report.add(
-                    rp.Step(
-                        "end: lights set back explicitly and seen back (camera)",
-                        "-",
-                        rp.PASS if ok else rp.FAIL,
-                        numbers=numbers,
-                    )
-                )
-                await bench.save_image("after-run")
-            else:
-                report.add(
-                    rp.Step(
-                        "end: lights set back explicitly",
-                        "-",
-                        rp.PASS,
-                        note="not checked with the camera (no calibration yet)",
-                    )
-                )
-        except Exception as err:  # noqa: BLE001
-            report.add(
-                rp.Step(
-                    "end: lights set back explicitly",
-                    "-",
-                    rp.FAIL,
-                    note=type(err).__name__,
-                )
-            )
+        await _restore(bench)
     if bench.tv_off_at is not None:
-        with contextlib.suppress(Exception):
-            await bench.owner.call(
-                "switch", "turn_on", {"entity_id": cfg["home_assistant"]["tv_switch"]}
-            )
-            report.facts["TV stream interrupted for s"] = round(
-                time.time() - bench.tv_off_at, 1
-            )
+        await _tv_back_on(bench, cfg)
     if bench.camera is not None:
         with contextlib.suppress(Exception):
             await bench.camera.stop()
@@ -410,8 +466,93 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
             await bench.ha.close()
     with contextlib.suppress(Exception):
         await bench.bridge.close()
+    if not ha_stopped and bench.ha_start is not None:
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(local_ha.stop)
+
+
+async def _area_inactive(bench: Any, cfg: dict[str, Any]) -> bool:
+    try:
+        return (
+            await bench.bridge.wait_status(cfg["bench_area_id"], "inactive", 15)
+            is not None
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _restore(bench: Any) -> None:
+    """Set the lights back explicitly (#142) and check them with the camera."""
+    report = bench.report
+    name = "end: lights set back explicitly and seen back (camera)"
+    try:
+        start = bench.win_now()
+        await bench.restore_lights()
+    except Exception as err:  # noqa: BLE001
+        print(f"Setting the lights back failed: {err!r}", file=sys.stderr)
+        report.add(rp.Step(name, "-", rp.FAIL, note="setting the lights back failed"))
+        return
+    if not bench.calibrated:
+        report.add(
+            rp.Step(
+                name,
+                "-",
+                rp.SKIP,
+                note="set back, not checked: the camera was not calibrated yet",
+            )
+        )
+        return
+    if bench.camera is None or not bench.camera.running:
+        print("The camera stopped before the end of the run.", file=sys.stderr)
+        report.add(
+            rp.Step(
+                name,
+                "-",
+                rp.FAIL,
+                note="set back, not checked: the camera stopped during the run",
+            )
+        )
+        return
+    back = await bench.wait_restored(start)
+    ok = all(v is not None for v in back.values())
+    numbers: dict[str, Any] = {
+        f"{bench.label[k]} back after s": v for k, v in back.items()
+    }
     with contextlib.suppress(Exception):
-        await asyncio.to_thread(local_ha.stop)
+        numbers.update(await bench.bridge_restore_numbers())
+    report.add(rp.Step(name, "-", rp.PASS if ok else rp.FAIL, numbers=numbers))
+    await bench.save_image("after-run")
+
+
+async def _tv_back_on(bench: Any, cfg: dict[str, Any]) -> None:
+    """Switch the TV's Glowcast back on and read it back."""
+    switch = cfg["home_assistant"]["tv_switch"]
+    state = None
+    try:
+        await bench.owner.call("switch", "turn_on", {"entity_id": switch})
+        for _ in range(20):
+            state = (await bench.owner.state(switch))["state"]
+            if state == "on":
+                break
+            await asyncio.sleep(0.5)
+    except Exception as err:  # noqa: BLE001
+        print(f"Switching the TV's Glowcast back on failed: {err!r}", file=sys.stderr)
+    ok = state == "on"
+    bench.report.facts["TV stream interrupted for s"] = round(
+        time.time() - bench.tv_off_at, 1
+    )
+    bench.report.add(
+        rp.Step(
+            "end: the TV's Glowcast back on",
+            "-",
+            rp.PASS if ok else rp.FAIL,
+            note="" if ok else "switch it on by hand",
+        )
+    )
+    if not ok:
+        print(
+            "The TV's Glowcast is NOT back on: switch it on by hand.", file=sys.stderr
+        )
 
 
 if __name__ == "__main__":

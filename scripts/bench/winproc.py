@@ -138,6 +138,9 @@ class Worker:
             cwd=REPO,
             env=env,
             limit=1 << 20,
+            # Not in the terminal's process group: Ctrl+C reaches the run,
+            # which stops the workers itself, in order.
+            start_new_session=True,
         )
         self._reader = asyncio.create_task(self._read())
         self._stderr = asyncio.create_task(self._read_stderr())

@@ -24,10 +24,13 @@ home_assistant:
 # [x, y, w, h] (in camera pixels, from `run.py snapshot`) that it lights.
 # Measure what a light lights, or include a spot's rim (spike #133).
 # `side` (left or right) only when the area's channels sit at different x.
+# `pure: true` on a light whose region shows clean colours (a lit wall, not a
+# clipped spot): the extended suite checks red and blue purity there.
 lights:
   wall:
     entity_id: light.desk_uplight
     region: [434, 2, 32, 34]
+    pure: true  # judge colour purity here (extended suite)
   spot:
     entity_id: light.desk_spot
     region: [462, 142, 48, 34]

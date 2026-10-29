@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,7 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
             {"entries": [hue, glowcast]},
             minor_version=5,
         )
+        _private(inst.home)
         inst.run.mkdir(parents=True, exist_ok=True)
         demo._spawn(
             inst,
@@ -131,6 +133,15 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
         stop()
         raise
     return inst, token
+
+
+def _private(home: Path) -> None:
+    """Only this user may read the instance: its storage holds the bench's keys."""
+    os.chmod(home, 0o700)
+    for folder, _dirs, files in os.walk(home / "config" / ".storage"):
+        os.chmod(folder, 0o700)
+        for name in files:
+            os.chmod(Path(folder) / name, 0o600)
 
 
 def stop() -> None:

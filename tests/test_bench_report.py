@@ -215,3 +215,15 @@ def test_skips_and_their_exit_codes_differ() -> None:
         rp.EXIT_ERROR,
     ]
     assert len(set(codes)) == len(codes)
+
+
+def test_purity_against_the_cool_reference() -> None:
+    assert rp.impurity(WALL_SEEN["red"], WALL, "red") < 0.05
+    # The camera sees some green in a wall lit blue: still under the limit.
+    assert rp.impurity(WALL_SEEN["blue"], WALL, "blue") < TH.max_impurity
+    # Warm white mixed into blue (the lilac of #43) raises the red share.
+    lilac = tuple(
+        b + 0.3 * (w - d)
+        for b, w, d in zip(WALL_SEEN["blue"], WALL.white, WALL.dark, strict=True)
+    )
+    assert rp.impurity(lilac, WALL, "blue") > TH.max_impurity

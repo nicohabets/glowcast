@@ -60,6 +60,10 @@ class Thresholds:
     # A change counts for a delay only when the pictures differ this much.
     min_change: float = 0.2
     max_delay_ms: float = 1500.0
+    # Purity: the largest other channel as a share of the colour's own
+    # (against the cool reference); 20 % may not be less pure than 80 %.
+    max_impurity: float = 0.35
+    impurity_margin: float = 0.1
     stream_within_s: float = 15.0
     restore_within_s: float = 6.0
 
@@ -135,6 +139,15 @@ def is_glow(
         return False
     n = cal.cool_normalised(mean)
     return n[0] > n[2]
+
+
+def impurity(mean: Sequence[float], cal: Calibration, colour: str) -> float:
+    """The largest other channel as a share of `colour`'s channel, against the
+    cool reference (0 for a pure colour; a warm white mixed in raises it)."""
+    n = [max(v, 0.0) for v in cal.cool_normalised(mean)]
+    own = ("red", "green", "blue").index(colour)
+    others = [v for i, v in enumerate(n) if i != own]
+    return max(others) / max(n[own], 1e-3)
 
 
 def difference(a: Sequence[float], b: Sequence[float], cal: Calibration) -> float:

@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import getpass
 import json
 import statistics
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -80,6 +82,7 @@ class Bench:
         suite: str,
         report: rp.Report,
         keep_images: Path | None,
+        keys: dict[str, str],
     ) -> None:
         self.cfg = cfg
         self.suite = suite
@@ -90,7 +93,9 @@ class Bench:
         self.regions = {name: light["region"] for name, light in self.lights.items()}
         if cfg.get("monitor_region"):
             self.regions["monitor"] = cfg["monitor_region"]
-        self.keys = json.loads(Path(cfg["bridge_keys"]).expanduser().read_text())
+        self.keys = keys
+        # Lights are "light 1", "light 2" ... in reports, never their config names.
+        self.label = {name: f"light {i}" for i, name in enumerate(self.lights, 1)}
         self.session: aiohttp.ClientSession | None = None
         self.owner: clients.OwnerHA | None = None
         self.bridge: clients.Bridge | None = None
@@ -113,6 +118,11 @@ class Bench:
         self.screen_index: int | None = None
         self.calibrated = False
         self.helper_mode: str | None = None
+        # The local Home Assistant's start (a thread), kept so that a Ctrl+C
+        # during it can wait for it and stop it.
+        self.ha_start: asyncio.Future[Any] | None = None
+        # Screen-mode changes timed by the window instead of the camera.
+        self.window_timed = 0
         # Picture changes on the Windows clock: [mode, picture, time].
         self.changes: list[list[Any]] = []
 
@@ -150,6 +160,8 @@ class Bench:
             self.app_id,
             *[light["entity_id"] for light in self.lights.values()],
             *self.light_rids,
+            str(Path.home()),
+            getpass.getuser(),
         ]
         if self.helper is not None:
             values += [self.helper.token or "", self.helper.helper_id or ""]
@@ -278,6 +290,12 @@ class Bench:
             if area["id"] == self.cfg["bench_area_id"] and streamer == self.app_id:
                 continue  # a stale bench stream: Glowcast stops its own app's stream
             if area["id"] == self.cfg.get("tv_area_id"):
+                if streamer == self.app_id:
+                    raise Skipped(
+                        "configuration error: the TV's area streams with the bench's "
+                        "Hue key; the bench needs a key of its own",
+                        rp.EXIT_USAGE,
+                    )
                 tv_active = True
                 continue
             raise Skipped(
@@ -364,10 +382,10 @@ class Bench:
         ok = all(t is not None for t in back.values())
         numbers: dict[str, Any] = {}
         for name in self.lights:
-            numbers[f"{name} pre-run level"] = round(
+            numbers[f"{self.label[name]} pre-run level"] = round(
                 self.cal[name].level(self.pre_camera[name]), 3
             )
-            numbers[f"{name} white p95"] = clip[name]
+            numbers[f"{self.label[name]} white p95"] = clip[name]
         self.report.add(
             Step(
                 "calibration: white and dark references, lights back (camera)",
@@ -460,7 +478,8 @@ class Bench:
     async def start_helper(self, mode: str) -> None:
         await self.stop_helper()
         port = int(self.cfg["helper"]["port"])
-        if winproc.pid_listening(port) is not None:
+        if await asyncio.to_thread(winproc.pid_listening, port) is not None:
+            # Not ours: the bench never stops a process it did not start.
             raise BenchError("something else listens on the helper's port on Windows")
         env = {
             "UV_PROJECT_ENVIRONMENT": self.win_temp + "\\glowcast-bench\\helper-venv"
@@ -474,7 +493,8 @@ class Bench:
             lambda e: e["event"] in ("started", "error"), 300
         )
         if started["event"] == "error":
-            raise BenchError(f"the helper did not start ({started.get('reason')})")
+            print(f"The helper did not start: {started.get('reason')}", file=sys.stderr)
+            raise BenchError("the helper did not start")
         if mode == "screen" and self.screen_index is None:
             left, top = self.cfg["monitor"][:2]
             match = [
@@ -494,16 +514,21 @@ class Bench:
             await self.helper.pair(str(self.cfg["helper"]["pairing_code"]))
 
     async def stop_helper(self) -> float | None:
-        """Stop the helper on Windows; the WSL time it was gone, or None."""
+        """Stop the run's own helper; the WSL time it was gone, or None.
+
+        Only the helper this run started: its port was free before the start,
+        so what listens there now is its Python under its uv.exe.
+        """
+        if self.helper_proc is None:
+            return None
         port = int(self.cfg["helper"]["port"])
-        pid = winproc.pid_listening(port)
+        pid = await asyncio.to_thread(winproc.pid_listening, port)
         stopped = None
         if pid is not None:
             await asyncio.to_thread(winproc.taskkill, pid)
             stopped = time.time()
-        if self.helper_proc is not None:
-            await self.helper_proc.stop(quit_command=None)
-            self.helper_proc = None
+        await self.helper_proc.stop(quit_command=None)
+        self.helper_proc = None
         self.helper_mode = None
         return stopped
 
@@ -523,12 +548,14 @@ class Bench:
             area_id=self.cfg["bench_area_id"],
             settings={"brightness": 80, "intensity": 100, "update_rate": "high"},
         )
+        self.ha_start = asyncio.ensure_future(
+            asyncio.to_thread(local_ha.start, self.keys["host"], entry)
+        )
         try:
-            inst, token = await asyncio.to_thread(
-                local_ha.start, self.keys["host"], entry
-            )
+            inst, token = await asyncio.shield(self.ha_start)
         except SystemExit as err:
-            raise BenchError(f"the local Home Assistant did not start: {err}") from None
+            print(f"The local Home Assistant did not start: {err}", file=sys.stderr)
+            raise BenchError("the local Home Assistant did not start") from None
         self.ha = clients.LocalHA(self.session, inst.url, token)
         for _ in range(60):
             found = await self.ha.find_entities(local_ha.ENTRY_ID)
@@ -611,7 +638,7 @@ class Bench:
         if inactive is not None:
             numbers["area inactive after s"] = round(inactive - start, 2)
         for light, seconds in back.items():
-            numbers[f"{light} back after s"] = seconds
+            numbers[f"{self.label[light]} back after s"] = seconds
         numbers.update(await self.bridge_restore_numbers())
         ok = (
             status is not None
@@ -656,11 +683,13 @@ class Bench:
             cal = self.cal[name]
             good = rp.matches_colour(expected, mean, cal, self.th)
             ok &= good
-            numbers[f"{name} seen"] = rp.classify(mean, cal, self.th)
-            numbers[f"{name} level"] = round(cal.level(mean), 2)
-            numbers[f"{name} n"] = [round(v, 2) for v in cal.normalised(mean)]
+            numbers[f"{self.label[name]} seen"] = rp.classify(mean, cal, self.th)
+            numbers[f"{self.label[name]} level"] = round(cal.level(mean), 2)
+            numbers[f"{self.label[name]} n"] = [
+                round(v, 2) for v in cal.normalised(mean)
+            ]
             if expected == "white":
-                numbers[f"{name} n cool"] = [
+                numbers[f"{self.label[name]} n cool"] = [
                     round(v, 2) for v in cal.cool_normalised(mean)
                 ]
         self.report.add(
@@ -729,7 +758,7 @@ class Bench:
                 expected, mean, self.cal[name], self.th
             )
             ok &= good
-            numbers[f"{name} seen"] = (
+            numbers[f"{self.label[name]} seen"] = (
                 None if mean is None else rp.classify(mean, self.cal[name], self.th)
             )
         self.report.add(
@@ -755,7 +784,7 @@ class Bench:
                 samples, name, ref[name], self.cal[name], self.th, start, end
             )
             ok &= held
-            numbers[f"{name} largest change"] = round(worst, 3)
+            numbers[f"{self.label[name]} largest change"] = round(worst, 3)
         self.report.add(
             Step(
                 label,
@@ -849,7 +878,7 @@ class Bench:
             prev_name = name
         all_delays = [d for values in delays.values() for d in values]
         for name, values in delays.items():
-            self.add_delays(f"{mode} / {name}", values)
+            self.add_delays(f"{mode} / {self.label[name]}", values)
         self.delay_step(mode, all_delays)
         self.report.add(
             Step(
@@ -902,8 +931,22 @@ class Bench:
                 "delay from picture to light",
                 mode,
                 PASS if ok else FAIL,
-                numbers={k: v for k, v in stats.items()},
-                note="" if ok else "no delay measured or the median is over the limit",
+                numbers={
+                    **stats,
+                    **(
+                        {"changes timed by the window": self.window_timed}
+                        if mode == "screen"
+                        else {}
+                    ),
+                },
+                note=(
+                    ("" if ok else "no delay measured or the median is over the limit")
+                    or (
+                        "includes the camera's own latency (about 75 ms)"
+                        if mode == "pattern"
+                        else "monitor and light in the same frames"
+                    )
+                ),
             )
         )
 
@@ -940,7 +983,9 @@ class Bench:
                 start + 2.5,
                 stop,
             )
-            numbers[f"{name} back after s"] = None if t is None else round(t - start, 2)
+            numbers[f"{self.label[name]} back after s"] = (
+                None if t is None else round(t - start, 2)
+            )
             ok &= t is not None
         self.report.add(
             Step(
@@ -1071,6 +1116,8 @@ class Bench:
                 )
                 if seen is not None:
                     change = seen
+                else:
+                    self.window_timed += 1
             prev_monitor = monitor_now
             if kind in ("red", "green", "blue", "white"):
                 means = self.colour_step(mode, kind, kind, t, stop)
@@ -1096,7 +1143,7 @@ class Bench:
                     if (v := rp.settled(samples, k, t + SETTLE, stop - 0.3))
                 }
         for name, values in delays.items():
-            self.add_delays(f"{mode} / {name}", values)
+            self.add_delays(f"{mode} / {self.label[name]}", values)
         self.delay_step(mode, [d for values in delays.values() for d in values])
         await self.extended_steps(mode)
         await self.check_stop(
@@ -1137,10 +1184,14 @@ class Bench:
             cal = self.cal[name]
             good = rp.is_glow(glow, cal, self.th, prev[name])
             ok &= good
-            numbers[f"{name} glow level"] = round(cal.level(glow), 3)
-            numbers[f"{name} glow n"] = [round(v, 2) for v in cal.normalised(glow)]
+            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 3)
+            numbers[f"{self.label[name]} glow n"] = [
+                round(v, 2) for v in cal.normalised(glow)
+            ]
             t = rp.crossing(samples, name, prev[name], glow, start, stop)
-            numbers[f"{name} glow after s"] = None if t is None else round(t - start, 2)
+            numbers[f"{self.label[name]} glow after s"] = (
+                None if t is None else round(t - start, 2)
+            )
             ok &= t is not None and 3.0 <= t - start <= 6.0
         streaming, polls = self.streamed_throughout(self.wsl(start), self.wsl(stop))
         ok &= streaming
@@ -1184,8 +1235,58 @@ class Bench:
                 )
             )
             return
+        await self.purity_step(mode)
         await self.settings_while_syncing(mode)
         await self.setting_while_off(mode)
+
+    async def purity_step(self, mode: str) -> None:
+        """Red and blue stay pure at brightness 20 % and 80 % (#43, #129).
+
+        Judged on the lights marked `pure: true` in the config (a lit wall; a
+        spot's clipped rim cannot show purity).
+        """
+        name = "red and blue pure at brightness 20 % and 80 %"
+        pure = [n for n, light in self.lights.items() if light.get("pure")]
+        if not pure:
+            self.report.add(
+                Step(name, mode, SKIP, note="no light is marked pure in the config")
+            )
+            return
+        shares: dict[tuple[str, int, str], float] = {}
+        for brightness in (20, 80):
+            await self.set_number("brightness", brightness)
+            for picture, colour in (("#ff0000", "red"), ("#0000ff", "blue")):
+                await self.show(picture)
+                await asyncio.sleep(3)
+                seen = await self.measure(1.0)
+                for light in pure:
+                    shares[(light, brightness, colour)] = rp.impurity(
+                        seen[light], self.cal[light], colour
+                    )
+        await self.set_number("brightness", 80)
+        numbers: dict[str, Any] = {}
+        ok = True
+        for light in pure:
+            for colour in ("red", "blue"):
+                low = shares[(light, 20, colour)]
+                high = shares[(light, 80, colour)]
+                numbers[f"{self.label[light]} {colour} other share 20 %"] = round(
+                    low, 3
+                )
+                numbers[f"{self.label[light]} {colour} other share 80 %"] = round(
+                    high, 3
+                )
+                ok &= low <= self.th.max_impurity and high <= self.th.max_impurity
+                ok &= low <= high + self.th.impurity_margin
+        self.report.add(
+            Step(
+                name,
+                mode,
+                PASS if ok else FAIL,
+                numbers=numbers,
+                note="" if ok else "another colour mixed in (for example warm white)",
+            )
+        )
 
     async def diagnostics_step(self, mode: str) -> None:
         assert self.ha is not None
