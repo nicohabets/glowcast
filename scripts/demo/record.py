@@ -6,6 +6,10 @@ rec.click() (a ring shows where) and calls rec.step("name") on every screen
 worth a pause. With --still, every rec.step() saves a PNG instead. To add a
 flow, write such a function and add it to FLOWS.
 
+Playwright's video and Chrome's screencast record at 1x, whatever the device
+scale factor, so a GIF is made of screenshots: while a flow waits, the
+recorder takes them one after another, each with its time.
+
 Files: <lang>-<theme>-<flow>.gif, or <lang>-<theme>-<flow>-<nn>-<name>.png.
 """
 
@@ -28,18 +32,20 @@ from playwright.sync_api import Browser, BrowserContext, Locator, Page, sync_pla
 # Home Assistant's mobile view, recorded at scale factor 2: GIFs 800 px wide.
 VIEWPORT = {"width": 400, "height": 860}
 SCALE = 2
-FPS = 10
-PAUSE = 1000  # ms on each step of a GIF, after it settles
+FPS = 10  # the GIF's frame rate; screenshots come at about 5 to 8 per second
+PAUSE = 900  # ms on each step of a GIF, after it settles
 LOAD_TIMEOUT = 120000  # ms; right after `start` the frontend can take a minute
 MAX_GIF_BYTES = 10_000_000  # GitHub's limit for an attached image
 # Where the frontend draws its dialogs and their primary button.
 DIALOG = "ha-dialog"
 PRIMARY = f"{DIALOG} ha-button[slot=primaryAction]"
 HASS = "document.querySelector('home-assistant').hass"
-# A ring where the next click lands. A popover sits in the top layer, so it
-# shows above Home Assistant's modal dialogs too.
+# A ring where the next click lands, removed with the click so it never shows
+# on the next screen. A popover sits in the top layer, so it shows above Home
+# Assistant's modal dialogs too.
 RING = """([x, y]) => {
   const ring = document.createElement('div');
+  ring.id = 'glowcast-demo-ring';
   ring.popover = 'manual';
   ring.style.cssText = `position: fixed; inset: auto; margin: 0; padding: 0;
     left: ${x - 20}px; top: ${y - 20}px; width: 40px; height: 40px;
@@ -47,32 +53,60 @@ RING = """([x, y]) => {
     background: rgba(255, 64, 129, 0.3); pointer-events: none;`;
   document.body.appendChild(ring);
   ring.showPopover();
-  setTimeout(() => ring.remove(), 900);
 }"""
+UNRING = "() => document.getElementById('glowcast-demo-ring')?.remove()"
 
 
 class Recorder:
     """The browser page and what the flows need."""
 
-    def __init__(self, page: Page, args: argparse.Namespace, mode: str) -> None:
-        """Mode "gif" pauses and shows clicks, "still" saves PNGs, "quiet" neither."""
+    def __init__(
+        self,
+        page: Page,
+        args: argparse.Namespace,
+        mode: str,
+        flow: str = "",
+        frames_dir: Path | None = None,
+    ) -> None:
+        """Mode "gif" records frames in frames_dir and shows clicks, "still"
+        saves a PNG of each step, "quiet" neither."""
         self.page = page
         self.args = args
         self.mode = mode
-        self.flow = ""
+        self.flow = flow
+        self.frames_dir = frames_dir
+        self.frames: list[tuple[float, Path]] = []
+        self.recording = False
         self.count = 0
-        self.begun = 0.0
 
     def begin(self) -> None:
         """The flow's first screen is ready: the GIF starts here."""
-        self.begun = time.monotonic()
+        self.recording = self.mode == "gif"
         self.step("start")
+
+    def wait(self, ms: int) -> None:
+        """Wait; while recording, take screenshots all the time."""
+        if not self.recording:
+            self.page.wait_for_timeout(ms)
+            return
+        end = time.monotonic() + ms / 1000
+        while True:
+            self.capture()
+            if time.monotonic() >= end:
+                break
+
+    def capture(self) -> None:
+        """Add a frame to the GIF."""
+        assert self.frames_dir is not None
+        path = self.frames_dir / f"{len(self.frames):05d}.png"
+        self.page.screenshot(path=path)
+        self.frames.append((time.monotonic(), path))
 
     def step(self, name: str) -> None:
         """Pause on this screen in a GIF, or save it as a PNG."""
-        self.page.wait_for_timeout(600)
+        self.wait(400)
         if self.mode == "gif":
-            self.page.wait_for_timeout(PAUSE)
+            self.wait(PAUSE)
         elif self.mode == "still":
             self.count += 1
             prefix = f"{self.args.lang}-{self.args.theme}-{self.flow}"
@@ -87,8 +121,10 @@ class Recorder:
             if box := locator.bounding_box():
                 center = [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2]
                 self.page.evaluate(RING, center)
-                self.page.wait_for_timeout(500)
+                self.wait(600)
         locator.click()
+        if self.mode == "gif":
+            self.page.evaluate(UNRING)
 
     def goto(self, path: str) -> None:
         """Open a page of the frontend and wait until it has drawn."""
@@ -115,7 +151,7 @@ class Recorder:
     def submit(self) -> None:
         """Click the primary button of the open dialog."""
         self.click(self.page.locator(PRIMARY))
-        self.page.wait_for_timeout(300)
+        self.wait(300)
 
     def press_link_button(self) -> None:
         """Press the fake bridge's link button."""
@@ -226,9 +262,7 @@ def prepare(rec: Recorder, flow: str) -> None:
             )
 
 
-def new_context(
-    browser: Browser, args: argparse.Namespace, **options: Any
-) -> BrowserContext:
+def new_context(browser: Browser, args: argparse.Namespace) -> BrowserContext:
     """A browser in the mobile view, language and theme."""
     dark = args.theme == "dark"
     context = browser.new_context(
@@ -238,7 +272,6 @@ def new_context(
         has_touch=True,
         locale=args.lang,
         color_scheme="dark" if dark else "light",
-        **options,
     )
     # The frontend reads its language and theme from local storage.
     context.add_init_script(
@@ -261,29 +294,21 @@ def log_in(page: Page, args: argparse.Namespace) -> None:
     )
 
 
-def record(browser: Browser, args: argparse.Namespace, state: Any, flow: str) -> None:
-    """Record one flow on video and turn it into a GIF."""
-    with tempfile.TemporaryDirectory() as videos:
-        size = {key: value * SCALE for key, value in VIEWPORT.items()}
-        context = new_context(
-            browser,
-            args,
-            storage_state=state,
-            record_video_dir=videos,
-            record_video_size=size,
-        )
-        page = context.new_page()
-        opened = time.monotonic()
-        rec = Recorder(page, args, "gif")
-        rec.flow = flow
-        try:
-            FLOWS[flow](rec)
-        except Exception:
-            fail(page, args)
-        finally:
-            context.close()
-        assert page.video is not None
-        video = page.video.path()
+def record(page: Page, args: argparse.Namespace, flow: str) -> None:
+    """Record one flow as screenshots and turn them into a GIF."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rec = Recorder(page, args, "gif", flow, Path(tmp))
+        FLOWS[flow](rec)
+        # Each screenshot shows until the next one; the last one for a pause.
+        times = [t for t, _ in rec.frames] + [rec.frames[-1][0] + PAUSE / 1000]
+        lines = [
+            f"file '{path}'\nduration {times[i + 1] - times[i]:.3f}"
+            for i, (_, path) in enumerate(rec.frames)
+        ]
+        # The concat format ignores the last duration unless the file repeats.
+        lines.append(f"file '{rec.frames[-1][1]}'")
+        frames = Path(tmp) / "frames.txt"
+        frames.write_text("\n".join(lines) + "\n")
         gif = args.out / f"{args.lang}-{args.theme}-{flow}.gif"
         palette = (
             f"fps={FPS},split[a][b];[a]palettegen=stats_mode=diff[p];"
@@ -295,10 +320,12 @@ def record(browser: Browser, args: argparse.Namespace, state: Any, flow: str) ->
                 "-loglevel",
                 "error",
                 "-y",
-                "-ss",
-                f"{rec.begun - opened:.2f}",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
                 "-i",
-                str(video),
+                str(frames),
                 "-filter_complex",
                 palette,
                 str(gif),
@@ -337,11 +364,9 @@ def main() -> None:
             for flow in args.flows or FLOWS:
                 prepare(Recorder(page, args, "quiet"), flow)
                 if args.still:
-                    rec = Recorder(page, args, "still")
-                    rec.flow = flow
-                    FLOWS[flow](rec)
+                    FLOWS[flow](Recorder(page, args, "still", flow))
                 else:
-                    record(browser, args, context.storage_state(), flow)
+                    record(page, args, flow)
         except Exception:
             fail(page, args)
         finally:
