@@ -29,7 +29,7 @@ from .screen import (
 
 FIELD_CODE = "code"
 # The 6 digits the helper shows; spaces around them are ignored.
-_CODE = re.compile(r"\d{6}")
+_CODE = re.compile(r"[0-9]{6}")  # ASCII only: \d also matches other digits
 
 
 class ScreenSteps(ConfigFlow):
@@ -97,7 +97,7 @@ class ScreenSteps(ConfigFlow):
             if paired is not None:
                 token, info = paired
                 await self.async_set_unique_id(info["id"], raise_on_progress=False)
-                self._screen_abort_if_configured("screen_already_configured")
+                self._screen_abort_if_configured("screen_already_configured", token)
                 name = str(info.get("name") or self._screen_name)
                 return await self.async_source_chosen(
                     {
@@ -184,11 +184,15 @@ class ScreenSteps(ConfigFlow):
             return None
         return token, info
 
-    def _screen_abort_if_configured(self, reason: str) -> None:
+    def _screen_abort_if_configured(
+        self, reason: str, token: str | None = None
+    ) -> None:
         """Abort if the helper has an entry; keep its address current.
 
-        The address is read at every start, so the entry is not reloaded,
-        which would stop a running sync.
+        A token from a pairing that just worked (with the helper's id checked)
+        is stored too, so it is not thrown away. The address and token are
+        read at every start, so the entry is not reloaded, which would stop a
+        running sync.
         """
         entry = self.hass.config_entries.async_entry_for_domain_unique_id(
             DOMAIN, self.unique_id or ""
@@ -200,6 +204,7 @@ class ScreenSteps(ConfigFlow):
                     **entry.data[CONF_SOURCE],
                     CONF_HOST: self._screen_host,
                     CONF_PORT: self._screen_port,
+                    **({CONF_TOKEN: token} if token is not None else {}),
                 }
             }
         self._abort_if_unique_id_configured(

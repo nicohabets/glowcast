@@ -22,6 +22,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import urllib.request
@@ -304,6 +305,11 @@ def screen_helper() -> Iterator[dict[str, Any]]:
                     break
             if started is None:
                 raise RuntimeError("The screen helper did not start")
+            # It keeps writing events (frames, patterns); read them away so a
+            # full pipe never blocks it during a long recording.
+            threading.Thread(
+                target=process.stdout.read, name="screen helper output", daemon=True
+            ).start()
             yield started
         finally:
             process.terminate()

@@ -763,12 +763,14 @@ def screen_helper(aioclient_mock: AiohttpClientMocker) -> FakeHelperHTTP:
     return fake
 
 
-def discovery(host: str = PC_HOST, **properties: str) -> ZeroconfServiceInfo:
+def discovery(
+    host: str = PC_HOST, port: int | None = 8488, **properties: str
+) -> ZeroconfServiceInfo:
     """What Home Assistant's zeroconf discovery hands the flow for a helper."""
     return ZeroconfServiceInfo(
         ip_address=ip_address(host),
         ip_addresses=[ip_address(host)],
-        port=8488,
+        port=port,
         hostname="test-pc.local.",
         type="_glowcast._tcp.local.",
         name="Test PC (4f0c9a)._glowcast._tcp.local.",
@@ -1039,8 +1041,10 @@ async def test_a_helper_by_hand_alongside_its_discovery(
 async def test_a_helper_by_hand_that_has_an_entry(
     hass: HomeAssistant, screen_helper: FakeHelperHTTP
 ) -> None:
-    """Typed again: no second entry; the typed address is kept."""
+    """Typed again: no second entry; the typed address and the token of the
+    pairing that just worked are kept, the settings stay."""
     entry = screen_entry(hass, host="192.0.2.99")
+    options = dict(entry.options)
     result = await start_screen(hass)
     flow_id = result["flow_id"]
     await hass.config_entries.flow.async_configure(
@@ -1049,8 +1053,33 @@ async def test_a_helper_by_hand_that_has_an_entry(
     result = await code(hass, flow_id, CODE)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "screen_already_configured"
-    assert entry.data["source"]["host"] == PC_HOST
+    assert entry.data["source"] == SCREEN_SOURCE
+    assert entry.data["bridge"]["app_key"] == "old-app-key"
+    assert entry.options == options
     assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_a_discovery_keeps_the_stored_token(hass: HomeAssistant) -> None:
+    """Without pairing, a rediscovery only updates the address."""
+    entry = screen_entry(hass, host="192.0.2.99")
+    await discover(hass, discovery())
+    assert entry.data["source"]["token"] == "old-token"
+
+
+async def test_a_code_with_other_digits_is_not_sent(
+    hass: HomeAssistant, screen_helper: FakeHelperHTTP
+) -> None:
+    """Only the digits 0-9: full-width digits are digits to Python's \\d."""
+    result = await discover(hass, discovery())
+    result = await code(hass, result["flow_id"], "１２３４５６")
+    assert result["errors"] == {"base": "screen_wrong_code"}
+    assert screen_helper.pair_requests == 0
+
+
+async def test_a_discovery_without_a_port_is_not_shown(hass: HomeAssistant) -> None:
+    result = await discover(hass, discovery(port=None))
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "screen_unsupported"
 
 
 async def test_the_tv_setup_is_unchanged(hass: HomeAssistant) -> None:
@@ -1059,6 +1088,35 @@ async def test_the_tv_setup_is_unchanged(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "tv"
     assert list(result["data_schema"].schema) == ["tv"]
+
+
+@pytest.mark.parametrize(
+    ("language", "texts"),
+    [
+        (
+            "en",
+            {
+                "title": "Choose the TV",
+                "description": "Glowcast uses the picture of an LG webOS TV that"
+                " is set up in the LG webOS Smart TV integration.",
+                "data": {"tv": "TV"},
+            },
+        ),
+        (
+            "nl",
+            {
+                "title": "Kies de tv",
+                "description": "Glowcast gebruikt het beeld van een LG webOS-tv"
+                " die is ingesteld in de integratie LG webOS Smart TV.",
+                "data": {"tv": "Tv"},
+            },
+        ),
+    ],
+)
+def test_the_tv_texts_are_unchanged(language: str, texts: dict[str, Any]) -> None:
+    """The TV screen's texts as before the menu (#109), now under `tv`."""
+    config = json.loads((TRANSLATIONS / f"{language}.json").read_text())["config"]
+    assert config["step"]["tv"] == texts
 
 
 async def test_screen_reauth_asks_a_new_code(
