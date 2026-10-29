@@ -1,0 +1,83 @@
+blueprint:
+  name: Start Glowcast when the TV turns on
+  description: >-
+    Turns the Glowcast switch on when the TV turns on, so the lights follow
+    the picture. Glowcast waits for the TV to show a picture, so it can start
+    the moment the TV reports "on". A restart of Home Assistant normally does
+    not start Glowcast. Optionally turns the switch off again when the TV turns
+    off.
+  domain: automation
+  source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/start_with_tv.yaml
+  homeassistant:
+    min_version: 2025.7.2
+  input:
+    tv:
+      name: TV
+      description: The LG webOS TV.
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+              integration: webostv
+    glowcast_switch:
+      name: Glowcast switch
+      description: The Glowcast switch for this TV.
+      selector:
+        entity:
+          filter:
+            - domain: switch
+              integration: glowcast
+    also_stop:
+      name: Also stop when the TV turns off
+      description: >-
+        Glowcast stops by itself when the TV turns off; this also turns the
+        switch off the moment the TV reports "off".
+      default: false
+      selector:
+        boolean:
+
+# The latest TV change wins: if the TV goes on and off again quickly, the run
+# for "on" is replaced by the run for "off". Each run is one short action
+# (Glowcast starts in the background), so a restart loses nothing.
+mode: restart
+
+variables:
+  also_stop: !input also_stop
+
+triggers:
+  # From "off" or "unavailable" only: when Home Assistant starts while the TV
+  # is on, the TV goes from "unknown" to "on", and that must not start Glowcast.
+  # "unavailable" also catches a short network drop of the TV while it is on
+  # (on -> unavailable -> on), which turns Glowcast on again, and, rarely, a
+  # TV that Home Assistant only reaches after its automations have started.
+  - trigger: state
+    entity_id: !input tv
+    from:
+      - "off"
+      - "unavailable"
+    to: "on"
+    id: tv_on
+  - trigger: state
+    entity_id: !input tv
+    from: "on"
+    to: "off"
+    id: tv_off
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: tv_on
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input glowcast_switch
+      - conditions:
+          - condition: trigger
+            id: tv_off
+          - condition: template
+            value_template: "{{ also_stop }}"
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input glowcast_switch
