@@ -526,12 +526,15 @@ def record_main(tmp: Path) -> dict[str, Any] | None:
         _git("fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")
         base = _git("merge-base", "HEAD", "origin/main")
     except subprocess.CalledProcessError as err:
-        reason = (err.stderr.strip().splitlines() or ["no output"])[-1]
-        print(f"Cannot find main's merge base ({reason}); drawing this side only.")
+        _this_side_only(f"cannot find main's merge base ({_last_line(err.stderr)})")
         return None
     worktree = Path(tempfile.mkdtemp(prefix="glowcast-room-main-"))
     try:
-        _git("worktree", "add", "--quiet", "--detach", str(worktree), base)
+        try:
+            _git("worktree", "add", "--quiet", "--detach", str(worktree), base)
+        except subprocess.CalledProcessError as err:
+            _this_side_only(f"cannot check out {base[:7]} ({_last_line(err.stderr)})")
+            return None
         print(f"main: the merge base {base[:7]}", flush=True)
         result = _record(worktree / CORE, tmp / "main.json")
     finally:
@@ -542,13 +545,18 @@ def record_main(tmp: Path) -> dict[str, Any] | None:
         subprocess.run(["git", "-C", str(REPO), "worktree", "prune"], check=False)
         shutil.rmtree(worktree, ignore_errors=True)
     if result.returncode != 0:
-        reason = (result.stderr.strip().splitlines() or ["no output"])[-1]
-        print(
-            f"main ({base[:7]}) cannot run the scenarios ({reason}); "
-            "drawing this PR's side only."
-        )
+        reason = _last_line(result.stderr)
+        _this_side_only(f"main ({base[:7]}) cannot run the scenarios ({reason})")
         return None
     return json.loads((tmp / "main.json").read_text())
+
+
+def _last_line(text: str) -> str:
+    return (text.strip().splitlines() or ["no output"])[-1]
+
+
+def _this_side_only(reason: str) -> None:
+    print(f"{reason[0].upper()}{reason[1:]}; drawing this PR's side only.")
 
 
 def main() -> None:
