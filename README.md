@@ -76,9 +76,9 @@ Under **Configure**, or on Glowcast's device page (see [Settings on the device p
 
 ## Starting and stopping
 
-<img width="400" alt="Glowcast's device page in Home Assistant: the switch under Controls, and brightness, entertainment area, intensity and update rate under Configuration." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/device-page.png">
+<img width="400" alt="Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/device-page.png">
 
-*Glowcast's device page: the switch under Controls, the settings under Configuration.*
+*Glowcast's device page: the switch under Controls, the status under Sensors, the settings under Configuration.*
 
 Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls (and its settings under Configuration), for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
 
