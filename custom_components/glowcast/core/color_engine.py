@@ -36,6 +36,15 @@ def is_black(frame: Frame) -> bool:
     return lit < MIN_LIT_SHARE * frame.width * frame.height
 
 
+def is_all_zero(frame: Frame) -> bool:
+    """Whether every pixel is 0: no picture at all.
+
+    A protected app in the TV's own apps delivers exactly this; a real picture
+    only for a moment, at a hard cut or an input switch (see "Verified facts").
+    """
+    return not any(frame.pixels)
+
+
 def channel_region(
     channel: Channel, width: int, height: int
 ) -> tuple[int, int, int, int]:

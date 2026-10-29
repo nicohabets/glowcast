@@ -16,7 +16,10 @@ from custom_components.glowcast.core.ports import SourceUnavailable
 
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
-BLACK = (0, 0, 0)
+# A dark scene: black by the colour engine, but not all zero (#68).
+DARK = (5, 5, 5)
+# Every pixel 0: no picture, as from a protected app (#68).
+NO_PICTURE = (0, 0, 0)
 CHANNEL = Channel(id="1", name="one", x=0.0, z=0.0)
 CLEANUP = ["output.stop", "output.close", "source.close"]
 

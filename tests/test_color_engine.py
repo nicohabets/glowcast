@@ -10,6 +10,7 @@ import pytest
 from custom_components.glowcast.core.color_engine import (
     channel_region,
     compute,
+    is_all_zero,
     is_black,
 )
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
@@ -146,6 +147,15 @@ def test_a_small_bright_element_does_not_make_the_frame_a_picture() -> None:
 def test_letterboxed_film_is_not_black() -> None:
     frame = make_frame(lambda u, v: BLACK if v < 0.13 or v > 0.87 else (90, 60, 40))
     assert not is_black(frame)
+
+
+def test_all_zero_is_no_picture() -> None:
+    assert is_all_zero(solid(BLACK))  # what a protected app delivers (#68)
+    assert not is_all_zero(solid((1, 0, 0)))  # the darkest scene still counts
+    # One lit pixel is enough: subtitles or player controls over no picture.
+    assert not is_all_zero(
+        make_frame(lambda u, v: (200, 200, 200) if u < 0.02 else BLACK)
+    )
 
 
 # Intensity
