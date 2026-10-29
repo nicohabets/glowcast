@@ -1,22 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <clipPath id="tile"><rect width="512" height="512" rx="112"/></clipPath>
-    <filter id="wide" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="64"/></filter>
-    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="34"/></filter>
-  </defs>
-  <g clip-path="url(#tile)">
-    <rect width="512" height="512" fill="#101218"/>
-    <g filter="url(#wide)" opacity="0.7">
-      <rect x="96" y="132" width="170" height="212" rx="28" fill="#3D7BFF"/>
-      <rect x="246" y="132" width="170" height="110" rx="28" fill="#FFC37A"/>
-      <rect x="246" y="234" width="170" height="110" rx="28" fill="#E0489A"/>
-    </g>
-    <g filter="url(#glow)">
-      <rect x="104" y="140" width="156" height="196" rx="26" fill="#4A86FF"/>
-      <rect x="252" y="140" width="156" height="102" rx="26" fill="#FFCB8A"/>
-      <rect x="252" y="234" width="156" height="102" rx="26" fill="#EA5AA6"/>
-    </g>
-    <rect x="116" y="150" width="280" height="176" rx="24" fill="#15171E" stroke="#F4F1EA" stroke-width="10"/>
-    <rect x="216" y="348" width="80" height="12" rx="6" fill="#F4F1EA"/>
-  </g>
+<defs><clipPath id="it"><rect width="512" height="512" rx="112"/></clipPath>
+<filter id="ig" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="22"/></filter></defs>
+<g clip-path="url(#it)">
+<rect width="512" height="512" fill="#101218"/>
+<g filter="url(#ig)" opacity="0.9"><rect x="46" y="170" width="52" height="180" rx="24" fill="#3D7BFF" /><rect x="106" y="94" width="74" height="52" rx="24" fill="#6A6CF5" /><rect x="182" y="94" width="74" height="52" rx="24" fill="#B05CC8" /><rect x="256" y="94" width="74" height="52" rx="24" fill="#EA5AA6" /><rect x="332" y="94" width="74" height="52" rx="24" fill="#FF8F6A" /><rect x="414" y="170" width="52" height="180" rx="24" fill="#FFC37A" /></g>
+<rect x="52" y="176" width="40" height="168" rx="20" fill="#3D7BFF" /><rect x="112" y="100" width="62" height="40" rx="20" fill="#6A6CF5" /><rect x="188" y="100" width="62" height="40" rx="20" fill="#B05CC8" /><rect x="262" y="100" width="62" height="40" rx="20" fill="#EA5AA6" /><rect x="338" y="100" width="62" height="40" rx="20" fill="#FF8F6A" /><rect x="420" y="176" width="40" height="168" rx="20" fill="#FFC37A" />
+<rect x="112" y="168" width="288" height="176" rx="22" fill="#15171E" stroke="#F4F1EA" stroke-width="18"/>
+<rect x="212" y="372" width="88" height="18" rx="9" fill="#F4F1EA" />
+</g>
 </svg>
