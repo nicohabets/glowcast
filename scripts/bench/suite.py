@@ -1293,14 +1293,25 @@ class Bench:
         download = await self.ha.get(
             f"/api/diagnostics/config_entry/{local_ha.ENTRY_ID}"
         )
-        text = json.dumps(download)
-        found = sum(1 for value in self.forbidden() if value and value in text)
+        # Keys, addresses and ids nowhere in the download; the home folder and
+        # the user name not in Glowcast's part (Home Assistant's own system
+        # information around it names them).
+        local = {str(Path.home()), getpass.getuser()}
+        whole = json.dumps(download)
+        own = json.dumps(download.get("data"))
+        found = [
+            value
+            for value in self.forbidden()
+            if value and (value in own or (value not in local and value in whole))
+        ]
+        if found:
+            print(f"Private values in the diagnostics: {len(found)}", file=sys.stderr)
         self.report.add(
             Step(
                 "diagnostics contain no keys, addresses, ids or names",
                 mode,
-                PASS if found == 0 else FAIL,
-                numbers={"private values found": found},
+                PASS if not found else FAIL,
+                numbers={"private values found": len(found)},
             )
         )
 
