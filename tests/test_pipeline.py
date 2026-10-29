@@ -59,6 +59,7 @@ class Harness:
         self.status_times: list[float] = []
         self.status_error: Exception | None = None
         self.compute_error: Exception | None = None
+        self.intensities: list[float] = []  # the factor of each colour computation
         self.pipeline = Pipeline(
             self.source,
             self.output,
@@ -107,6 +108,7 @@ class Harness:
     async def _runner(self, func: Callable[..., Any], *args: Any) -> Any:
         if self.compute_error is not None:
             raise self.compute_error
+        self.intensities.append(args[-1])
         return func(*args)
 
 
@@ -285,6 +287,64 @@ async def test_intensity_is_passed_as_a_factor() -> None:
     await h.clock.advance(0.5)
     r, g, b = h.output.rgb_at(-1)
     assert r == pytest.approx(g) == pytest.approx(b)
+    assert await h.stop() == StopReason.USER
+
+
+# New settings while streaming (#13): no restart, so no new claim of the lights
+
+
+async def test_new_brightness_applies_at_the_next_send() -> None:
+    h = Harness(brightness=100)
+    await h.start()
+    await h.clock.advance(0.5)
+    assert h.output.rgb_at(-1) == approx_rgb((1.0, 0.0, 0.0))
+    h.pipeline.update_settings(Settings(40, 100, UpdateRate.HIGH))
+    sent = len(h.output.sent)
+    await h.clock.advance(TICK)
+    assert h.output.rgb_at(sent) == approx_rgb((0.40, 0.0, 0.0))
+    assert h.log == ["source.start", "output.start"]  # never stopped or claimed again
+    assert await h.stop() == StopReason.USER
+
+
+async def test_new_intensity_applies_at_the_next_capture() -> None:
+    h = Harness(intensity=100)
+    h.source.default = solid((200, 100, 100))
+    await h.start()
+    await h.clock.advance(1)
+    captures = h.source.captures
+    h.pipeline.update_settings(Settings(100, 0, UpdateRate.HIGH))
+    await h.clock.advance(1)
+    assert h.source.captures > captures
+    # Every computation after the change uses the new intensity.
+    assert h.intensities[-(h.source.captures - captures) :] == [0.0] * (
+        h.source.captures - captures
+    )
+    await h.clock.advance(1)  # the fade towards the new colours has finished
+    r, g, b = h.output.rgb_at(-1)
+    assert r == pytest.approx(g) == pytest.approx(b)
+    assert h.log == ["source.start", "output.start"]
+    assert await h.stop() == StopReason.USER
+
+
+async def test_new_update_rate_applies_from_the_next_capture() -> None:
+    h = Harness(rate=UpdateRate.LOW)
+    await h.start()
+    await h.clock.advance(1)
+    h.pipeline.update_settings(Settings(100, 100, UpdateRate.MAXIMUM))
+    await h.clock.advance(1)  # the wait of the capture before the change
+    before = h.source.captures
+    await h.clock.advance(10)
+    assert h.source.captures - before == pytest.approx(40, abs=1)
+    assert h.log == ["source.start", "output.start"]
+    assert await h.stop() == StopReason.USER
+
+
+async def test_new_settings_before_streaming_are_used_once_it_streams() -> None:
+    h = Harness(brightness=100)
+    h.pipeline.update_settings(Settings(40, 100, UpdateRate.HIGH))
+    await h.start()
+    await h.clock.advance(0.5)
+    assert h.output.rgb_at(-1) == approx_rgb((0.40, 0.0, 0.0))
     assert await h.stop() == StopReason.USER
 
 

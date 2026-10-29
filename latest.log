@@ -1,0 +1,2 @@
+error: Failed to inspect Python interpreter from active virtual environment at `/tmp/claude-1000/-home-nico-projecten-glowcast--claude-worktrees-glowcast-settings-entities-cb8979/057c5e02-8342-4a60-a606-7d6ddf02506c/scratchpad/latest/bin/python3`
+  Caused by: Python interpreter not found at `/tmp/claude-1000/-home-nico-projecten-glowcast--claude-worktrees-glowcast-settings-entities-cb8979/057c5e02-8342-4a60-a606-7d6ddf02506c/scratchpad/latest/bin/python3`
