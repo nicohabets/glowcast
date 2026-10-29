@@ -29,6 +29,7 @@ import argparse
 import contextlib
 import dataclasses
 import fcntl
+import functools
 import hashlib
 import json
 import os
@@ -51,6 +52,8 @@ DEMO = REPO / "scripts" / "demo"
 HOME = Path.home() / ".cache" / "glowcast-demo"
 VENV = HOME / "venv"  # shared by all instances
 INSTANCES = HOME / "instances"
+# Next to HOME, not in it: `clean --all` removes HOME while holding it.
+LOCK = HOME.parent / "glowcast-demo.lock"
 
 # The first instance gets these if they are free; the others get free ones.
 HA_PORT = 8199
@@ -130,9 +133,12 @@ class Instance:
     def recordings(self) -> Path:
         return self.home / "recordings"
 
-    @property
+    @functools.cached_property
     def state(self) -> dict[str, Any]:
-        """The working copy and ports; empty before the first `start`."""
+        """The working copy and ports, read once; empty before the first `start`.
+
+        `start` writes new ones and then uses a fresh Instance to read them.
+        """
         if self.legacy:
             # Its code always used the default ports.
             state: dict[str, Any] = {"ha_port": HA_PORT, "bridge_port": BRIDGE_PORT}
@@ -140,8 +146,11 @@ class Instance:
             with contextlib.suppress(OSError):
                 state["repo"] = str(Path(os.readlink(glowcast)).parent.parent)
             return state
-        with contextlib.suppress(OSError):
-            return json.loads((self.home / "state.json").read_text())
+        # A broken file (a crash while writing it) counts as no state.
+        with contextlib.suppress(OSError, ValueError):
+            state = json.loads((self.home / "state.json").read_text())
+            if isinstance(state, dict):
+                return state
         return {}
 
     @property
@@ -229,20 +238,25 @@ def start(instance: Instance) -> None:
             "The legacy demo cannot be started any more; `start` without "
             "--instance starts this working copy's instance."
         )
-    if _running(instance):
-        sys.exit(f"Instance {instance.name} is already running; run `stop` first.")
-    with _lock("install"):
+    # Held until both processes run: nothing else starts, installs, picks
+    # ports or cleans up in between (Home Assistant binds its port only after
+    # a while, and _install() only changes the environment when nothing runs).
+    with _lock():
+        if _running(instance):
+            sys.exit(f"Instance {instance.name} is already running; run `stop` first.")
         _install()
-    try:
-        # Until both processes run, another `start` could pick the same ports.
-        with _lock("ports"):
+        try:
             ha_port, bridge_port = _pick_ports(instance)
             instance.home.mkdir(parents=True, exist_ok=True)
-            (instance.home / "state.json").write_text(
+            # Written in one go: `status` in another session may read it now.
+            state = instance.home / "state.json.tmp"
+            state.write_text(
                 json.dumps(
                     {"repo": str(REPO), "ha_port": ha_port, "bridge_port": bridge_port}
                 )
             )
+            state.replace(instance.home / "state.json")
+            instance = dataclasses.replace(instance)  # reads the new state
             _write_config(instance)
             instance.run.mkdir(parents=True, exist_ok=True)
             _spawn(
@@ -260,6 +274,10 @@ def start(instance: Instance) -> None:
                 # No installs at start-up: the environment is shared.
                 ["-m", "homeassistant", "--config", str(instance.config), "--skip-pip"],
             )
+        except BaseException:
+            stop(instance)
+            raise
+    try:
         print(f"Waiting for Home Assistant on {instance.url}...", flush=True)
         _wait_for_ha(instance)
         token = _onboard(instance)
@@ -348,7 +366,7 @@ def status() -> None:
                 str(state.get("ha_port", "-")),
                 str(state.get("bridge_port", "-")),
                 "yes" if running else "no",
-                instance.url if running else "-",
+                instance.url if running and "ha_port" in state else "-",
             ]
         )
     widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
@@ -369,11 +387,18 @@ def clean_all(*, confirmed: bool) -> None:
         f"{HOME}: {len(instances)} instance(s), the shared environment and all "
         "recordings."
     )
-    if not confirmed and input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
-        sys.exit("Nothing removed.")
-    for instance in instances:
-        stop(instance)
-    shutil.rmtree(HOME, ignore_errors=True)
+    if not confirmed:
+        try:
+            answer = input("Continue? [y/N] ")
+        except EOFError:  # no terminal to answer from
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            sys.exit("Nothing removed; --yes skips this question.")
+    # Not while another session installs or starts an instance.
+    with _lock():
+        for instance in _instances():
+            stop(instance)
+        shutil.rmtree(HOME, ignore_errors=True)
     print(f"Removed {HOME}")
 
 
@@ -408,14 +433,14 @@ def _instances() -> list[Instance]:
 
 
 @contextlib.contextmanager
-def _lock(name: str) -> Iterator[None]:
-    """Hold HOME/<name>.lock, shared by all instances, waiting if need be."""
-    HOME.mkdir(parents=True, exist_ok=True)
-    with open(HOME / f"{name}.lock", "w") as file:
+def _lock() -> Iterator[None]:
+    """Hold LOCK, shared by all instances, waiting if need be."""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCK, "w") as file:
         try:
             fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(f"Waiting for another instance ({name})...", flush=True)
+            print("Waiting for another session's start or clean...", flush=True)
             fcntl.flock(file, fcntl.LOCK_EX)
         yield
 
@@ -427,33 +452,38 @@ def _pick_ports(instance: Instance) -> tuple[int, int]:
     after a while), nor the defaults while a legacy demo exists: its code
     always uses them.
     """
-    taken: set[int] = set()
+    taken: set[int | None] = set()
     for other in _instances():
         if other.legacy:
             taken |= {HA_PORT, BRIDGE_PORT}
         elif other != instance and _running(other):
-            taken |= {other.ha_port, other.bridge_port}
+            taken |= {other.state.get("ha_port"), other.state.get("bridge_port")}
     ha_port = _free_port(HA_PORT, taken)
     return ha_port, _free_port(BRIDGE_PORT, taken | {ha_port})
 
 
-def _free_port(preferred: int, taken: set[int]) -> int:
-    port = preferred
-    while True:
-        if port not in taken:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+def _free_port(preferred: int, taken: set[int | None]) -> int:
+    """The first free port from `preferred` up.
+
+    Not one the system hands out for outgoing connections (bind to port 0):
+    one of those could get it before Home Assistant binds it.
+    """
+    for port in range(preferred, 65536):
+        if port in taken:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if sys.platform == "linux":
                 # Like Home Assistant: a port that a stopped demo left in
                 # TIME_WAIT is free, one that something listens on is not.
+                # (On macOS this would also allow a port another program
+                # listens on at 0.0.0.0.)
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("127.0.0.1", port))
-                    return port
-                except OSError:
-                    pass
-        # A port the system has free now.
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+            try:
+                probe.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                pass
+    sys.exit(f"No free port from {preferred} up.")
 
 
 def _install() -> None:
