@@ -13,13 +13,13 @@ from aiowebostv.exceptions import WebOsTvError, WebOsTvPairError
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from PIL import Image
 
 from ..const import CONF_SOURCE, CONF_UNIQUE_ID
 from ..core.models import Frame
 from ..core.ports import SourceUnavailable
+from ..devices import entry_devices
 from ..issues import Issue
 
 _LOGGER = logging.getLogger(__name__)
@@ -227,19 +227,11 @@ def device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
 
 def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     """The TV device's id in Home Assistant's device registry, if it exists."""
-    entry = hass.config_entries.async_entry_for_domain_unique_id(
-        WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID]
-    )
-    if entry is None:
-        return None
-    registry = dr.async_get(hass)
     identifier = device_identifier(data)
-    if hasattr(registry, "async_get_device_by_identifier"):
-        # Newer HA: identifiers are only unique within a config entry.
-        device = registry.async_get_device_by_identifier(identifier, entry.entry_id)
-    else:
-        device = registry.async_get_device(identifiers={identifier})
-    return device.id if device else None
+    devices = entry_devices(hass, WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
+    return next(
+        (device.id for device in devices if identifier in device.identifiers), None
+    )
 
 
 def tvs(hass: HomeAssistant) -> dict[str, str]:

@@ -330,7 +330,7 @@ OUTPUTS = {"hue_entertainment": OutputType(create, is_missing, device_id, entiti
                                            missing, stop_issues, async_removed)}
 ```
 
-Each adapter module provides these functions itself, so the runtime, the flows and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data, options)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4; it gets the options too, because loose lights keep their lights there), the source's `device_identifier(data)` names the TV's device for `via_device` (4.3), and `device_id(hass, data)` finds the device of the TV or the bridge in Home Assistant's device registry (for `via_device_id` and diagnostics). A source may have no device: then both return `None`, Glowcast's device is not linked and diagnostics show no device. The type's steps and options part are described in 4.1 and 4.2; `missing` and `stop_issues` are its repair issues (4.4), and `async_removed` runs when the entry is removed.
+Each adapter module provides these functions itself, so the runtime, the flows and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data, options)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4; it gets the options too, because loose lights keep their lights there), the source's `device_identifier(data)` names the TV's device for `via_device` (4.3), and `device_id(hass, data)` finds the device of the TV or the bridge in Home Assistant's device registry (for `via_device_id` and diagnostics): both types pick their own device from the referenced entry's devices (`entry_devices()` in `devices.py`, which knows no integration). A source may have no device: then both return `None`, Glowcast's device is not linked and diagnostics show no device. The type's steps and options part are described in 4.1 and 4.2; `missing` and `stop_issues` are its repair issues (4.4), and `async_removed` runs when the entry is removed.
 
 The `bridge` block in `data` belongs to the Hue output type: only `outputs/` reads or writes it (setup, reauth, the area entity, the removal notice). An output type can also provide its own entities on Glowcast's device, for what follows the TV (4.3): `entities` maps a platform to a factory `(hass, entry) -> list[Entity]`, and is optional (empty by default), so a new type such as loose lights (#9) adds its own without changing the generic code. Only platforms whose generic module asks for them (`number`, `select`) can be used; a type that needs another platform adds that module to `PLATFORMS` with the same one-line call.
 
@@ -347,6 +347,7 @@ custom_components/glowcast/
   manifest.json  const.py
   config_flow.py           # setup, options, reauth: chains the types' steps
   flow.py                  # what the types' steps share with the flows
+  devices.py               # what the types share to find their devices
   issues.py                # Issue: a type's repair issue and its log message
   runtime.py               # GlowcastData: runs the pipeline, reacts to stop reasons, repair issues
   settings.py              # options <-> Settings, with defaults for missing keys
@@ -363,7 +364,8 @@ custom_components/glowcast/
   outputs/hue_entertainment_flow.py             # its setup, reauth and options steps
   outputs/hue_area_select.py  # the Hue output type's entertainment-area entity
 tests/
-  fakes.py                 # fake clock, source and output, shared by the tests (no HA imports)
+  fakes.py                 # fake clock, source, output and pipeline, shared by the tests (no HA imports)
+  conftest.py              # the fixtures that put the fakes into HA
   test_color_engine.py
   test_light_state.py      # fading, hold on black, brightness and glow, with the time as an argument
   test_pipeline.py         # the pipeline with the fakes and a fake clock
