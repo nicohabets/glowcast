@@ -136,6 +136,7 @@ def start() -> None:
     print(f"Waiting for Home Assistant on {HA_URL}...", flush=True)
     _wait_for_ha()
     token = _onboard()
+    _wait_until_running(token)
     _check_isolated(token)
     print(
         f"Ready: {HA_URL} (user {USERNAME!r}, password {PASSWORD!r}).\n"
@@ -336,6 +337,15 @@ def _wait_for_ha() -> None:
         except (urllib.error.URLError, ConnectionError):
             time.sleep(2)
     sys.exit("Home Assistant did not start in time")
+
+
+def _wait_until_running(token: str) -> None:
+    """The API answers before start-up is done; wait for the rest."""
+    deadline = time.monotonic() + 300
+    while _request("GET", "/api/config", token=token)["state"] != "RUNNING":
+        if time.monotonic() > deadline:
+            sys.exit("Home Assistant did not finish starting in time")
+        time.sleep(1)
 
 
 def _onboard() -> str:
