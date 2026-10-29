@@ -98,7 +98,7 @@ On a black picture the lights keep a faint warm glow instead of going dark.
 
 ## Privacy
 
-Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. After removing Glowcast, you can also remove it from the bridge: in the Hue app, go to **Settings → Apps → Network-based** (Dutch: Instellingen → Toepassingen → Netwerk-gebaseerd), tap the info button next to **glowcast** and remove it.
+Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. Removing Glowcast from Home Assistant does not remove its app from the bridge (the bridge does not allow that), so Home Assistant shows a notification with these steps when you remove Glowcast. To remove it from the bridge: in the Hue app, go to **Settings → Apps → Network-based** (Dutch: Instellingen → Toepassingen → Netwerk-gebaseerd), tap the info button next to **glowcast** and remove it.
 
 
 The TV's capture call only works on your local network, after the TV pairing you already approved for Home Assistant. Frames are kept in memory and never stored or sent anywhere. Separately: if privacy matters to you, consider turning off **Live Plus** (LG's ACR feature) in your TV settings. That one does send viewing data to LG.
