@@ -83,6 +83,7 @@ New issues follow the same format as the existing ones:
 - **Story:** "As a … I want … so that …", context, acceptance criteria as Given/When/Then scenarios, out of scope, notes for the developer, Definition of Done, dependencies. Label `story`.
 - **Spike:** context, question, approach, timebox, possible outcomes, Definition of Done. Label `spike`.
 - Add a component label (`source`, `color-engine`, `pipeline`, `output`, `ha`, `quality`, `research`); small non-story work gets `task`. Add a milestone if clear.
+- **Features** group the work: each story, spike and task is a sub-issue of one feature issue (label `feature`). Add a new issue to the feature it belongs to (`gh api repos/nicohabets/glowcast/issues/<feature>/sub_issues -F sub_issue_id=<id of the new issue>`); if none fits, say so to the product owner instead of creating a feature. Features are created by the product owner; they have no milestone, are not built themselves, and stay out of the board's columns.
 
 ### Public repository
 This repository is public. Never put personal details in code, docs, issues, commits or PRs: no room or device names from the owner's home, no IP addresses, entity ids, credentials, names or locations. Use generic examples such as `media_player.living_room_tv`.
