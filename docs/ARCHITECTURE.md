@@ -107,7 +107,7 @@ class LightOutput(Protocol):
     async def close(self) -> None: ...             # releases network resources; after stop()
 ```
 
-Brightness and the minimal glow are applied in the pipeline, so outputs stay dumb.
+Brightness and the minimal glow are applied in `core/` (the light state, 3.5), so outputs stay dumb.
 
 ### 3.3 ColorEngine (`core/color_engine.py`)
 
@@ -161,12 +161,14 @@ start:    try source.start() and one good capture, retrying, for up to 10 s (sta
           channels = output.start()
 run:      two concurrent sub-tasks under the supervisor:
             capture loop: every 1/update_rate s: frame = source.capture() → target = engine.compute(...)
-            send loop:    every 1/25 s: fade current → target over the measured capture interval,
-                          apply brightness, apply the minimal glow, output.send();
+                          → light_state.set_target(target, frame black?, now)
+            send loop:    every 1/25 s: output.send(light_state.colors(now, brightness));
                           every 5 s: output.check()
           the send loop keeps its 1/25 s rhythm even while a capture hangs (up to its 5 s timeout)
 stop:     cancel both sub-tasks → output.stop() → output.close() → source.close()   (on every exit path)
 ```
+
+**The pipeline only supervises** (start order, startup grace, the two loops, the `OutputLost` retry, stop handling and cleanup). What the lights show between frames is kept by **`LightState`** (`core/light_state.py`): pure and synchronous, with the time as an argument, so it is tested without the pipeline. It fades from the current colours to each new target over the measured capture interval (in engine colour space), holds the last colours on sudden black, and applies brightness and the minimal glow when the send loop asks for the colours. After a retry the pipeline tells it which channels still exist; the gap is not used as a capture interval. Rule for later: memory about colours or the picture (for example letterbox bars, #34) lives in small helpers like this next to the colour engine, not in the supervisor.
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
 - **Minimal glow:** then `out = max(c, g × warm)` per RGB component, with `g = min(0.10, brightness)` and `warm = (1.0, 0.78, 0.50)`: a dim warm white of about 2700K on the lights at 10 %, never brighter than the brightness setting. Constants, not options. Example: brightness 40 % and a red picture give (0.40, 0.078, 0.050); a black picture at 80 % gives (0.10, 0.078, 0.050). Both were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) too red, especially in a dark room, so the ratio is two steps cooler in sRGB.
@@ -240,7 +242,7 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 | Config flow, options flow and reauth flow (the screens), `async_setup_entry` / `async_unload_entry`, `entry.runtime_data` | `config_flow.py`, `__init__.py` | #6 |
 | Switch entity; running the pipeline with `entry.async_create_background_task`; stopping it on switch off, unload and `EVENT_HOMEASSISTANT_STOP`; the update listener that restarts the pipeline when options change; reacting to stop reasons (switch off, start reauth, repair issue) | `switch.py`, `__init__.py` | #7 |
 | Removing the entry: delete its repair issues and show one persistent notification (`glowcast_bridge_app_left_<entry id>`) on how to remove Glowcast's app in the Hue app, in Home Assistant's server language; nothing on reload or restart | `__init__.py` | #50 |
-| Pipeline behaviour (start order, sub-tasks, fading, glow, failure handling, stop reasons) | `core/pipeline.py` | #5 |
+| Pipeline behaviour (start order, sub-tasks, failure handling, stop reasons); fading, hold on black and glow | `core/pipeline.py`; `core/light_state.py` | #5, #65 |
 
 Failure handling:
 - **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
@@ -289,12 +291,13 @@ custom_components/glowcast/
   translations/en.json  translations/nl.json
   brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
   core/                    # NO homeassistant imports
-    models.py  ports.py  color_engine.py  pipeline.py
+    models.py  ports.py  color_engine.py  light_state.py  pipeline.py
   sources/webos.py
   outputs/hue_entertainment.py
 tests/
   fakes.py                 # fake clock, source and output, shared by the tests (no HA imports)
   test_color_engine.py
+  test_light_state.py      # fading, hold on black, brightness and glow, with the time as an argument
   test_pipeline.py         # the pipeline with the fakes and a fake clock
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
   test_config_flow.py      # setup, options and reauth, including error cases
@@ -315,7 +318,8 @@ Translations live in `translations/en.json` and `translations/nl.json` (custom i
 ## 7. Testing
 
 - **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget.
-- **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula, every stop reason, and that `stop()` and `close()` run on every exit path.
+- **Light state:** plain unit tests with the time as an argument: the first target shown at once, the linear fade over the measured interval, the hold on sudden black, brightness and the glow formula, and the channels kept after a retry.
+- **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula (end to end), every stop reason, and that `stop()` and `close()` run on every exit path.
 - **Config flow:** every setup, options and reauth path, including the error cases (built with #6).
 - **Soak test:** two hours of real viewing; no crash, no memory growth; after a TV standby, a bridge restart and an HA restart Glowcast has stopped cleanly and the next switch-on works.
 - **Manual end-to-end:** an LG webOS TV, a Hue bridge and an entertainment area with a gradient lightstrip.

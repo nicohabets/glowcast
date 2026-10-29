@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from .color_engine import BLACK, compute, is_black
+from .color_engine import compute, is_black
+from .light_state import LightState
 from .models import Channel, ChannelColor, Frame
 from .ports import (
     FrameSource,
@@ -36,16 +37,7 @@ LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
-GLOW = 0.10  # level of the minimal glow
-# Colour of the minimal glow: a warm white of about 2700K (D11).
-GLOW_COLOR = (1.0, 0.78, 0.50)
-# When the whole picture suddenly turns black, keep the last colours this long
-# before fading to the glow: a TV being switched off shows an (almost) black
-# switch-off animation for up to 3.0 s before it reports that it is off
-# (measured, see "Verified facts").
-BLACK_HOLD = 3.5
 
-RGB = tuple[float, float, float]
 Runner = Callable[..., Awaitable[Any]]
 
 
@@ -146,15 +138,8 @@ class Pipeline:
         self._on_stopped = on_stopped
         self._stop_requested = asyncio.Event()
         self._channels: list[Channel] = []
-        # Fading happens in engine colour space, before brightness and glow.
-        self._current: dict[str, RGB] = {}
-        self._fade_from: dict[str, RGB] = {}
-        self._target: dict[str, RGB] = {}
-        self._fade_start = 0.0
-        self._fade_duration = 0.0
-        self._last_capture: float | None = None
+        self._lights = LightState()
         self._retried_at: float | None = None
-        self._black_since: float | None = None
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the reason once.
@@ -283,14 +268,8 @@ class Pipeline:
             _LOGGER.warning("The retry failed (%s); stopping", err)
             raise _Stop(StopReason.OUTPUT_LOST) from err
         self._retried_at = self._clock.now()
-        # Keep showing the last colours on the channels that still exist.
-        ids = {channel.id for channel in channels}
         self._channels = channels
-        self._target = {i: rgb for i, rgb in self._target.items() if i in ids}
-        self._current = {i: rgb for i, rgb in self._current.items() if i in ids}
-        self._fade_from = dict(self._current)
-        # The gap during the retry is not a capture interval to fade over.
-        self._last_capture = None
+        self._lights.resume({channel.id for channel in channels})
 
     async def _async_unless_stopped(self, awaitable: Awaitable[Any]) -> Any:
         """Await something, but give up with USER as soon as stop() is called."""
@@ -366,7 +345,11 @@ class Pipeline:
                 if check is None:
                     # The output throttles its own status requests.
                     check = asyncio.ensure_future(self._output.check())
-                self._output.send(self._colors(self._clock.now()))
+                self._output.send(
+                    self._lights.colors(
+                        self._clock.now(), self._settings.brightness / 100
+                    )
+                )
                 next_tick += tick
                 now = self._clock.now()
                 if next_tick < now:  # behind: skip ticks instead of bursting
@@ -380,68 +363,13 @@ class Pipeline:
 
     async def _async_set_target(self, frame: Frame) -> None:
         try:
-            colors = await self._runner(
-                compute, frame, self._channels, self._settings.intensity / 100
+            colors, frame_black = await self._runner(
+                _compute, frame, self._channels, self._settings.intensity / 100
             )
-            frame_black = await self._runner(is_black, frame)
         except Exception as err:
             _LOGGER.exception("Unexpected error computing the colours")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
-        now = self._clock.now()
-        if self._last_capture is not None:
-            self._fade_duration = now - self._last_capture
-        self._last_capture = now
-        target = {color.channel_id: color.rgb for color in colors}
-        if self._hold_black(frame_black, now):
-            return
-        if not self._current:
-            # The first target is shown straight away.
-            self._current = dict(target)
-            self._fade_duration = 0.0
-        self._fade_from = dict(self._current)
-        self._target = target
-        self._fade_start = now
-
-    def _hold_black(self, frame_black: bool, now: float) -> bool:
-        """Whether to keep the last colours instead of the new frame's.
-
-        Only a picture that suddenly turns black is held (for BLACK_HOLD), so
-        the lights go straight from the picture to their previous state when
-        the TV is switched off. Starting on black shows the glow at once.
-        """
-        showing_picture = any(rgb != BLACK for rgb in self._target.values())
-        if not frame_black:
-            self._black_since = None
-            return False
-        if not showing_picture:
-            return False
-        if self._black_since is None:
-            self._black_since = now
-        return now - self._black_since < BLACK_HOLD
-
-    def _colors(self, now: float) -> list[ChannelColor]:
-        """The faded colours at `now`, with brightness and glow applied."""
-        if self._fade_duration > 0:
-            progress = min(1.0, (now - self._fade_start) / self._fade_duration)
-        else:
-            progress = 1.0
-        brightness = self._settings.brightness / 100
-        level = min(GLOW, brightness)
-        glow = tuple(level * c for c in GLOW_COLOR)
-        colors = []
-        for channel_id, (tr, tg, tb) in self._target.items():
-            sr, sg, sb = self._fade_from.get(channel_id, (tr, tg, tb))
-            rgb = (
-                sr + (tr - sr) * progress,
-                sg + (tg - sg) * progress,
-                sb + (tb - sb) * progress,
-            )
-            self._current[channel_id] = rgb
-            r, g, b = (
-                max(c * brightness, floor) for c, floor in zip(rgb, glow, strict=True)
-            )
-            colors.append(ChannelColor(channel_id, (r, g, b)))
-        return colors
+        self._lights.set_target(colors, frame_black, self._clock.now())
 
     async def _async_cleanup(self) -> None:
         """Release everything, in order, whatever happened."""
@@ -457,6 +385,13 @@ class Pipeline:
             self._on_stopped(reason)
         except Exception:
             _LOGGER.exception("Error in the stop callback")
+
+
+def _compute(
+    frame: Frame, channels: list[Channel], intensity: float
+) -> tuple[list[ChannelColor], bool]:
+    """The colour engine's work for one frame, in one executor job."""
+    return compute(frame, channels, intensity), is_black(frame)
 
 
 def _raise_check_result(check: asyncio.Task[None]) -> None:
