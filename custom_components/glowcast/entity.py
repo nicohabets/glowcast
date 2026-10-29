@@ -1,12 +1,21 @@
 """The base of Glowcast's entities: one device per entry, linked to the TV's."""
 
+from typing import TYPE_CHECKING
+
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import CONF_SOURCE, CONF_TYPE, DOMAIN
-from .runtime import GlowcastConfigEntry
+from .core.pipeline import Settings
+from .settings import read_settings, write_settings
 from .sources import SOURCES
+
+if TYPE_CHECKING:
+    # Only for type checking: an output type's own entities (in outputs/)
+    # derive from GlowcastEntity, and the runtime imports the outputs.
+    from .runtime import GlowcastConfigEntry
 
 
 class GlowcastEntity(Entity):
@@ -15,7 +24,7 @@ class GlowcastEntity(Entity):
     _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(self, hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: "GlowcastConfigEntry") -> None:
         """Initialize for one Glowcast entry."""
         self._data = entry.runtime_data
         self._attr_device_info = DeviceInfo(
@@ -38,3 +47,33 @@ class GlowcastEntity(Entity):
         """
         await super().async_added_to_hass()
         self.async_on_remove(self._data.async_add_listener(self.async_write_ha_state))
+
+
+class GlowcastSettingEntity(GlowcastEntity):
+    """One of the settings, under Configuration on the device (architecture 4.3).
+
+    The entry's options are the only copy of the value: it is read from them
+    on every state write and stored back in them, so the options screen and
+    the entities always agree.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self, hass: HomeAssistant, entry: "GlowcastConfigEntry", key: str
+    ) -> None:
+        """Initialize for the setting stored under `key` in the options."""
+        super().__init__(hass, entry)
+        self._entry = entry
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+
+    @property
+    def _settings(self) -> Settings:
+        return read_settings(self._entry.options)
+
+    def _store(self, settings: Settings) -> None:
+        """Store the settings; the update listener passes them on."""
+        self.hass.config_entries.async_update_entry(
+            self._entry, options={**self._entry.options, **write_settings(settings)}
+        )

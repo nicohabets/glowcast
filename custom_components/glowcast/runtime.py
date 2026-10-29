@@ -5,7 +5,7 @@ Architecture 4.4. Every platform reaches it through `entry.runtime_data`.
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from typing import Any
 
@@ -68,6 +68,9 @@ class GlowcastData:
         self._restarting = False
         self._stopped_during_restart = False
         self._listeners: list[Callable[[], None]] = []
+        # What follows the TV as the pipeline started with it (or as stored,
+        # before the first start); the update listener gets no old options.
+        self._output: Mapping[str, Any] = entry.options[CONF_OUTPUT]
 
     @property
     def is_on(self) -> bool:
@@ -81,7 +84,7 @@ class GlowcastData:
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
-        """Call `update` whenever is_on changes; returns a function to stop."""
+        """Call `update` when is_on or the options change; returns how to stop."""
         self._listeners.append(update)
         return lambda: self._listeners.remove(update)
 
@@ -107,6 +110,7 @@ class GlowcastData:
             lambda status: self._async_status(pipeline, status),
         )
         self._pipeline = pipeline
+        self._output = options[CONF_OUTPUT]
         self._task = self._entry.async_create_background_task(
             self._hass, pipeline.run(), f"glowcast {self._entry.title}"
         )
@@ -127,6 +131,25 @@ class GlowcastData:
                 await task
             if self._task is task:
                 self._task = None
+
+    async def async_options_updated(self) -> None:
+        """New options: a running pipeline takes the settings without a restart.
+
+        Only a change of what follows the TV (the output block, compared as a
+        whole) restarts it; that change also clears the repair issues about
+        the previous choice. Not running: the next start reads the options.
+        """
+        options = self._entry.options
+        self._notify()  # the entities show the new values
+        if options[CONF_OUTPUT] != self._output:
+            self._output = options[CONF_OUTPUT]
+            for key in (ISSUE_TOO_MANY_CHANNELS, ISSUE_AREA_NOT_FOUND):
+                ir.async_delete_issue(
+                    self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
+                )
+            await self.async_restart()
+        elif self._pipeline is not None:
+            self._pipeline.update_settings(read_settings(options))
 
     async def async_restart(self) -> None:
         """Restart a running pipeline with the new settings; the switch stays on."""

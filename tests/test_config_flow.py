@@ -256,7 +256,8 @@ async def test_happy_path(
     assert pairing.host == HOST
     assert pairing.device_type == "glowcast#Living room TV"
     assert pairing.closed
-    assert area_list_keys(aioclient_mock) == ["new-app-key"]
+    # Read by the flow, then by the entertainment-area entity (#13).
+    assert area_list_keys(aioclient_mock) == ["new-app-key", "new-app-key"]
 
 
 async def test_already_configured(hass: HomeAssistant) -> None:

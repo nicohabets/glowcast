@@ -20,6 +20,9 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
     _get_diagnostics_for_config_entry,
     get_diagnostics_for_config_entry,
 )
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+)
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.glowcast.const import DOMAIN
@@ -101,9 +104,16 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
 
 
 @pytest.fixture
-async def entry(hass: HomeAssistant, lights: Lights) -> Any:
+async def entry(
+    hass: HomeAssistant, lights: Lights, aioclient_mock: AiohttpClientMocker
+) -> Any:
     """Glowcast set up for a TV and a bridge, with their devices in HA."""
     hass.config.components.update({"webostv", "hue"})
+    # The entertainment-area entity reads the bridge's areas (#13).
+    aioclient_mock.get(
+        f"https://{BRIDGE_HOST}/clip/v2/resource/entertainment_configuration",
+        json={"data": [{"id": AREA_ID, "metadata": {"name": AREA_NAME}}]},
+    )
     registry = dr.async_get(hass)
     others = []
     for domain, unique_id, data, device in (

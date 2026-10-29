@@ -125,15 +125,21 @@ class Recorder:
             self.page.screenshot(path=path, animations="disabled")
             print(f"saved {path}")
 
-    def click(self, locator: Locator) -> None:
-        """Click, showing first where (in a GIF)."""
-        if self.mode == "gif":
-            locator.scroll_into_view_if_needed()
-            if box := locator.bounding_box():
-                center = [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2]
-                self.page.evaluate(RING, center)
+    def click(self, locator: Locator, at: float = 0.5) -> None:
+        """Click, showing first where (in a GIF).
+
+        `at` is how far across the element to click (0 left, 1 right), for
+        example a point on a slider.
+        """
+        position = None
+        locator.scroll_into_view_if_needed()
+        if box := locator.bounding_box():
+            position = {"x": box["width"] * at, "y": box["height"] / 2}
+            if self.mode == "gif":
+                point = [box["x"] + position["x"], box["y"] + position["y"]]
+                self.page.evaluate(RING, point)
                 self.wait(600)
-        locator.click()
+        locator.click(position=position)
         if self.mode == "gif":
             # A click that loads another page has removed the ring already.
             with contextlib.suppress(PlaywrightError):
@@ -242,10 +248,72 @@ def device(rec: Recorder) -> None:
     rec.step("device")
 
 
+def entities(rec: Recorder) -> None:
+    """The settings as entities under Configuration on the device page (#13).
+
+    Brightness, intensity and update rate, and the entertainment area that the
+    Hue output type provides. The switch stays off: no TV answers in the demo,
+    so syncing would stop after the start-up grace.
+    """
+    ids = {
+        entry["unique_id"].split("_", 1)[1]: entry["entity_id"]
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast" and "_" in entry["unique_id"]
+    }
+    device = rec.ws(
+        {"type": "config/entity_registry/get", "entity_id": ids["brightness"]}
+    )
+    # Start from the defaults and the first area, whatever an earlier run left.
+    for domain, service, data in (
+        ("number", "set_value", {"entity_id": ids["brightness"], "value": 80}),
+        ("number", "set_value", {"entity_id": ids["intensity"], "value": 100}),
+        (
+            "select",
+            "select_option",
+            {"entity_id": ids["update_rate"], "option": "high"},
+        ),
+        (
+            "select",
+            "select_option",
+            {"entity_id": ids["entertainment_area"], "option": "TV area"},
+        ),
+    ):
+        rec.page.evaluate(
+            f"([d, s, data]) => {HASS}.callService(d, s, data)",
+            [domain, service, data],
+        )
+    rec.goto(f"/config/devices/device/{device['device_id']}")
+    rec.begin()
+    rec.click(row(rec, ids["brightness"]).locator("ha-slider"), at=0.35)
+    rec.step("brightness")
+    rec.click(row(rec, ids["intensity"]).locator("ha-slider"), at=0.75)
+    rec.step("intensity")
+    rec.click(row(rec, ids["update_rate"]).locator("ha-select"))
+    rec.step("update-rates")
+    rec.click(rec.option("maximum"))
+    rec.step("update-rate-chosen")
+    rec.click(row(rec, ids["entertainment_area"]).locator("ha-select"))
+    rec.step("areas")
+    rec.click(rec.option("Whole room"))
+    rec.step("area-chosen")
+
+
+def row(rec: Recorder, entity_id: str) -> Locator:
+    """The entity's row in an entities card, such as on the device page."""
+    rows = rec.page.locator("hui-generic-entity-row")
+    index = rows.evaluate_all(
+        "(rows, id) => rows.findIndex(r => r.config?.entity === id)", entity_id
+    )
+    if index < 0:
+        raise LookupError(f"No row for {entity_id}")
+    return rows.nth(index)
+
+
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
     "device": device,
+    "entities": entities,
 }
 
 
@@ -265,6 +333,7 @@ def prepare(rec: Recorder, flow: str) -> None:
             )
     elif not entries:
         setup(rec)
+    use_server_language(rec)
     rec.page.evaluate(
         f"() => {HASS}.callService('persistent_notification', 'dismiss_all')"
     )
@@ -278,6 +347,25 @@ def prepare(rec: Recorder, flow: str) -> None:
                     "ignore": True,
                 }
             )
+
+
+def use_server_language(rec: Recorder) -> None:
+    """Set Home Assistant's own language to the recording's language.
+
+    The profile language (local storage) translates the frontend, but entity
+    names come from the server in its language, so a Dutch recording would
+    show English names. A reload of Glowcast's entry names its entities again.
+    """
+    if rec.ws({"type": "get_config"})["language"] == rec.args.lang:
+        return
+    rec.ws({"type": "config/core/update", "language": rec.args.lang})
+    for entry in rec.ws({"type": "config_entries/get", "domain": "glowcast"}):
+        rec.page.evaluate(
+            f"id => {HASS}.callApi('POST', "
+            "`config/config_entries/entry/${id}/reload`)",
+            entry["entry_id"],
+        )
+    rec.page.wait_for_timeout(3000)
 
 
 def abort_flows_on_exit(page: Page) -> Callable[[], None]:

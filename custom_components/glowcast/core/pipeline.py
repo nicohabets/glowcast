@@ -200,6 +200,14 @@ class Pipeline:
         """Ask the pipeline to stop (the user switched it off)."""
         self._stop_requested.set()
 
+    def update_settings(self, settings: Settings) -> None:
+        """Use new settings without a restart.
+
+        Brightness applies at the next send, intensity and the update rate at
+        the next capture; the lights stay claimed.
+        """
+        self._settings = settings
+
     async def _async_run(self) -> StopReason:
         try:
             frame = await self._async_wait_for_tv()
@@ -344,7 +352,6 @@ class Pipeline:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _async_capture_loop(self) -> None:
-        interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
         failures = 0
         # Captures per second, from the end of the first capture to the end of
         # each later one, over at least CAPTURE_RATE_WINDOW.
@@ -373,6 +380,8 @@ class Pipeline:
                 self._captures_per_second = round(captures / elapsed, 2)
                 self._report(Phase.STREAMING)
                 captures, window_start = 0, now
+            # Read on every capture: the update rate can change while streaming.
+            interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
             await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
 
     async def _async_send_loop(self) -> None:
