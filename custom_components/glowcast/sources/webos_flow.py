@@ -42,9 +42,3 @@ class WebOsSteps(ConfigFlow):
             step_id="user",
             data_schema=vol.Schema({vol.Required(FIELD_TV): dropdown(available)}),
         )
-
-    async def async_source_chosen(
-        self, source: dict[str, Any], title: str
-    ) -> ConfigFlowResult:
-        """Provided by the flow that runs these steps (flow.py)."""
-        raise NotImplementedError

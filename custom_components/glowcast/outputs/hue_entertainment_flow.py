@@ -179,17 +179,6 @@ class HueEntertainmentSteps(ConfigEntryBaseFlow):
         error, self._hue_error = self._hue_error, None
         return {"base": error} if error else {}
 
-    @property
-    def entry_title(self) -> str:
-        """Provided by the flow that runs these steps (flow.py)."""
-        raise NotImplementedError
-
-    async def async_output_chosen(
-        self, data: dict[str, Any], output: dict[str, Any]
-    ) -> ConfigFlowResult:
-        """Provided by the flow that runs these steps (flow.py)."""
-        raise NotImplementedError
-
 
 class HueEntertainmentConfigSteps(HueEntertainmentSteps, ConfigFlow):
     """The setup steps, and pairing again when the bridge rejects the key."""
