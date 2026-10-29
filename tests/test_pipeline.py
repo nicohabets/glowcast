@@ -652,8 +652,8 @@ async def test_no_picture_for_3_s_releases_the_lights() -> None:
     assert h.output.sent[-1][0] == released_at  # nothing is sent while released
     assert h.statuses[-1].phase is Phase.NO_PICTURE
     assert h.statuses[-1].channels == 0
-    # Kept while there is no picture; only a retry clears it (#105).
-    assert h.statuses[-1].captures_per_second == pytest.approx(3, abs=0.3)
+    # The rate of the stream before is cleared, as after a retry (#105).
+    assert h.statuses[-1].captures_per_second is None
     assert not h.task.done()  # the switch stays on
     assert await h.stop() == StopReason.USER
 
@@ -731,11 +731,8 @@ async def test_the_picture_returns_and_the_lights_are_claimed_again() -> None:
     h.source.default = solid(BLUE)
     await h.clock.advance(0.7)
     assert h.log[-1] == "output.start"
-    assert h.statuses[-1] == PipelineStatus(
-        Phase.STREAMING,
-        channels=1,
-        captures_per_second=h.statuses[-1].captures_per_second,
-    )
+    # Not measured yet on the new stream (#105).
+    assert h.statuses[-1] == PipelineStatus(Phase.STREAMING, channels=1)
     claimed_at = h.status_times[-1]
     await h.clock.advance(TICK)
     # The first colour is shown at once, as at a start; no fade from red.

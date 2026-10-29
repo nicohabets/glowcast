@@ -80,7 +80,8 @@ class PipelineStatus:
     channels: int = 0
     stop_reason: StopReason | None = None  # only when stopped
     # Frames delivered per second, measured while streaming; kept after a
-    # stop. None until the first measurement, and again after a retry.
+    # stop. None until the first measurement, and again once the lights are
+    # released for a retry or for no picture.
     captures_per_second: float | None = None
 
 
@@ -318,7 +319,6 @@ class Pipeline:
         lights are not claimed again.
         """
         await self._async_release_output()
-        self._captures_per_second = None  # measured again on the new stream
         await self._async_unless_stopped(self._clock.sleep(LOST_RETRY_DELAY))
         if not self._source.is_on():
             raise _Stop(StopReason.TV_OFF)
@@ -384,7 +384,9 @@ class Pipeline:
             await self._output.stop()
         with suppress(Exception):
             await self._output.close()
+        # Released for a retry or for no picture: measured again on the next stream.
         self._channels = []
+        self._captures_per_second = None
 
     async def _async_stream(self) -> None:
         """Run the capture and send loops until one of them ends the run."""
