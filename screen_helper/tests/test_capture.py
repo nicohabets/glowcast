@@ -84,16 +84,27 @@ async def test_a_screen_that_does_not_exist_is_no_screen_access() -> None:
     await capture.close()
 
 
-async def test_no_access_and_a_failing_first_grab_stop_the_start() -> None:
+async def test_no_access_stops_the_start() -> None:
     grabber = FakeGrabber()
     grabber.no_access = "no permission"
     with pytest.raises(NoScreenAccess, match="no permission"):
         await ScreenCapture(grabber, None).start()
 
+
+async def test_a_screen_locked_at_start_is_no_picture() -> None:
+    clock = FakeClock()
     grabber = FakeGrabber()
-    grabber.fail = CaptureError("display gone")
-    with pytest.raises(NoScreenAccess, match="display gone"):
-        await ScreenCapture(grabber, None).start()
+    grabber.fail = CaptureError("locked")
+    capture = ScreenCapture(grabber, None, clock=clock)
+    await capture.start()
+    assert capture.no_picture_reason == "capture_failed"
+    clock.now += 1
+    assert await capture.frame() is None
+
+    grabber.fail = None
+    clock.now += 1
+    assert await capture.frame() == FRAMES["red"]
+    await capture.close()
 
 
 async def test_a_failing_grab_is_no_picture_and_recovers() -> None:

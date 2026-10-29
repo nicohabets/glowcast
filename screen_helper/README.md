@@ -159,7 +159,7 @@ Without `--json`, the same events are printed as plain text.
 | 1 | the config directory cannot be read or written |
 | 2 | a wrong flag |
 | 3 | the port is in use, or the address cannot be used (`reason: port_in_use`) |
-| 4 | no screen access: no display, no Screen Recording permission, a screen number that does not exist, or the first capture failed (`reason: no_screen_access`) |
+| 4 | no screen access: no display, no Screen Recording permission, or a screen number that does not exist (`reason: no_screen_access`). A screen that is locked at start-up is not an error: the helper starts and answers "no picture" until it is unlocked. |
 
 ## Prompts on the first start
 

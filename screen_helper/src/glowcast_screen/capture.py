@@ -186,7 +186,11 @@ class ScreenCapture:
         )
 
     async def start(self) -> None:
-        """List the screens, pick one and grab once; raise NoScreenAccess on failure."""
+        """List the screens and pick one; raise NoScreenAccess if that is not possible.
+
+        A first grab that fails (for example a locked screen) is "no picture", not
+        a start-up error: the helper serves and the picture comes back later.
+        """
         self.screens = await self._run(self._grabber.open)
         if not self.screens:
             raise NoScreenAccess("no screen to capture")
@@ -205,8 +209,8 @@ class ScreenCapture:
                 )
         try:
             await self._run(self._grab_once)
-        except CaptureError as err:
-            raise NoScreenAccess(f"capturing the screen failed: {err}") from err
+        except CaptureError:
+            self.no_picture_reason = "capture_failed"
 
     def _grab_once(self) -> tuple[bytes, float]:
         assert self.screen is not None
