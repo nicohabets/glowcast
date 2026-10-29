@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
 from typing import Any
 
+import aiohttp
 import pytest
 from aiowebostv import WebOsTvState
 from aiowebostv.exceptions import WebOsTvCommandError, WebOsTvPairError
@@ -252,6 +253,11 @@ async def test_start_after_tv_removed_and_re_added(
         (TimeoutError(), "did not respond"),
         (OSError("unreachable"), "Could not connect"),
         (WebOsTvPairError("rejected"), "rejected the pairing"),
+        # A TV in standby accepts the websocket and closes it with code 1008.
+        (
+            aiohttp.WSMessageTypeError("Received message 8:1008 is not TEXT"),
+            "Could not connect",
+        ),
     ],
 )
 async def test_start_when_tv_unreachable(

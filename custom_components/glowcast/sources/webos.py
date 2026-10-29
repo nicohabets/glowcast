@@ -79,7 +79,9 @@ class WebOsFrameSource:
             reason = "The TV did not respond in time"
         except WebOsTvPairError:
             reason = "The TV rejected the pairing of the LG webOS TV integration"
-        except (OSError, aiohttp.ClientError, WebOsTvError):
+        except (OSError, aiohttp.ClientError, aiohttp.WSMessageTypeError, WebOsTvError):
+            # A TV in standby can accept the websocket and close it at once,
+            # which aiohttp reports as WSMessageTypeError (a TypeError).
             reason = "Could not connect to the TV"
         if reason is not None:
             await self.close()
@@ -177,7 +179,13 @@ class WebOsFrameSource:
             try:
                 async with asyncio.timeout(RECONNECT_TIMEOUT):
                     await client.connect()
-            except (TimeoutError, OSError, aiohttp.ClientError, WebOsTvError):
+            except (
+                TimeoutError,
+                OSError,
+                aiohttp.ClientError,
+                aiohttp.WSMessageTypeError,
+                WebOsTvError,
+            ):
                 _LOGGER.warning("Lost the connection to the TV and could not reconnect")
                 self._lost = True
                 return
