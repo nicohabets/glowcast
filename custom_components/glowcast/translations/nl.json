@@ -83,6 +83,30 @@
       }
     }
   },
+  "entity": {
+    "number": {
+      "brightness": {
+        "name": "Helderheid"
+      },
+      "intensity": {
+        "name": "Intensiteit"
+      }
+    },
+    "select": {
+      "update_rate": {
+        "name": "Updatefrequentie",
+        "state": {
+          "low": "Laag",
+          "medium": "Middel",
+          "high": "Hoog",
+          "maximum": "Maximaal"
+        }
+      },
+      "entertainment_area": {
+        "name": "Entertainmentruimte"
+      }
+    }
+  },
   "issues": {
     "source_missing": {
       "title": "Glowcast {name}: de tv is niet ingesteld",

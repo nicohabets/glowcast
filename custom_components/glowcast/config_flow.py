@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -49,6 +50,7 @@ from .outputs.hue_entertainment import (
     async_pair,
     bridge_host,
     bridges,
+    signal_areas_read,
 )
 from .settings import read_settings, write_settings
 from .sources.webos import tvs
@@ -298,6 +300,9 @@ class GlowcastOptionsFlow(OptionsFlow):
             return self.async_abort(reason="reauth_required")
         except OutputUnavailable:
             return self.async_abort(reason="cannot_connect")
+        async_dispatcher_send(
+            self.hass, signal_areas_read(self.config_entry.entry_id), areas
+        )
         if not areas:
             return self.async_abort(reason="no_areas")
 

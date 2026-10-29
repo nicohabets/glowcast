@@ -345,6 +345,12 @@ async def async_pair(host: str, name: str) -> tuple[str, str]:
         await api.close()
 
 
+def signal_areas_read(entry_id: str) -> str:
+    """The signal the options screen sends with the areas it read, so the
+    entertainment-area entity shows the same list."""
+    return f"glowcast_hue_areas_{entry_id}"
+
+
 async def async_areas(hass: HomeAssistant, host: str, app_key: str) -> dict[str, str]:
     """Return {area id: name} of the bridge's entertainment areas.
 

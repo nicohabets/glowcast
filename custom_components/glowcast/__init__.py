@@ -9,7 +9,7 @@ from homeassistant.helpers.translation import async_get_translations
 from .const import DOMAIN
 from .runtime import ISSUES, GlowcastConfigEntry, GlowcastData, issue_id
 
-PLATFORMS = [Platform.SWITCH]
+PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
 
 # Shown once when the entry is removed. Its text lives under "issues" because
 # Home Assistant has no translation category for notifications; it is never
@@ -60,5 +60,5 @@ async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) ->
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
-    """New settings: restart only the pipeline if it runs (no entry reload)."""
-    await entry.runtime_data.async_restart()
+    """New settings reach a running pipeline without an entry reload."""
+    await entry.runtime_data.async_options_updated()

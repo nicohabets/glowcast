@@ -87,6 +87,7 @@ class FakePipeline:
         self.runner = runner
         self.on_status = on_status
         self.reason = StopReason.USER
+        self.updates: list[Settings] = []
         self._stop = asyncio.Event()
         FakePipeline.instances.append(self)
 
@@ -120,6 +121,9 @@ class FakePipeline:
 
     def stop(self) -> None:
         self._stop.set()
+
+    def update_settings(self, settings: Settings) -> None:
+        self.updates.append(settings)
 
     def finish(self, reason: StopReason) -> None:
         self.reason = reason
@@ -271,7 +275,13 @@ async def test_the_switch_keeps_its_ids_and_device(
 ) -> None:
     """As in v0.1, so automations, dashboards and history keep working."""
     entry = await setup(hass)
-    [entity] = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+    [entity] = [
+        entity
+        for entity in er.async_entries_for_config_entry(
+            er.async_get(hass), entry.entry_id
+        )
+        if entity.domain == "switch"
+    ]
     assert entity.entity_id == ENTITY
     assert entity.unique_id == entry.entry_id
     assert entity.platform == DOMAIN
@@ -357,9 +367,34 @@ async def test_a_missing_setting_starts_with_its_default(
     await switch(hass, SERVICE_TURN_OFF)
 
 
-async def test_new_settings_while_syncing_restart_only_the_pipeline(
+async def test_new_settings_while_syncing_reach_the_pipeline_without_a_restart(
     hass: HomeAssistant, fakes: Fakes
 ) -> None:
+    """Brightness, intensity and update rate: no new claim of the lights (#13)."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "brightness": 30,
+            "intensity": 0,
+            "update_rate": "maximum",
+        },
+    )
+    await settle(hass)
+
+    [pipeline] = FakePipeline.instances
+    assert pipeline.updates == [Settings(30, 0, UpdateRate.MAXIMUM)]
+    assert fakes.log == ["source.start", "output.start"]
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_new_output_while_syncing_restarts_only_the_pipeline(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    """What follows the TV changed: the pipeline restarts, the entry stays."""
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
     states: list[str] = []
@@ -372,12 +407,18 @@ async def test_new_settings_while_syncing_restart_only_the_pipeline(
         ),
     )
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, "brightness": 30}
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+            "brightness": 30,
+        },
     )
     await settle(hass)
 
     first, second = FakePipeline.instances
     assert fakes.log.count("output.stop") == 1  # the first one was released
+    assert first.updates == []
     assert second.settings.brightness == 30
     assert state(hass) == STATE_ON
     assert STATE_OFF not in states  # the switch stayed on

@@ -83,6 +83,30 @@
       }
     }
   },
+  "entity": {
+    "number": {
+      "brightness": {
+        "name": "Brightness"
+      },
+      "intensity": {
+        "name": "Intensity"
+      }
+    },
+    "select": {
+      "update_rate": {
+        "name": "Update rate",
+        "state": {
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "maximum": "Maximum"
+        }
+      },
+      "entertainment_area": {
+        "name": "Entertainment area"
+      }
+    }
+  },
   "issues": {
     "source_missing": {
       "title": "Glowcast {name}: the TV is not set up",
