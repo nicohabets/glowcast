@@ -21,7 +21,7 @@ So the README, the brand images and `hacs.json` that the reviewers see are the o
 ## Steps, in order
 
 1. **Merge the PR for #48**, so `main` runs the HACS action without `ignore`.
-2. **Merge the release preparation** (#86; version: see the question on #48, v0.1.1 is proposed). As with v0.1.0: `version` in `custom_components/glowcast/manifest.json` matches the tag, and release notes are under `docs/releases/`.
+2. **Merge the release preparation** (#86, v0.1.1). As with v0.1.0: `version` in `custom_components/glowcast/manifest.json` matches the tag, and release notes are under `docs/releases/`.
 3. **Wait for CI on `main` to be green** for that merge, and note the links of the CI run (`https://github.com/nicohabets/glowcast/actions/runs/<id>`): its **HACS** job (`.../job/<id>`) and its **hassfest** job. The HACS job must show `category: integration` and no `ignore` in its "Run hacs/action@main" step. The template asks for a release made *after* the actions passed, so keep this order.
 4. **Publish the GitHub release** from that commit: a full release, not a pre-release. Note its link: `https://github.com/nicohabets/glowcast/releases/tag/<tag>`.
 5. **Fork [hacs/default](https://github.com/hacs/default)** under your personal account, and create a new branch from `master` (for example `add-glowcast`). Do not work on the fork's `master`: the bot closes PRs from `master`.
