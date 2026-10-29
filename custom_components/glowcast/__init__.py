@@ -73,6 +73,7 @@ class GlowcastData:
         self._pipeline: Pipeline | None = None
         self._task: asyncio.Task[None] | None = None
         self._restarting = False
+        self._stopped_during_restart = False
         self._listeners: list[Callable[[], None]] = []
 
     @property
@@ -117,6 +118,11 @@ class GlowcastData:
 
     async def async_stop(self) -> None:
         """Stop syncing and wait until the lights are released."""
+        # Switching off (or unloading) during a restart wins over the restart.
+        self._stopped_during_restart = self._restarting
+        await self._async_stop()
+
+    async def _async_stop(self) -> None:
         if self._pipeline is not None:
             self._pipeline.stop()
         task = self._task
@@ -131,10 +137,14 @@ class GlowcastData:
         if not self.is_on:
             return
         self._restarting = True
+        self._stopped_during_restart = False
         try:
-            await self.async_stop()
+            await self._async_stop()
         finally:
             self._restarting = False
+        if self._stopped_during_restart:
+            self._notify()  # the switch shows off now
+            return
         await self.async_start()
 
     @callback

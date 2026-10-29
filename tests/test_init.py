@@ -335,6 +335,21 @@ async def test_new_settings_while_syncing_restart_only_the_pipeline(
     await switch(hass, SERVICE_TURN_OFF)
 
 
+async def test_switching_off_during_a_restart_wins(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    restart = asyncio.ensure_future(data.async_restart())
+    await asyncio.sleep(0)  # the restart is stopping the old pipeline
+    await data.async_stop()
+    await restart
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1  # not started again
+    assert state(hass) == STATE_OFF
+
+
 async def test_new_settings_while_off_start_nothing(
     hass: HomeAssistant, fakes: Fakes
 ) -> None:
