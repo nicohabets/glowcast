@@ -53,10 +53,15 @@ class ScreenFrameSource:
         self._base = URL.build(scheme="http", host=host, port=port)
         self._headers = {"Authorization": f"Bearer {token}"}
         self._on = False
+        # A frame came since start(): only then does no picture turn it off,
+        # so the pipeline's startup grace keeps asking while the computer
+        # wakes up or unlocks.
+        self._delivered = False
 
     async def start(self) -> None:
         """Check that the helper answers and accepts the token."""
         self._on = False
+        self._delivered = False
         reason: str
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
@@ -76,7 +81,11 @@ class ScreenFrameSource:
         raise SourceUnavailable(reason)
 
     def is_on(self) -> bool:
-        """Return whether the helper answered with a picture, the last time."""
+        """Return whether the helper answers with a picture.
+
+        False after start() failed, or once two requests in a row got no
+        picture after a frame came.
+        """
         return self._on
 
     async def capture(self) -> Frame:
@@ -100,7 +109,8 @@ class ScreenFrameSource:
             reason = "The screen helper has no picture or is not reachable"
         except TimeoutError:
             reason = "The screen helper did not respond in time"
-        self._on = False
+        if self._delivered:
+            self._on = False
         raise SourceUnavailable(reason)
 
     async def close(self) -> None:
@@ -125,7 +135,7 @@ class ScreenFrameSource:
         if len(pixels) != FRAME_BYTES:
             _LOGGER.debug("The screen helper sent %d bytes, not a frame", len(pixels))
             raise _NoPicture
-        self._on = True
+        self._on = self._delivered = True
         return Frame(width=WIDTH, height=HEIGHT, pixels=pixels)
 
     def _get(self, path: str) -> Any:

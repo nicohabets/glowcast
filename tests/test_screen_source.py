@@ -152,14 +152,29 @@ async def test_no_picture_twice_turns_the_source_off(
     """Locked, asleep or broken: the pipeline then stops with TV_OFF."""
     source = source_for(hass, helper)
     await source.start()
+    await source.capture()
     helper.frames = [answer, answer]
     with pytest.raises(SourceUnavailable):
         await source.capture()
     assert not source.is_on()
-    assert helper.frame_requests == 2
+    assert helper.frame_requests == 3
     with pytest.raises(SourceUnavailable):
         await source.capture()  # off: not asked again
-    assert helper.frame_requests == 2
+    assert helper.frame_requests == 3
+
+
+async def test_no_picture_before_the_first_frame_keeps_it_on(
+    hass: HomeAssistant, helper: FakeHelper
+) -> None:
+    """The startup grace asks again while the computer wakes or unlocks; if
+    no frame comes within it, the pipeline stops with TV_OFF."""
+    source = source_for(hass, helper)
+    await source.start()
+    helper.frames = [204, 204]
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert source.is_on()
+    assert (await source.capture()).pixels == RED
 
 
 async def test_a_new_start_after_no_picture(
@@ -167,9 +182,11 @@ async def test_a_new_start_after_no_picture(
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
+    await source.capture()
     helper.frames = [204, 204]
     with pytest.raises(SourceUnavailable):
         await source.capture()
+    assert not source.is_on()
     await source.start()
     assert source.is_on()
     assert (await source.capture()).pixels == RED
@@ -188,6 +205,7 @@ async def test_unreachable_while_syncing(
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
+    await source.capture()
     await helper.server.close()
     with pytest.raises(SourceUnavailable):
         await source.capture()
@@ -240,6 +258,7 @@ async def test_a_capture_that_hangs_ends_within_the_timeout(
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
+    await source.capture()
     helper.default = "slow"
     loop = asyncio.get_running_loop()
     began = loop.time()
