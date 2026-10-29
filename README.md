@@ -32,7 +32,7 @@ Everything stays on your local network.
 
 - Home Assistant 2025.7.2 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
-- A Philips Hue Bridge v2 (the square one) or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge cannot stream.
+- A Philips Hue Bridge v2 or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge cannot stream.
 - An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
 - [HACS](https://hacs.xyz/)
 
@@ -48,7 +48,7 @@ Glowcast is not in the default HACS list yet; add it as a custom repository:
 
 Updates show up in HACS and under Settings → System → Updates.
 
-These steps are for HACS on Home Assistant 2026.10 and older. From Home Assistant 2026.11, HACS is built into Home Assistant as **Settings → Marketplace**, which may name things differently.
+Newer Home Assistant versions may show HACS under a different name; the steps stay the same.
 
 ## Configuration
 
@@ -64,7 +64,7 @@ Under **Configure** you can change the area, brightness (1-100 %, default 80 %),
 
 ## Starting and stopping
 
-Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; the lights then return to how they were. Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on:
+Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on:
 
 ```yaml
 triggers:
@@ -82,7 +82,7 @@ Glowcast waits up to 10 seconds for the TV to show a picture, so it can start th
 
 **When it stops by itself**, the switch turns off and the reason is in the Home Assistant log:
 
-- **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours back to how they were.
+- **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours to the state the bridge restores.
 - **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start.
 - **The light stream is lost** (bridge restarted, another app took over): one retry after 5 seconds; if that does not work, Glowcast stops. The next switch-on works once the bridge is back.
 - **The bridge rejects Glowcast's key** (for example after removing the app in the Hue app): Home Assistant asks you to press the bridge's link button again; your settings are kept.
@@ -97,7 +97,7 @@ On a black picture the lights keep a faint warm glow instead of going dark.
 
 - **About 3 frames per second.** That is the TV's capture limit. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
-- **One stream per bridge at a time.** A Hue bridge streams to one entertainment area at a time, so two Glowcast entries (two TVs) on one bridge cannot sync together.
+- **One stream per bridge at a time** (as far as known; being checked for the Bridge Pro, #37). A Hue bridge streams to one entertainment area at a time, so two Glowcast entries (two TVs) on one bridge cannot sync together.
 - **Changing a setting while syncing** briefly restarts the light stream (a few seconds).
 - **TV lightstrip segments sample about 30 % in from the picture's edges**, not the edges themselves, because of where the Hue app places them. Improving this is planned (#23).
 - **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so the lights show only the minimal glow. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
