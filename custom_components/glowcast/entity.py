@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING
 
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
 
@@ -46,7 +46,12 @@ class GlowcastEntity(Entity):
         An entity that overrides this must call super(), or it stops following.
         """
         await super().async_added_to_hass()
-        self.async_on_remove(self._data.async_add_listener(self.async_write_ha_state))
+        self.async_on_remove(self._data.async_add_listener(self._async_runtime_changed))
+
+    @callback
+    def _async_runtime_changed(self) -> None:
+        """The runtime changed: write the state."""
+        self.async_write_ha_state()
 
 
 class GlowcastSettingEntity(GlowcastEntity):

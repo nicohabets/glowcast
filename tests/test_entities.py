@@ -226,6 +226,8 @@ async def test_the_entities(
         f"{entry.entry_id}_intensity",
         f"{entry.entry_id}_update_rate",
         f"{entry.entry_id}_entertainment_area",
+        f"{entry.entry_id}_status",  # the sensors (#14)
+        f"{entry.entry_id}_captures_per_second",
     }
     assert len({entity.device_id for entity in entities}) == 1
 
@@ -731,7 +733,8 @@ async def test_the_output_type_provides_what_follows_the_tv(
     }
     assert follow == expected
     assert f"{entry.entry_id}_entertainment_area" not in unique_ids
-    assert len(unique_ids) == 4 + len(expected)
+    # The common settings, the switch and the two sensors (#14).
+    assert len(unique_ids) == 6 + len(expected)
 
 
 async def test_an_unknown_output_type_still_gets_the_common_settings(
@@ -745,7 +748,7 @@ async def test_an_unknown_output_type_still_gets_the_common_settings(
             er.async_get(hass), entry.entry_id
         )
     )
-    assert domains == ["number", "number", "select", "switch"]
+    assert domains == ["number", "number", "select", "sensor", "sensor", "switch"]
 
 
 def test_an_output_type_without_its_own_entities() -> None:
