@@ -328,7 +328,7 @@ Planned as a new **output adapter** (`HaLightsOutput`) that drives any HA light 
 - It is stored as a new output type: `"output": {"type": "ha_lights", "lights": [ ... ]}` (section 5).
 - A mix (entertainment area plus a few loose lights) becomes a `CompositeOutput` that fans out to several outputs.
 
-Rule for v0.1 to keep this open: **no code outside `outputs/` may know about Hue.**
+Rule: **no code outside `outputs/` may know about Hue**, and that includes the UI. The Hue output type provides its own setup and options steps (bridge, link button, pairing, area), its "what follows the TV" entity and its texts (stop messages, repair issues, the removal notice). The setup and options flows only chain what the types provide.
 
 ### 8.2 Other TVs
 
@@ -340,7 +340,7 @@ Planned as new **source adapters** behind `FrameSource`. Candidates, each still 
 | Any HA camera entity | camera snapshot (HDMI capture card via go2rtc, or a camera aimed at the screen) | works for every TV, needs hardware |
 | Samsung (Tizen) | no known local screenshot API | probably not possible |
 
-Rule for v0.1 to keep this open: **no code outside `sources/` may know about webOS.** Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
+Rule: **no code outside `sources/` may know about webOS**, and that includes the UI: the webOS source type provides its own setup step (pick a TV) and its texts. Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
 
 ## 9. Decisions
 
