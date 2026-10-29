@@ -20,10 +20,21 @@ from PIL import Image
 from ..const import CONF_SOURCE, CONF_UNIQUE_ID
 from ..core.models import Frame
 from ..core.ports import SourceUnavailable
+from ..issues import Issue
 
 _LOGGER = logging.getLogger(__name__)
 
 WEBOSTV_DOMAIN = "webostv"
+
+# The source type (architecture 5).
+SOURCE_WEBOS = "webos"
+
+# Repair issue (architecture 4.4); the key is the one v0.1 raised.
+MISSING = Issue(
+    "source_missing",
+    "webos_missing",
+    "the TV is not set up (or not loaded) in Home Assistant",
+)
 
 FRAME_SIZE = (64, 36)
 # aiowebostv waits up to 10-20 s for single replies; the pipeline's startup
@@ -199,7 +210,9 @@ def create(
     return WebOsFrameSource(hass, data[CONF_SOURCE][CONF_UNIQUE_ID])
 
 
-def is_missing(hass: HomeAssistant, data: Mapping[str, Any]) -> bool:
+def is_missing(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> bool:
     """Whether the referenced webostv entry is removed or not loaded."""
     entry = hass.config_entries.async_entry_for_domain_unique_id(
         WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID]

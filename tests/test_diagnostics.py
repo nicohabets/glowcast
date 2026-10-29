@@ -88,7 +88,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             SOURCES["webos"],
             create=lambda hass, data, options: lights.source(),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     monkeypatch.setitem(
@@ -97,7 +97,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             OUTPUTS["hue_entertainment"],
             create=lambda hass, data, options: FakeOutput(MonotonicClock(), lights.log),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     return lights
@@ -332,6 +332,27 @@ async def test_the_download_while_the_entry_is_not_loaded(
     assert await hass.config_entries.async_setup(entry.entry_id)  # for teardown
 
 
+async def test_a_source_without_a_device(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    entry: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source type may have no device (#66)."""
+    monkeypatch.setitem(
+        SOURCES,
+        "webos",
+        dataclasses.replace(
+            SOURCES["webos"],
+            device_identifier=lambda data: None,
+            device_id=lambda hass, data: None,
+        ),
+    )
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["source"] == {"type": "webos", "device": None}
+    assert diagnostics["output"]["device"] is not None
+
+
 async def test_a_refused_start_does_not_show_the_previous_stop(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,
@@ -345,7 +366,9 @@ async def test_a_refused_start_does_not_show_the_previous_stop(
     monkeypatch.setitem(
         OUTPUTS,
         "hue_entertainment",
-        dataclasses.replace(OUTPUTS["hue_entertainment"], is_missing=lambda h, d: True),
+        dataclasses.replace(
+            OUTPUTS["hue_entertainment"], is_missing=lambda h, d, o: True
+        ),
     )
     await entry.runtime_data.async_start()  # the bridge is gone from HA
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)

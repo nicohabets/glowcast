@@ -1,7 +1,7 @@
 """Diagnostics for bug reports: the setup and the last status, without secrets.
 
 Architecture 4.4. Bug reports are public, so the download never contains a
-stored value of the entry (keys, ids, the area): it shows their shape, the
+stored value of the entry (keys, ids, choices): it shows their shape, the
 settings and the types instead, so a key that a later type adds cannot leak.
 Devices come through the source and output types and show only hardware and
 software, never a name or serial number.
@@ -22,7 +22,7 @@ from packaging.requirements import Requirement
 
 from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
 from .outputs import OUTPUTS
-from .runtime import ISSUES, GlowcastConfigEntry, GlowcastData, issue_id
+from .runtime import GlowcastConfigEntry, GlowcastData, issue_id, issue_keys
 from .settings import read_settings
 from .sources import SOURCES
 
@@ -74,7 +74,7 @@ async def async_get_config_entry_diagnostics(
         "status": None if status is None else dataclasses.asdict(status),
         "repair_issues": [
             key
-            for key in ISSUES
+            for key in issue_keys()
             if issues.async_get_issue(DOMAIN, issue_id(entry.entry_id, key))
         ],
     }

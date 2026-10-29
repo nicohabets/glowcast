@@ -33,10 +33,18 @@ from homeassistant.helpers.restore_state import (
     RestoreEntity,
 )
 
-from ..const import CONF_APP_KEY, CONF_AREA_ID, CONF_BRIDGE, CONF_OUTPUT, CONF_UNIQUE_ID
+from ..const import CONF_OUTPUT, CONF_UNIQUE_ID
 from ..core.ports import OutputAuthFailed, OutputUnavailable
 from ..entity import GlowcastSettingEntity
-from .hue_entertainment import HUE_DOMAIN, async_areas, bridge_host, signal_areas_read
+from .hue_entertainment import (
+    CONF_APP_KEY,
+    CONF_AREA_ID,
+    CONF_BRIDGE,
+    HUE_DOMAIN,
+    async_areas,
+    bridge_host,
+    signal_areas_read,
+)
 
 _LOGGER = logging.getLogger(__name__)
 

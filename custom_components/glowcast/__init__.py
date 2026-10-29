@@ -1,20 +1,13 @@
-"""Glowcast: Hue lights follow the picture on an LG webOS TV."""
+"""Glowcast: lights follow the picture on a TV."""
 
-from homeassistant.components import persistent_notification
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.translation import async_get_translations
 
-from .const import DOMAIN
-from .runtime import ISSUES, GlowcastConfigEntry, GlowcastData, issue_id
+from .const import CONF_OUTPUT, CONF_TYPE
+from .outputs import OUTPUTS
+from .runtime import GlowcastConfigEntry, GlowcastData, async_remove_issues
 
 PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
-
-# Shown once when the entry is removed. Its text lives under "issues" because
-# Home Assistant has no translation category for notifications; it is never
-# raised as a repair issue.
-NOTICE_BRIDGE_APP_LEFT = "bridge_app_left"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
@@ -42,21 +35,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) ->
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
-    """Remove the entry's repair issues; tell the user its app stays on the bridge."""
-    for key in ISSUES:
-        ir.async_delete_issue(hass, DOMAIN, issue_id(entry.entry_id, key))
-    # The bridge has no API to remove an app (architecture 4.1); the user
-    # removes it in the Hue app. Text in Home Assistant's server language.
-    strings = await async_get_translations(
-        hass, hass.config.language, "issues", {DOMAIN}
-    )
-    prefix = f"component.{DOMAIN}.issues.{NOTICE_BRIDGE_APP_LEFT}"
-    persistent_notification.async_create(
-        hass,
-        strings[f"{prefix}.description"],
-        title=strings[f"{prefix}.title"].replace("{name}", entry.title),
-        notification_id=f"{DOMAIN}_{NOTICE_BRIDGE_APP_LEFT}_{entry.entry_id}",
-    )
+    """Remove the entry's repair issues; the output says what the user cleans up."""
+    async_remove_issues(hass, entry.entry_id)
+    # For example an app that stays on the device the lights are paired with.
+    output_type = OUTPUTS.get(entry.options[CONF_OUTPUT][CONF_TYPE])
+    if output_type is not None and output_type.async_removed is not None:
+        await output_type.async_removed(hass, entry)
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
