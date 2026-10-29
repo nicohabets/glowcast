@@ -1,4 +1,4 @@
-"""Home Assistant can find and load the integration's manifest."""
+"""Home Assistant can load the manifest, and the demo installs its requirements."""
 
 import ast
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 from custom_components.glowcast.const import DOMAIN
@@ -29,9 +30,15 @@ def _demo_requirements() -> list[str]:
     """REQUIREMENTS from scripts/demo.py, read without running the demo."""
     tree = ast.parse((ROOT / "scripts" / "demo.py").read_text())
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value:
+            targets = [node.target]
+        else:
+            continue
+        if any(
             isinstance(target, ast.Name) and target.id == "REQUIREMENTS"
-            for target in node.targets
+            for target in targets
         ):
             return ast.literal_eval(node.value)
     pytest.fail("scripts/demo.py has no REQUIREMENTS list")
@@ -42,21 +49,19 @@ def test_demo_installs_manifest_requirements() -> None:
     manifest = json.loads(
         (ROOT / "custom_components" / "glowcast" / "manifest.json").read_text()
     )
-    demo = _demo_requirements()
-    demo_by_name = {
-        canonicalize_name(requirement.split("==")[0]): requirement
-        for requirement in demo
+    # Names as pip compares them: hue_entertainment is hue-entertainment.
+    demo = {
+        canonicalize_name(requirement.name): requirement
+        for requirement in map(Requirement, _demo_requirements())
     }
 
     problems = []
-    for requirement in manifest["requirements"]:
-        if requirement in demo:
-            continue
-        found = demo_by_name.get(canonicalize_name(requirement.split("==")[0]))
-        if found:
-            problems.append(f"{requirement} differs: the demo has {found}")
-        else:
+    for requirement in map(Requirement, manifest["requirements"]):
+        found = demo.get(canonicalize_name(requirement.name))
+        if found is None:
             problems.append(f"{requirement} is missing from the demo")
+        elif found != requirement:
+            problems.append(f"{requirement} differs: the demo has {found}")
 
     assert not problems, (
         "\n".join(problems)
