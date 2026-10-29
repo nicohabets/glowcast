@@ -1,6 +1,7 @@
 """The switch and the pipeline's lifecycle in Home Assistant, with a fake pipeline."""
 
 import asyncio
+import re
 from collections.abc import Generator
 from typing import Any
 
@@ -18,7 +19,10 @@ from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_get_persistent_notifications,
+)
 
 import custom_components.glowcast as glowcast
 from custom_components.glowcast.const import DOMAIN
@@ -464,6 +468,101 @@ async def test_removing_the_entry_removes_its_issues(
     await hass.config_entries.async_remove(entry.entry_id)
     await settle(hass)
     assert issues(hass, entry) == set()
+
+
+def notices(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    """Glowcast's persistent notifications, by id."""
+    return {
+        notification_id: notification
+        for notification_id, notification in (
+            async_get_persistent_notifications(hass).items()
+        )
+        if notification_id.startswith(f"{DOMAIN}_")
+    }
+
+
+async def test_removing_the_entry_tells_how_to_remove_the_bridge_app(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle(hass)
+    notice_id = f"{DOMAIN}_bridge_app_left_{entry.entry_id}"
+    assert list(notices(hass)) == [notice_id]
+    notice = notices(hass)[notice_id]
+    assert notice["title"] == (
+        "Glowcast Living room TV: remove its app from the Hue bridge"
+    )
+    assert "Settings → Apps → Network-based" in notice["message"]
+    assert "**glowcast**" in notice["message"]
+
+
+async def test_the_removal_notice_in_dutch(hass: HomeAssistant, fakes: Fakes) -> None:
+    hass.config.language = "nl"
+    entry = await setup(hass)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle(hass)
+    (notice,) = notices(hass).values()
+    assert notice["title"] == (
+        "Glowcast Living room TV: verwijder ook de app van de Hue-bridge"
+    )
+    assert "Instellingen → Toepassingen → Netwerk-gebaseerd" in notice["message"]
+
+
+async def test_reload_and_stop_show_no_removal_notice(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await settle(hass)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await settle(hass)
+    assert notices(hass) == {}
+
+
+async def test_two_removed_entries_give_two_notices(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    first = await setup(hass)
+    second = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bedroom TV",
+        unique_id="other-tv-unique-id",
+        data=dict(first.data),
+        options=dict(first.options),
+    )
+    second.add_to_hass(hass)
+    await hass.config_entries.async_remove(first.entry_id)
+    await hass.config_entries.async_remove(second.entry_id)
+    await settle(hass)
+    titles = {notice_id: notice["title"] for notice_id, notice in notices(hass).items()}
+    assert titles == {
+        f"{DOMAIN}_bridge_app_left_{first.entry_id}": (
+            "Glowcast Living room TV: remove its app from the Hue bridge"
+        ),
+        f"{DOMAIN}_bridge_app_left_{second.entry_id}": (
+            "Glowcast Bedroom TV: remove its app from the Hue bridge"
+        ),
+    }
+
+
+async def test_the_removal_notice_has_no_secrets(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    bridge = entry.data["bridge"]
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle(hass)
+    (notice,) = notices(hass).values()
+    text = f"{notice['title']}\n{notice['message']}"
+    for value in (bridge["app_key"], bridge["client_key"], BRIDGE_ID, TV_ID):
+        assert value not in text
+    assert entry.entry_id not in text
+    assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", text)
+    assert "://" not in text
 
 
 # Unload and Home Assistant stopping
