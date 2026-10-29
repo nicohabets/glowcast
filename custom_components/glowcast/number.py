@@ -56,4 +56,5 @@ class GlowcastPercentage(GlowcastSettingEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Store a new value; a running pipeline uses it without a restart."""
-        self._store(replace(self._settings, **{self._key: int(value)}))
+        # Whole percents; a service call may pass a fraction.
+        self._store(replace(self._settings, **{self._key: round(value)}))

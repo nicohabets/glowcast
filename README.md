@@ -103,7 +103,7 @@ On a black picture the lights keep a faint warm glow instead of going dark. Dark
 
 ## Settings on the device page
 
-The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and **Entertainment area** (the bridge's areas by name). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values. While syncing, brightness and intensity reach the lights within a second and a new update rate applies from the next capture, without a restart. Only a new entertainment area restarts syncing.
+The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and **Entertainment area** (the bridge's areas by name). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values. While syncing, a new brightness reaches the lights at once; a new intensity and update rate apply from the next capture (the lights then fade to the new colours as usual), without a restart. Only a new entertainment area restarts syncing.
 
 For example, softer lights late in the evening:
 

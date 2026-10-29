@@ -23,7 +23,7 @@ from homeassistant.const import (
     EntityCategory,
     Platform,
 )
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import CoreState, HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -43,7 +43,7 @@ from custom_components.glowcast.core.pipeline import (
     Settings,
     UpdateRate,
 )
-from custom_components.glowcast.outputs import OUTPUTS, OutputType
+from custom_components.glowcast.outputs import OUTPUTS, OutputType, hue_area_select
 from custom_components.glowcast.sources import SOURCES
 
 from .fakes import FakeOutput, FakeSource
@@ -394,7 +394,7 @@ async def test_a_value_while_off_is_stored_and_used_at_the_next_start(
     hass: HomeAssistant, pipeline: Lights
 ) -> None:
     entry = await setup(hass)
-    await set_number(hass, BRIGHTNESS, 25)
+    await set_number(hass, BRIGHTNESS, 24.6)  # rounded to whole percents
     await select(hass, AREA, "Other area")
     assert FakePipeline.instances == []
     assert state(hass, SWITCH) == STATE_OFF
@@ -619,6 +619,87 @@ async def test_a_failed_read_is_retried_with_a_backoff(
     assert area_reads(aioclient_mock) == 3  # no polling once read
 
 
+class Timers:
+    """Stands in for async_call_later: records the delays, fires on demand."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+        self.pending: list[Any] = []
+
+    def call_later(self, hass: HomeAssistant, delay: float, action: Any) -> Any:
+        self.delays.append(delay)
+        self.pending.append(action)
+        return lambda: self.pending.remove(action)
+
+    async def fire(self, hass: HomeAssistant) -> None:
+        action = self.pending.pop(0)
+        action(dt_util.utcnow())
+        await settle(hass)
+
+
+@pytest.fixture
+def timers(monkeypatch: pytest.MonkeyPatch) -> Timers:
+    fake = Timers()
+    monkeypatch.setattr(hue_area_select, "async_call_later", fake.call_later)
+    return fake
+
+
+async def test_the_backoff_doubles_up_to_ten_minutes_and_resets(
+    hass: HomeAssistant,
+    pipeline: Lights,
+    bridge: FakeBridge,
+    hue_entry: MockConfigEntry,
+    timers: Timers,
+) -> None:
+    bridge.reachable = False
+    await setup(hass)
+    for _ in range(6):
+        await timers.fire(hass)
+    assert timers.delays == [30, 60, 120, 240, 480, 600, 600]
+    # The hue entry was loaded again: the pending retry is replaced by a read
+    # at once, and the next failure waits 30 s again.
+    hue_entry.mock_state(hass, ConfigEntryState.LOADED)
+    await settle(hass)
+    assert len(timers.pending) == 1
+    assert timers.delays[-1] == 30
+
+
+async def test_a_list_from_the_options_screen_cancels_a_pending_retry(
+    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge, timers: Timers
+) -> None:
+    bridge.reachable = False
+    entry = await setup(hass)
+    assert len(timers.pending) == 1
+    bridge.reachable = True
+    await hass.config_entries.options.async_init(entry.entry_id)
+    await settle(hass)
+    assert timers.pending == []
+    assert state(hass, AREA) == "TV area"
+
+
+async def test_no_read_when_the_entry_unloads_or_home_assistant_stops(
+    hass: HomeAssistant,
+    pipeline: Lights,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    reads = area_reads(aioclient_mock)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await settle(hass)
+    assert area_reads(aioclient_mock) == reads
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await settle(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    reads = area_reads(aioclient_mock)
+    hass.set_state(CoreState.stopping)
+    await entry.runtime_data.async_stop()
+    await settle(hass)
+    assert area_reads(aioclient_mock) == reads
+    hass.set_state(CoreState.running)
+
+
 async def test_a_rejected_key_keeps_the_area_and_starts_no_reauth(
     hass: HomeAssistant,
     pipeline: Lights,
@@ -700,6 +781,20 @@ async def test_the_output_type_provides_what_follows_the_tv(
     assert follow == expected
     assert f"{entry.entry_id}_entertainment_area" not in unique_ids
     assert len(unique_ids) == 4 + len(expected)
+
+
+async def test_an_unknown_output_type_still_gets_the_common_settings(
+    hass: HomeAssistant, pipeline: Lights
+) -> None:
+    """For example an entry written by a later version, after a downgrade."""
+    entry = await setup(hass, {**OPTIONS, "output": {"type": "from_the_future"}})
+    domains = sorted(
+        entity.domain
+        for entity in er.async_entries_for_config_entry(
+            er.async_get(hass), entry.entry_id
+        )
+    )
+    assert domains == ["number", "number", "select", "switch"]
 
 
 def test_an_output_type_without_its_own_entities() -> None:

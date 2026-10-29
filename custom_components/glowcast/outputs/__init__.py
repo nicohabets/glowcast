@@ -46,7 +46,11 @@ OUTPUTS = {
 def output_entities(
     hass: HomeAssistant, entry: ConfigEntry, platform: Platform
 ) -> list[Entity]:
-    """The entities the entry's output type provides on this platform."""
-    output_type = OUTPUTS[entry.options[CONF_OUTPUT][CONF_TYPE]]
-    create = output_type.entities.get(platform)
+    """The entities the entry's output type provides on this platform.
+
+    None for a type this version does not know, so the common settings still
+    appear.
+    """
+    output_type = OUTPUTS.get(entry.options[CONF_OUTPUT][CONF_TYPE])
+    create = None if output_type is None else output_type.entities.get(platform)
     return [] if create is None else create(hass, entry)

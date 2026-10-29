@@ -23,7 +23,6 @@ from homeassistant.config_entries import (
     ConfigEntryChange,
     ConfigEntryState,
 )
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -36,7 +35,7 @@ from homeassistant.helpers.restore_state import (
 
 from ..const import CONF_APP_KEY, CONF_AREA_ID, CONF_BRIDGE, CONF_OUTPUT, CONF_UNIQUE_ID
 from ..core.ports import OutputAuthFailed, OutputUnavailable
-from ..entity import GlowcastEntity
+from ..entity import GlowcastSettingEntity
 from .hue_entertainment import HUE_DOMAIN, async_areas, bridge_host, signal_areas_read
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,20 +50,17 @@ def entities(hass: HomeAssistant, entry: ConfigEntry) -> list[Entity]:
     return [HueAreaSelect(hass, entry)]
 
 
-class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
+class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
     """The entertainment area whose lights follow the picture."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_translation_key = "entertainment_area"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize for one Glowcast entry."""
-        super().__init__(hass, entry)
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_entertainment_area"
+        super().__init__(hass, entry, "entertainment_area")
         # {area id: name}: read from the bridge, or restored from before a
-        # restart. Not a setting: the chosen id stays in the options only.
+        # restart, and {area id: label} made from it. Not a setting: the
+        # chosen id stays in the options only.
         self._areas: dict[str, str] = {}
+        self._labels: dict[str, str] = {}
         self._read = False  # read from the bridge since this entity was added
         self._reading: asyncio.Task[None] | None = None
         self._retry_delay = RETRY_FIRST
@@ -74,12 +70,12 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
     @property
     def options(self) -> list[str]:
         """The areas' names, sorted."""
-        return list(_labels(self._areas).values())
+        return list(self._labels.values())
 
     @property
     def current_option(self) -> str | None:
         """The stored area; None (unknown) if it is not in the bridge's list."""
-        return _labels(self._areas).get(self._area_id)
+        return self._labels.get(self._area_id)
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
@@ -88,9 +84,7 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Store the area's id; a running pipeline restarts on it."""
-        area_id = next(
-            i for i, label in _labels(self._areas).items() if label == option
-        )
+        area_id = next(i for i, label in self._labels.items() if label == option)
         options = self._entry.options
         self.hass.config_entries.async_update_entry(
             self._entry,
@@ -106,7 +100,7 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
         if (last := await self.async_get_last_extra_data()) is not None:
             areas = last.as_dict().get("areas")
             if isinstance(areas, dict):
-                self._areas = {str(k): str(v) for k, v in areas.items()}
+                self._use({str(k): str(v) for k, v in areas.items()})
         self.async_on_remove(self._data.async_add_listener(self._async_changed))
         self.async_on_remove(
             async_dispatcher_connect(
@@ -154,10 +148,18 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
 
     @callback
     def _async_read(self) -> None:
-        """Read the list in the background, unless a read or a retry is pending."""
+        """Read the list in the background, unless a read or a retry is pending.
+
+        Not for the stop when Home Assistant stops or the entry unloads.
+        """
         # Done already if it did not have to wait: tasks start eagerly.
         reading = self._reading is not None and not self._reading.done()
         if reading or self._cancel_retry is not None:
+            return
+        if (
+            self.hass.is_stopping
+            or self._entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS
+        ):
             return
         self._reading = self._entry.async_create_background_task(
             self.hass, self._async_read_areas(), "glowcast hue areas"
@@ -187,11 +189,17 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
 
     @callback
     def _async_set_areas(self, areas: dict[str, str]) -> None:
-        self._areas = dict(areas)
+        """A list read from the bridge, here or by the options screen."""
+        self._use(dict(areas))
         self._read = True
         self._rejected_logged = False
+        self._async_cancel_retry()
         self._retry_delay = RETRY_FIRST
         self.async_write_ha_state()
+
+    def _use(self, areas: dict[str, str]) -> None:
+        self._areas = areas
+        self._labels = _labels(areas)
 
     @callback
     def _async_retry_later(self) -> None:
