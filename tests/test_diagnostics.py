@@ -189,6 +189,7 @@ async def test_the_download_while_syncing(
     assert status["channels"] == 1
     assert status["stop_reason"] is None
     assert status["captures_per_second"] > 0
+    assert status["black_picture"] is False  # the fake TV shows red (#14)
 
 
 async def test_the_download_after_a_stop_shows_the_last_status(

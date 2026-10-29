@@ -969,6 +969,96 @@ async def test_the_captures_per_second_are_measured_again_after_a_retry() -> Non
     assert await h.stop() == StopReason.USER
 
 
+def black_changes(h: Harness) -> list[tuple[Phase, bool]]:
+    """The phase and the black-picture flag of each report that changed either."""
+    return [
+        key
+        for key, _ in itertools.groupby((s.phase, s.black_picture) for s in h.statuses)
+    ]
+
+
+async def test_the_black_picture_flag_follows_the_picture() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(DARK)
+    await h.clock.advance(2)
+    assert h.statuses[-1].black_picture
+    assert h.statuses[-1].phase is Phase.STREAMING
+    h.source.default = solid(BLUE)
+    await h.clock.advance(2)
+    assert not h.statuses[-1].black_picture
+    assert await h.stop() == StopReason.USER
+    assert black_changes(h) == [
+        (Phase.STARTING, False),
+        (Phase.STREAMING, False),
+        (Phase.STREAMING, True),
+        (Phase.STREAMING, False),
+        (Phase.STOPPED, False),
+    ]
+
+
+async def test_the_black_picture_flag_is_reported_once_per_change() -> None:
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    await h.start()
+    await h.clock.advance(1)
+    h.source.default = solid(DARK)
+    reported = len(h.statuses)
+    await h.clock.advance(5)  # about 20 black frames
+    black = h.statuses[reported:]
+    assert all(s.black_picture for s in black)
+    # One report for the change; the others are the rate, once a second.
+    assert len(black) <= 1 + 5
+    assert await h.stop() == StopReason.USER
+
+
+async def test_starting_on_a_black_picture_reports_it() -> None:
+    h = Harness()
+    h.source.default = solid(DARK)
+    await h.start()
+    await h.clock.advance(0.5)
+    assert black_changes(h) == [
+        (Phase.STARTING, False),
+        (Phase.STREAMING, False),  # the lights are claimed
+        (Phase.STREAMING, True),  # then the first frame is set
+    ]
+    assert await h.stop() == StopReason.USER
+
+
+async def test_black_during_the_wait_then_no_picture_without_the_flag() -> None:
+    h = Harness()
+    await lose_picture(h)
+    # All-zero frames count as black until the lights are released (#68).
+    assert black_changes(h)[-3:] == [
+        (Phase.STREAMING, False),
+        (Phase.STREAMING, True),
+        (Phase.NO_PICTURE, False),
+    ]
+    await h.clock.advance(5)  # still all zero: no reports while released
+    assert h.statuses[-1] == PipelineStatus(Phase.NO_PICTURE)
+    h.source.default = solid(BLUE)
+    await h.clock.advance(0.7)
+    assert h.statuses[-1] == PipelineStatus(Phase.STREAMING, channels=1)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_the_flag_is_cleared_when_the_lights_are_released() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.source.default = solid(DARK)
+    await h.clock.advance(1)
+    assert h.statuses[-1].black_picture
+    await lose_stream(h)
+    await h.clock.advance(5.2)  # retried after 5 s, on a black picture
+    retried = next(s for s in reversed(h.statuses) if s.phase is Phase.RETRYING)
+    after = h.statuses[h.statuses.index(retried) + 1 :]
+    assert after[0] == PipelineStatus(Phase.STREAMING, channels=1)
+    assert after[1].black_picture  # set again by the next frame
+    assert await h.stop() == StopReason.USER
+    assert not h.statuses[-1].black_picture
+
+
 async def test_a_stop_before_the_lights_are_claimed_has_no_channels() -> None:
     h = Harness()
     h.source.on = False

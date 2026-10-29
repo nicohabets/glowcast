@@ -105,6 +105,40 @@
       "entertainment_area": {
         "name": "Entertainment area"
       }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "idle": "Idle",
+          "starting": "Starting",
+          "streaming": "Streaming",
+          "black_picture": "Black picture",
+          "no_picture": "No picture",
+          "tv_off": "TV off",
+          "error": "Error"
+        },
+        "state_attributes": {
+          "stop_reason": {
+            "name": "Stop reason",
+            "state": {
+              "user": "Switched off",
+              "tv_off": "TV off",
+              "output_lost": "Light stream lost",
+              "output_busy": "Another app is streaming",
+              "output_not_found": "Lights not found",
+              "output_too_many_channels": "Too many channels",
+              "output_unavailable": "Lights not reachable",
+              "auth_failed": "Key rejected",
+              "source_unavailable": "TV source failed"
+            }
+          }
+        }
+      },
+      "captures_per_second": {
+        "name": "Capture rate",
+        "unit_of_measurement": "captures/s"
+      }
     }
   },
   "issues": {

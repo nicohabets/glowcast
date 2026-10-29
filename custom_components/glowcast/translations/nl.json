@@ -105,6 +105,40 @@
       "entertainment_area": {
         "name": "Entertainmentruimte"
       }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "idle": "Inactief",
+          "starting": "Bezig met starten",
+          "streaming": "Streamt",
+          "black_picture": "Zwart beeld",
+          "no_picture": "Geen beeld",
+          "tv_off": "Tv uit",
+          "error": "Fout"
+        },
+        "state_attributes": {
+          "stop_reason": {
+            "name": "Reden van stoppen",
+            "state": {
+              "user": "Uitgezet",
+              "tv_off": "Tv uit",
+              "output_lost": "Lichtstream verloren",
+              "output_busy": "Een andere app streamt",
+              "output_not_found": "Lampen niet gevonden",
+              "output_too_many_channels": "Te veel kanalen",
+              "output_unavailable": "Lampen niet bereikbaar",
+              "auth_failed": "Sleutel geweigerd",
+              "source_unavailable": "Fout in de tv-bron"
+            }
+          }
+        }
+      },
+      "captures_per_second": {
+        "name": "Leessnelheid",
+        "unit_of_measurement": "beelden/s"
+      }
     }
   },
   "issues": {

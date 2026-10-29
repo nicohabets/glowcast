@@ -56,6 +56,7 @@ class GlowcastData:
         self._restarting = False
         self._stopped_during_restart = False
         self._listeners: list[Callable[[], None]] = []
+        self._status_listeners: list[Callable[[], None]] = []
         # What follows the TV as the pipeline started with it (or as stored,
         # before the first start); the update listener gets no old options.
         self._output: Mapping[str, Any] = entry.options[CONF_OUTPUT]
@@ -75,6 +76,19 @@ class GlowcastData:
         """Call `update` when is_on or the options change; returns how to stop."""
         self._listeners.append(update)
         return lambda: self._listeners.remove(update)
+
+    @callback
+    def async_add_status_listener(
+        self, update: Callable[[], None]
+    ) -> Callable[[], None]:
+        """Call `update` on every status of the running pipeline; returns how to
+        stop. A stop reaches the listeners of async_add_listener instead.
+
+        While streaming that is about once per second, so `update` writes its
+        state only when its value changes.
+        """
+        self._status_listeners.append(update)
+        return lambda: self._status_listeners.remove(update)
 
     async def async_start(self) -> None:
         """Start syncing, unless an integration the TV or lights use is not set up."""
@@ -197,6 +211,9 @@ class GlowcastData:
         elif status.phase is Phase.STOPPED:
             # The pipeline always gives a reason; without one, still turn off.
             self._async_stopped(status.stop_reason or StopReason.OUTPUT_UNAVAILABLE)
+            return
+        for update in list(self._status_listeners):
+            update()
 
     @callback
     def _async_stopped(self, reason: StopReason) -> None:
