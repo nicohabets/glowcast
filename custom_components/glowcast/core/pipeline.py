@@ -55,6 +55,24 @@ class StopReason(StrEnum):
     SOURCE_UNAVAILABLE = "source_unavailable"
 
 
+class Phase(StrEnum):
+    """What the pipeline is doing; reported on every change."""
+
+    STARTING = "starting"  # waiting for the TV, then claiming the lights
+    STREAMING = "streaming"  # the lights follow the picture
+    RETRYING = "retrying"  # the stream was lost; claiming the lights again
+    STOPPED = "stopped"  # finished; the lights are released
+
+
+@dataclass(frozen=True)
+class PipelineStatus:
+    """What the pipeline reports through its status callback."""
+
+    phase: Phase
+    channels: int = 0  # the number of channels, once the lights are claimed
+    stop_reason: StopReason | None = None  # only when stopped
+
+
 class UpdateRate(StrEnum):
     """How often the TV picture is captured."""
 
@@ -127,27 +145,32 @@ class Pipeline:
         settings: Settings,
         runner: Runner,
         clock: Clock,
-        on_stopped: Callable[[StopReason], None],
+        on_status: Callable[[PipelineStatus], None],
     ) -> None:
-        """Initialize; nothing happens until run()."""
+        """Initialize; nothing happens until run().
+
+        `on_status` is called on the event loop on every change of phase; the
+        last call is always the stop, with its reason.
+        """
         self._source = source
         self._output = output
         self._settings = settings
         self._runner = runner
         self._clock = clock
-        self._on_stopped = on_stopped
+        self._on_status = on_status
         self._stop_requested = asyncio.Event()
         self._channels: list[Channel] = []
         self._lights = LightState()
         self._retried_at: float | None = None
 
     async def run(self) -> None:
-        """Run until stopped; then clean up and report the reason once.
+        """Run until stopped; then clean up and report the stop once.
 
         Cancelling the task that runs this (unload, HA stop) counts as USER;
         the cleanup still completes, even if the task is cancelled again.
         """
         cancelled = False
+        self._report(Phase.STARTING)
         try:
             reason = await self._async_run()
         except asyncio.CancelledError:
@@ -162,7 +185,8 @@ class Pipeline:
                 await asyncio.shield(cleanup)
             except asyncio.CancelledError:
                 cancelled = True
-        self._report(reason)
+        _LOGGER.info("Glowcast stopped: %s", reason)
+        self._report(Phase.STOPPED, reason)
         if cancelled:
             raise asyncio.CancelledError
 
@@ -177,6 +201,7 @@ class Pipeline:
                 _LOGGER.info("The TV did not come up within the startup grace")
                 return StopReason.TV_OFF
             self._channels = await self._async_start_output()
+            self._report(Phase.STREAMING)
             await self._async_set_target(frame)
             while True:
                 try:
@@ -189,6 +214,7 @@ class Pipeline:
                         _LOGGER.warning("%s again soon after a retry; stopping", err)
                         raise _Stop(StopReason.OUTPUT_LOST) from err
                     _LOGGER.warning("%s; retrying in %.0f s", err, LOST_RETRY_DELAY)
+                    self._report(Phase.RETRYING)
                     await self._async_retry_output()
         except _Stop as stop:
             return stop.reason
@@ -270,6 +296,7 @@ class Pipeline:
         self._retried_at = self._clock.now()
         self._channels = channels
         self._lights.resume({channel.id for channel in channels})
+        self._report(Phase.STREAMING)
 
     async def _async_unless_stopped(self, awaitable: Awaitable[Any]) -> Any:
         """Await something, but give up with USER as soon as stop() is called."""
@@ -379,12 +406,12 @@ class Pipeline:
             except Exception:
                 _LOGGER.exception("Error while stopping Glowcast")
 
-    def _report(self, reason: StopReason) -> None:
-        _LOGGER.info("Glowcast stopped: %s", reason)
+    def _report(self, phase: Phase, reason: StopReason | None = None) -> None:
+        status = PipelineStatus(phase, len(self._channels), reason)
         try:
-            self._on_stopped(reason)
+            self._on_status(status)
         except Exception:
-            _LOGGER.exception("Error in the stop callback")
+            _LOGGER.exception("Error in the status callback")
 
 
 def _compute(

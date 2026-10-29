@@ -12,7 +12,9 @@ import pytest
 
 from custom_components.glowcast.core.models import Frame
 from custom_components.glowcast.core.pipeline import (
+    Phase,
     Pipeline,
+    PipelineStatus,
     Settings,
     StopReason,
     UpdateRate,
@@ -53,7 +55,8 @@ class Harness:
         self.log: list[str] = []
         self.source = FakeSource(self.clock, self.log)
         self.output = FakeOutput(self.clock, self.log)
-        self.reasons: list[StopReason] = []
+        self.statuses: list[PipelineStatus] = []
+        self.status_error: Exception | None = None
         self.compute_error: Exception | None = None
         self.pipeline = Pipeline(
             self.source,
@@ -61,9 +64,22 @@ class Harness:
             Settings(brightness, intensity, rate),
             self._runner,
             self.clock,
-            self.reasons.append,
+            self._on_status,
         )
         self.task: asyncio.Task[None] | None = None
+
+    @property
+    def reasons(self) -> list[StopReason]:
+        return [s.stop_reason for s in self.statuses if s.phase is Phase.STOPPED]
+
+    @property
+    def phases(self) -> list[Phase]:
+        return [s.phase for s in self.statuses]
+
+    def _on_status(self, status: PipelineStatus) -> None:
+        self.statuses.append(status)
+        if self.status_error is not None:
+            raise self.status_error
 
     async def start(self) -> None:
         self.task = asyncio.ensure_future(self.pipeline.run())
@@ -538,6 +554,59 @@ async def test_key_revoked_while_streaming() -> None:
     h.output.check_error = OutputAuthFailed("revoked")
     assert await h.finish() == StopReason.AUTH_FAILED
     assert h.log[-3:] == CLEANUP
+
+
+# The status
+
+
+async def test_status_reports_each_change_of_phase_in_order() -> None:
+    h = Harness()
+    await h.start()
+    assert h.statuses == [PipelineStatus(Phase.STARTING)]
+    await h.clock.advance(1)
+    assert h.statuses[-1] == PipelineStatus(Phase.STREAMING, channels=1)
+    await lose_stream(h)
+    assert h.statuses[-1] == PipelineStatus(Phase.RETRYING, channels=1)
+    await h.clock.advance(6)  # retried after 5 s
+    assert await h.stop() == StopReason.USER
+    assert h.phases == [
+        Phase.STARTING,
+        Phase.STREAMING,
+        Phase.RETRYING,
+        Phase.STREAMING,
+        Phase.STOPPED,
+    ]  # once per change of phase, not per frame
+    assert h.statuses[-1] == PipelineStatus(
+        Phase.STOPPED, channels=1, stop_reason=StopReason.USER
+    )
+
+
+async def test_a_stop_before_the_lights_are_claimed_has_no_channels() -> None:
+    h = Harness()
+    h.source.on = False
+    await h.start()
+    assert await h.finish() == StopReason.TV_OFF
+    assert h.statuses == [
+        PipelineStatus(Phase.STARTING),
+        PipelineStatus(Phase.STOPPED, stop_reason=StopReason.TV_OFF),
+    ]
+
+
+async def test_a_failing_status_callback_is_logged_and_does_not_stop(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    h = Harness()
+    h.status_error = RuntimeError("broken listener")
+    await h.start()
+    await h.clock.advance(2)
+    assert not h.task.done()
+    sends = len(h.output.sent)
+    await h.clock.advance(1)
+    assert len(h.output.sent) > sends
+    assert await h.stop() == StopReason.USER
+    assert h.phases == [Phase.STARTING, Phase.STREAMING, Phase.STOPPED]
+    assert h.log[-3:] == CLEANUP
+    assert caplog.text.count("Error in the status callback") == 3
 
 
 # Errors at start

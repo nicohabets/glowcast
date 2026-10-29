@@ -1,4 +1,4 @@
-"""The runtime of one Glowcast entry: runs the pipeline and reacts to its stops.
+"""The runtime of one Glowcast entry: runs the pipeline and reacts to its status.
 
 Architecture 4.4. Every platform reaches it through `entry.runtime_data`.
 """
@@ -14,9 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
 from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
-from .core.models import Channel, ChannelColor
-from .core.pipeline import MonotonicClock, Pipeline, StopReason
-from .core.ports import LightOutput
+from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
 from .outputs import OUTPUTS
 from .settings import read_settings
 from .sources import SOURCES
@@ -65,6 +63,7 @@ class GlowcastData:
         self._hass = hass
         self._entry = entry
         self._pipeline: Pipeline | None = None
+        self._status: PipelineStatus | None = None
         self._task: asyncio.Task[None] | None = None
         self._restarting = False
         self._stopped_during_restart = False
@@ -74,6 +73,11 @@ class GlowcastData:
     def is_on(self) -> bool:
         """Whether the pipeline is running."""
         return self._pipeline is not None
+
+    @property
+    def status(self) -> PipelineStatus | None:
+        """The pipeline's last status, kept after a stop; None if never started."""
+        return self._status
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -91,18 +95,17 @@ class GlowcastData:
         if self._missing_reference(source_type.is_missing, output_type.is_missing):
             self._notify()
             return
-        self._pipeline = Pipeline(
+        pipeline = Pipeline(
             source_type.create(self._hass, data, options),
-            _ReportStart(
-                output_type.create(self._hass, data, options), self._async_started
-            ),
+            output_type.create(self._hass, data, options),
             read_settings(options),
             self._hass.async_add_executor_job,
             MonotonicClock(),
-            self._async_stopped,
+            lambda status: self._async_status(pipeline, status),
         )
+        self._pipeline = pipeline
         self._task = self._entry.async_create_background_task(
-            self._hass, self._pipeline.run(), f"glowcast {self._entry.title}"
+            self._hass, pipeline.run(), f"glowcast {self._entry.title}"
         )
         self._notify()
 
@@ -168,9 +171,16 @@ class GlowcastData:
         return False
 
     @callback
-    def _async_started(self) -> None:
-        """The lights were claimed: earlier problems are solved."""
-        self.async_remove_issues()
+    def _async_status(self, pipeline: Pipeline, status: PipelineStatus) -> None:
+        """Keep the pipeline's status and react to it (architecture 4.4)."""
+        if pipeline is not self._pipeline:
+            return  # an old pipeline, for example after a restart
+        self._status = status
+        if status.phase is Phase.STREAMING:
+            # The lights were claimed: earlier problems are solved.
+            self.async_remove_issues()
+        elif status.phase is Phase.STOPPED and status.stop_reason is not None:
+            self._async_stopped(status.stop_reason)
 
     @callback
     def _async_stopped(self, reason: StopReason) -> None:
@@ -219,32 +229,6 @@ class GlowcastData:
     def _notify(self) -> None:
         for update in list(self._listeners):
             update()
-
-
-class _ReportStart:
-    """Passes everything to the output and reports a successful start."""
-
-    def __init__(self, output: LightOutput, on_started: Callable[[], None]) -> None:
-        self._output = output
-        self._on_started = on_started
-        self.max_rate_hz = output.max_rate_hz
-
-    async def start(self) -> list[Channel]:
-        channels = await self._output.start()
-        self._on_started()
-        return channels
-
-    def send(self, colors: list[ChannelColor]) -> None:
-        self._output.send(colors)
-
-    async def check(self) -> None:
-        await self._output.check()
-
-    async def stop(self) -> None:
-        await self._output.stop()
-
-    async def close(self) -> None:
-        await self._output.close()
 
 
 def issue_id(entry_id: str, key: str) -> str:
