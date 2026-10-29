@@ -24,6 +24,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.glowcast.const import DOMAIN
+from custom_components.glowcast.core.models import Channel
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
@@ -68,6 +69,8 @@ async def entry(
 ) -> Any:
     """Glowcast set up for a TV and a bridge, with their devices in HA."""
     hass.config.components.update({"webostv", "hue"})
+    # The lights the output claims are named after the area.
+    adapters.channels = [Channel(id="1", name=f"{AREA_NAME} 1", x=0.0, z=0.0)]
     # The entertainment-area entity reads the bridge's areas (#13).
     aioclient_mock.get(
         f"https://{BRIDGE_HOST}/clip/v2/resource/entertainment_configuration",
@@ -227,9 +230,17 @@ async def test_a_device_that_is_not_in_home_assistant(
 
 
 async def test_no_secrets_or_names_anywhere_in_the_download(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    entry: Any,
+    adapters: FakeAdapters,
 ) -> None:
     await sync_until_measured(entry)
+    # Glowcast knows the area's name: in its area entity and its channels.
+    area = hass.states.get("select.glowcast_annas_woonkamer_tv_entertainment_area")
+    assert area.state == AREA_NAME
+    [output] = adapters.outputs
+    assert AREA_NAME in output.channels[0].name
     # Newer Home Assistant adds the integration's repair issues to the
     # download; their text has the TV's name as a placeholder.
     entry.runtime_data._raise_issue("area_not_found")
