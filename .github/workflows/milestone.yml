@@ -35,7 +35,7 @@ jobs:
           # GitHub's closing keywords followed by a same-repository #<n>,
           # case-insensitive; owner/repo#<n> and #<n>abc do not count.
           issues=$(printf '%s\n' "$BODY" \
-            | grep -oiP '(?<![\w/])(close[sd]?|fix(e[sd])?|resolve[sd]?):?\s+#\K[0-9]+\b' \
+            | grep -oiP '(?<![\w/])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[ \t]+#\K[0-9]+\b' \
             | sort -un || true)
           if [ -z "$issues" ]; then
             echo "::notice::This pull request closes no issue; nothing to check."
@@ -50,7 +50,7 @@ jobs:
               echo "::error::#$n has no milestone; the product owner sets one before work starts."
               failed=1
             else
-              echo "#$n: milestone $milestone"
+              echo "#$n has a milestone."
             fi
           done
           exit "$failed"
