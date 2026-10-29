@@ -2,14 +2,16 @@
 
 Nothing in it reaches a real TV or bridge: stub hue and webostv integrations
 report their entries as loaded, a fake bridge on 127.0.0.1 answers the setup
-flow, and Home Assistant listens on 127.0.0.1 only, without default_config or
-any discovery integration. See scripts/README.md.
+flow, a glowcast_demo stub gives Glowcast a fake TV source and a fake light
+output (so switching on keeps syncing), and Home Assistant listens on
+127.0.0.1 only, without default_config or any discovery integration. See
+scripts/README.md.
 
 Each working copy runs its own instance, with its own ports, config directory
 and recordings; the virtual environment is shared.
 
 Usage:
-    python scripts/demo.py start
+    python scripts/demo.py start [--no-fake-sync]
     python scripts/demo.py record [FLOW ...] [--lang en|nl] [--theme light|dark]
                                   [--still] [--out DIR]
     python scripts/demo.py stop
@@ -107,7 +109,13 @@ logger:
   default: warning
   logs:
     custom_components.glowcast: info
+    custom_components.glowcast_demo: info
 """
+# Loads the stub that swaps in the fake TV source and light output.
+FAKE_SYNC = """\
+glowcast_demo:
+"""
+FAKE_SYNC_ACTIVE = "demo: fake TV source and fake light output active"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,6 +170,11 @@ class Instance:
         return self.state["bridge_port"]
 
     @property
+    def fake_sync(self) -> bool:
+        """Whether Glowcast runs with the fake TV source and light output."""
+        return self.state.get("fake_sync", False)
+
+    @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.ha_port}"
 
@@ -172,6 +185,13 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     start_ = commands.add_parser(
         "start", help="start Home Assistant and the fake bridge"
+    )
+    start_.add_argument(
+        "--no-fake-sync",
+        dest="fake_sync",
+        action="store_false",
+        help="Glowcast's real TV source and light output: switching on stops "
+        "after about 10 s, as no TV answers",
     )
     record = commands.add_parser("record", help="record GIFs of the flows")
     record.add_argument(
@@ -213,7 +233,7 @@ def main() -> None:
     instance = _instance(args.instance)
     print(f"Instance {instance.name} ({instance.home})", flush=True)
     if args.command == "start":
-        start(instance)
+        start(instance, fake_sync=args.fake_sync)
     elif args.command == "record":
         record_flows(instance, args)
     elif args.command == "stop":
@@ -231,7 +251,7 @@ def main() -> None:
             print(f"Removed {folder}")
 
 
-def start(instance: Instance) -> None:
+def start(instance: Instance, *, fake_sync: bool = True) -> None:
     """Install if needed, write a fresh config and start both processes."""
     if instance.legacy:
         sys.exit(
@@ -252,7 +272,12 @@ def start(instance: Instance) -> None:
             state = instance.home / "state.json.tmp"
             state.write_text(
                 json.dumps(
-                    {"repo": str(REPO), "ha_port": ha_port, "bridge_port": bridge_port}
+                    {
+                        "repo": str(REPO),
+                        "ha_port": ha_port,
+                        "bridge_port": bridge_port,
+                        "fake_sync": fake_sync,
+                    }
                 )
             )
             state.replace(instance.home / "state.json")
@@ -290,6 +315,11 @@ def start(instance: Instance) -> None:
     print(
         f"Ready: {instance.url} (user {USERNAME!r}, password {PASSWORD!r}).\n"
         "Glowcast is not set up yet; `record` runs the setup flow."
+        + (
+            ""
+            if instance.fake_sync
+            else "\nWithout the fakes: switching Glowcast on stops after about 10 s."
+        )
     )
 
 
@@ -321,6 +351,7 @@ def record_flows(instance: Instance, args: argparse.Namespace) -> None:
             args.lang,
             "--theme",
             args.theme,
+            *([] if instance.fake_sync else ["--no-fake-sync"]),
             "--out",
             str(out),
             *(["--still"] if args.still else []),
@@ -527,7 +558,9 @@ def _write_config(instance: Instance) -> None:
     config = instance.config
     shutil.rmtree(config, ignore_errors=True)
     (config / ".storage").mkdir(parents=True)
-    (config / "configuration.yaml").write_text(CONFIGURATION)
+    (config / "configuration.yaml").write_text(
+        CONFIGURATION + (FAKE_SYNC if instance.fake_sync else "")
+    )
     entries = [
         _entry(
             "hue",
@@ -539,7 +572,8 @@ def _write_config(instance: Instance) -> None:
                 "api_version": 2,
             },
         ),
-        # No TV listens on 127.0.0.1, so switching Glowcast on stops at once.
+        # No TV listens on 127.0.0.1: without the fakes, switching Glowcast on
+        # stops after the start-up grace.
         _entry(
             "webostv",
             "Living room TV",
@@ -583,9 +617,14 @@ def _write_config(instance: Instance) -> None:
     )
     custom = config / "custom_components"
     custom.mkdir()
-    for stub in ("hue", "webostv"):
+    for stub in _stubs(instance):
         shutil.copytree(DEMO / "stubs" / stub, custom / stub)
     (custom / "glowcast").symlink_to(REPO / "custom_components" / "glowcast")
+
+
+def _stubs(instance: Instance) -> list[str]:
+    """The stub integrations in the instance's config directory."""
+    return ["hue", "webostv", *(["glowcast_demo"] if instance.fake_sync else [])]
 
 
 def _write_storage(
@@ -692,9 +731,11 @@ def _check_isolated(instance: Instance, token: str) -> None:
     if address := _reachable_from_network(instance):
         sys.exit(f"Stopped: the demo answers on {address}, not only on 127.0.0.1.")
     log = (instance.config / "home-assistant.log").read_text()
-    for stub in ("hue", "webostv"):
+    for stub in _stubs(instance):
         if f"custom integration {stub} " not in log:
             sys.exit(f"Stopped: the {stub} stub was not loaded.")
+    if instance.fake_sync and FAKE_SYNC_ACTIVE not in log:
+        sys.exit("Stopped: the fake TV source and light output are not active.")
     loaded = {
         component.split(".")[0]
         for component in _request(instance, "GET", "/api/config", token=token)[
@@ -704,9 +745,11 @@ def _check_isolated(instance: Instance, token: str) -> None:
     if found := loaded & DISCOVERY:
         sys.exit(f"Stopped: discovery integrations were loaded: {sorted(found)}")
     print(
-        "Isolated: listening on 127.0.0.1 only, the hue and webostv stubs loaded,"
-        f" none of {sorted(DISCOVERY)} loaded."
+        f"Isolated: listening on 127.0.0.1 only, the {', '.join(_stubs(instance))}"
+        f" stubs loaded, none of {sorted(DISCOVERY)} loaded."
     )
+    if instance.fake_sync:
+        print("Fake sync: Glowcast uses a fake TV source and a fake light output.")
 
 
 def _reachable_from_network(instance: Instance) -> str | None:

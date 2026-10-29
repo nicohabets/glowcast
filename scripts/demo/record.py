@@ -251,20 +251,34 @@ def device(rec: Recorder) -> None:
 def entities(rec: Recorder) -> None:
     """The settings as entities under Configuration on the device page (#13).
 
-    Brightness, intensity and update rate, and the entertainment area that the
-    Hue output type provides. The switch stays off: no TV answers in the demo,
-    so syncing would stop after the start-up grace.
+    Switches Glowcast on (the demo's fake TV source and light output keep it
+    syncing), changes brightness, intensity and update rate, and the
+    entertainment area that the Hue output type provides, while the switch
+    stays on (a new area restarts the pipeline), and switches off.
     """
+    if not rec.args.fake_sync:
+        raise RuntimeError(
+            "The entities flow needs syncing: start the demo without --no-fake-sync."
+        )
+    registry = [
+        entry
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast"
+    ]
     ids = {
         entry["unique_id"].split("_", 1)[1]: entry["entity_id"]
-        for entry in rec.ws({"type": "config/entity_registry/list"})
-        if entry["platform"] == "glowcast" and "_" in entry["unique_id"]
+        for entry in registry
+        if "_" in entry["unique_id"]
     }
+    # The switch's unique id is the entry id alone.
+    (switch,) = [e for e in registry if e["entity_id"].startswith("switch.")]
     device = rec.ws(
         {"type": "config/entity_registry/get", "entity_id": ids["brightness"]}
     )
-    # Start from the defaults and the first area, whatever an earlier run left.
+    # Start switched off, from the defaults and the first area, whatever an
+    # earlier run left.
     for domain, service, data in (
+        ("switch", "turn_off", {"entity_id": switch["entity_id"]}),
         ("number", "set_value", {"entity_id": ids["brightness"], "value": 80}),
         ("number", "set_value", {"entity_id": ids["intensity"], "value": 100}),
         (
@@ -284,6 +298,10 @@ def entities(rec: Recorder) -> None:
         )
     rec.goto(f"/config/devices/device/{device['device_id']}")
     rec.begin()
+    toggle = row(rec, switch["entity_id"]).locator("ha-entity-toggle")
+    rec.click(toggle)
+    wait_for_streaming(rec, switch["config_entry_id"])
+    rec.step("syncing")
     rec.click(row(rec, ids["brightness"]).locator("ha-slider"), at=0.35)
     rec.step("brightness")
     rec.click(row(rec, ids["intensity"]).locator("ha-slider"), at=0.75)
@@ -295,7 +313,35 @@ def entities(rec: Recorder) -> None:
     rec.click(row(rec, ids["entertainment_area"]).locator("ha-select"))
     rec.step("areas")
     rec.click(rec.option("Whole room"))
+    wait_for_streaming(rec, switch["config_entry_id"], channels=3)
     rec.step("area-chosen")
+    rec.click(toggle)
+    rec.step("off")
+
+
+def wait_for_streaming(
+    rec: Recorder, entry_id: str, channels: int | None = None
+) -> None:
+    """Wait (recording) until the pipeline streams, to this many channels.
+
+    The status comes from the diagnostics; the area's channels show that the
+    pipeline restarted with a new area.
+    """
+    deadline = time.monotonic() + 20
+    while True:
+        status = rec.page.evaluate(
+            f"id => {HASS}.callApi('GET', `diagnostics/config_entry/${{id}}`)",
+            entry_id,
+        )["data"]["status"]
+        if (
+            status is not None
+            and status["phase"] == "streaming"
+            and channels in (None, status["channels"])
+        ):
+            return
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Glowcast is not streaming: {status}")
+        rec.wait(250)
 
 
 def row(rec: Recorder, entity_id: str) -> Locator:
@@ -492,6 +538,7 @@ def main() -> None:
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--still", action="store_true")
+    parser.add_argument("--no-fake-sync", dest="fake_sync", action="store_false")
     parser.add_argument("flows", nargs="*")
     args = parser.parse_args()
     if unknown := [flow for flow in args.flows if flow not in FLOWS]:
