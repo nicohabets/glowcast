@@ -391,6 +391,23 @@ async def test_new_settings_while_syncing_reach_the_pipeline_without_a_restart(
     await switch(hass, SERVICE_TURN_OFF)
 
 
+async def test_new_data_while_syncing_does_not_restart(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    """New keys from reauth are read at the next start; the stream keeps going."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, "bridge": {**entry.data["bridge"], "app_key": "new"}},
+    )
+    await settle(hass)
+    [pipeline] = FakePipeline.instances
+    assert fakes.log == ["source.start", "output.start"]
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
 async def test_a_new_output_while_syncing_restarts_only_the_pipeline(
     hass: HomeAssistant, fakes: Fakes
 ) -> None:
