@@ -18,6 +18,7 @@ Usage:
     python scripts/demo.py clean
     python scripts/demo.py clean --all [--yes]
     python scripts/demo.py status
+    python scripts/demo.py room [--compare] [--out DIR]
 
 start, record, stop and clean take --instance NAME to act on another instance
 than this working copy's.
@@ -54,6 +55,8 @@ DEMO = REPO / "scripts" / "demo"
 HOME = Path.home() / ".cache" / "glowcast-demo"
 VENV = HOME / "venv"  # shared by all instances
 INSTANCES = HOME / "instances"
+# The room's GIFs and stills; ignored by git (.gitignore).
+ROOM_OUT = REPO / "room-out"
 # Next to HOME, not in it: `clean --all` removes HOME while holding it.
 LOCK = HOME.parent / "glowcast-demo.lock"
 
@@ -73,6 +76,8 @@ REQUIREMENTS = [
     "hue-entertainment==0.1.2",
     "playwright==1.64.1",
     "imageio-ffmpeg==0.6.0",  # ffmpeg for the GIFs, without a system install
+    # Draws the room for `room`; Pillow comes with Home Assistant.
+    "resvg-py==0.5.0",
 ]
 PYTHON = (3, 14, 2)
 
@@ -222,10 +227,24 @@ def main() -> None:
             help=f"another instance than this working copy's ({_default_name()})",
         )
     commands.add_parser("status", help="list all instances")
+    room = commands.add_parser(
+        "room", help="draw what Glowcast sends to the lights in the illustrated room"
+    )
+    room.add_argument(
+        "--compare",
+        action="store_true",
+        help="the merge base with main and this working copy side by side",
+    )
+    room.add_argument(
+        "--out", type=Path, default=ROOM_OUT, help=f"where to save them ({ROOM_OUT})"
+    )
     args = parser.parse_args()
 
     if args.command == "status":
         status()
+        return
+    if args.command == "room":
+        draw_room(args)
         return
     if args.command == "clean" and args.all:
         clean_all(confirmed=args.yes)
@@ -357,6 +376,22 @@ def record_flows(instance: Instance, args: argparse.Namespace) -> None:
             *(["--still"] if args.still else []),
             *args.flows,
         ],
+    )
+    sys.exit(result.returncode)
+
+
+def draw_room(args: argparse.Namespace) -> None:
+    """Run the room script in the demo's environment; no instance needed."""
+    with _lock():
+        _install()
+    result = subprocess.run(
+        [
+            str(_python()),
+            str(DEMO / "room.py"),
+            "--out",
+            str(args.out),
+            *(["--compare"] if args.compare else []),
+        ]
     )
     sys.exit(result.returncode)
 
