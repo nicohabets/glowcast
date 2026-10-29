@@ -62,11 +62,11 @@ During setup you pick:
 
 Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcast's key (for example because you removed the app in the Hue app), Home Assistant asks you to press the link button again; your settings are kept.
 
-Under **Configure** you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
+Under **Configure**, or on Glowcast's device page (see [Settings on the device page](#settings-on-the-device-page)), you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
 
 ## Starting and stopping
 
-Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
+Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls (and its settings under Configuration), for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml)
 
@@ -86,7 +86,7 @@ actions:
       entity_id: switch.glowcast_living_room_tv
 ```
 
-Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". Changing the settings while it runs restarts syncing with the new settings; the switch stays on.
+Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". Brightness, intensity and the update rate change while it runs without interrupting the lights. Choosing another entertainment area restarts syncing on the new area (a few seconds); the switch stays on.
 
 **When it stops by itself**, the switch turns off and the reason is in the Home Assistant log:
 
@@ -101,12 +101,32 @@ When Home Assistant shuts down or restarts while syncing, Glowcast releases the 
 
 On a black picture the lights keep a faint warm glow instead of going dark. Dark colours blend into that glow; brighter colours are shown pure, without the glow mixed in.
 
+## Settings on the device page
+
+The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and **Entertainment area** (the bridge's areas by name). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values. While syncing, brightness and intensity reach the lights within a second and a new update rate applies from the next capture, without a restart. Only a new entertainment area restarts syncing.
+
+For example, softer lights late in the evening:
+
+```yaml
+triggers:
+  - trigger: time
+    at: "22:00:00"
+actions:
+  - action: number.set_value
+    target:
+      entity_id: number.glowcast_living_room_tv_brightness
+    data:
+      value: 40
+```
+
+The entity ids follow Home Assistant's language when the entities are created (in Dutch, for example, `number.glowcast_living_room_tv_helderheid`). If the bridge cannot be reached, the entertainment area keeps showing the area Glowcast uses; the list of areas is read again once the bridge is back, or when you open the settings screen.
+
 ## Known limits
 
 - **About 3 captures per second.** That is the TV's capture limit, so the lights follow scenes, not every flash or cut. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
 - **One stream per bridge at a time** (as far as known; being checked for the Bridge Pro, #37). A Hue bridge streams to one entertainment area at a time, so two Glowcast entries (two TVs) on one bridge cannot sync together.
-- **Changing a setting while syncing** briefly restarts the light stream (a few seconds).
+- **Choosing another entertainment area while syncing** briefly restarts the light stream (a few seconds). Brightness, intensity and the update rate change without a restart.
 - **TV lightstrip segments sample about 30 % in from the picture's edges**, not the edges themselves, because of where the Hue app places them. Improving this is planned (#23).
 - **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so the lights show only the minimal glow. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.

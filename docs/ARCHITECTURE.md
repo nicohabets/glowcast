@@ -217,11 +217,26 @@ Rules:
 | Intensity | 0-200 % | 100 % |
 | Update rate | Low / Medium / High / Maximum | High |
 
-The TV and bridge are fixed after setup (remove and re-add to change them). Saving options while syncing **restarts only the pipeline** through an update listener; the config entry is not reloaded, so the switch stays on. In HA 2025.x and later an `OptionsFlow` must not assign `self.config_entry` itself.
+The TV and bridge are fixed after setup (remove and re-add to change them). The same values are also entities (4.3); both write the entry's `options`, the only copy. Every change goes through one update listener, and the config entry is not reloaded, so the switch stays on (#13):
+- **Brightness, intensity, update rate:** passed to the running pipeline with `pipeline.update_settings(Settings)`, without a restart and without a new Hue handshake. Brightness applies at the next send tick, intensity and the update rate at the next capture (the capture loop reads its interval on every capture).
+- **What follows the TV** (the `output` block, compared as a whole, for the Hue output the entertainment area): **restarts only the pipeline**. The listener gets no old options, so the runtime remembers the output block its pipeline started with. A changed output block also clears the repair issues about the previous choice (`area_not_found`, `too_many_channels`), also while not syncing; the next start raises them again if the new choice has the same problem.
+- **Not syncing:** the values are stored; the next start reads them.
+
+When the options screen reads the bridge's areas, it hands the list to the entertainment-area entity (a dispatcher signal from the Hue output module), so both show the same list. In HA 2025.x and later an `OptionsFlow` must not assign `self.config_entry` itself.
 
 ### 4.3 Entities
 
-One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). The switch is the device's main feature, so it has no name of its own and its id is `switch.glowcast_<tv name>`. Off after an HA restart (no state restore). The switch can be used in automations, dashboards and voice.
+One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with:
+- **switch** (start/stop syncing), under Controls. The switch is the device's main feature, so it has no name of its own, its unique id is the entry id and its id is `switch.glowcast_<tv name>` (unchanged since v0.1). Off after an HA restart (no state restore).
+- **Configuration entities** (`entity_category: config`, #13), one per setting, with a translation key and the unique id `<entry id>_<key>`: **brightness** (`number`, 1-100, step 1, %, slider), **intensity** (`number`, 0-200, step 1, %, slider) and **update rate** (`select`, the `UpdateRate` values with translated state names). They read their value from the entry's `options` through `read_settings()` on every state write and store a change with `write_settings()` and `async_update_entry`; they keep no copy. The runtime notifies them of every options change, so they follow the options screen and each other. An older entry without the settings keys shows the defaults.
+- **What follows the TV**, provided by the output type (decision in #61). The generic `number.py` and `select.py` add the common settings plus whatever the entry's output type provides for their platform (`output_entities()` in `outputs/__init__.py`); they know nothing about Hue or areas. A type that provides nothing gets the common settings only. #66 follows the same pattern for the setup and options steps.
+
+The Hue entertainment-area output provides the **entertainment area** (`select`, `outputs/hue_area_select.py`, unique id `<entry id>_entertainment_area`): the options are the bridge's areas by name (sorted; a name used twice gets a number, " (2)", in the order of the ids, so the labels stay stable), and it stores the chosen id in `options["output"]["area_id"]`. Areas with more than 20 channels are listed; the repair issue handles them at start. A stored area that is not in the list (removed in the Hue app) shows as unknown.
+- **The list** is read in the background (`async_areas()`, one raw request), never during platform setup: when the entity is added, when the bridge's `hue` entry is (re)loaded (`SIGNAL_CONFIG_ENTRY_CHANGED`, present in 2025.7.2), when the options screen has read it, and after a failed read with a backoff (30 s, doubling up to 10 minutes). No polling once it is read. While the `hue` entry is not loaded there is nothing to ask; its own setup retry tells when the bridge answers again.
+- **Bridge unreachable at HA start:** the entity is a `RestoreEntity` and keeps the last list as extra restore data (`{area id: name}`, in HA's restore state, not in the entry), so it still shows the stored area by name. Without a restored list (the first start after the update with the bridge down) it shows unknown until the list is read; the stored id is kept.
+- **Rejected key (401/403):** the stored value is kept and this is logged once; reauth is started by the switch-on and the options screen, not by the entity.
+
+The entities can be used in automations, dashboards and voice.
 
 Example automation (goes in the README):
 
@@ -244,11 +259,14 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 | What | Where | Story |
 |---|---|---|
 | Config flow, options flow and reauth flow (the screens) | `config_flow.py` | #6 |
-| The entry's lifecycle: `async_setup_entry` / `async_unload_entry` (which create and stop the runtime in `entry.runtime_data`), stopping on `EVENT_HOMEASSISTANT_STOP`, and the update listener that restarts the pipeline when options change | `__init__.py` | #6, #7 |
-| The runtime (`GlowcastData`, one per entry, reached by every platform through `entry.runtime_data`): running the pipeline with `entry.async_create_background_task`, stopping and restarting it, its listeners, reacting to the pipeline's status (clear the repair issues when the lights are claimed, also after a retry; on a stop: switch off, start reauth, repair issue), keeping the last status after a stop until the next start (`GlowcastData.status`, `None` if never started), and the repair issues and their ids. Only the running pipeline's reports count: after an options restart, a late report from the old pipeline is ignored | `runtime.py` | #7, #63, #64 |
+| The entry's lifecycle: `async_setup_entry` / `async_unload_entry` (which create and stop the runtime in `entry.runtime_data`), stopping on `EVENT_HOMEASSISTANT_STOP`, and the update listener that hands every options change to the runtime (4.2) | `__init__.py` | #6, #7, #13 |
+| The runtime (`GlowcastData`, one per entry, reached by every platform through `entry.runtime_data`): running the pipeline with `entry.async_create_background_task`, stopping and restarting it, its listeners, reacting to the pipeline's status (clear the repair issues when the lights are claimed, also after a retry; on a stop: switch off, start reauth, repair issue), keeping the last status after a stop until the next start (`GlowcastData.status`, `None` if never started), and the repair issues and their ids. Only the running pipeline's reports count: after an options restart, a late report from the old pipeline is ignored. On an options change (`async_options_updated`): notify the entities, then pass the settings to the running pipeline, or restart it when the output block differs from the one it started with (4.2) | `runtime.py` | #7, #63, #64, #13 |
 | Reading the settings from `options` into `Settings` (defaults from `const.py` for missing keys) and writing them back; used by the setup flow, the options flow and the pipeline start | `settings.py` | #63 |
 | The base entity: `has_entity_name`, the device "Glowcast <TV name>" with its link to the TV's device (`via_device_id` on newer HA, `via_device` on 2025.7.2), following the runtime's listener | `entity.py` | #63 |
 | Switch entity | `switch.py` | #7 |
+| The base of the configuration entities (`GlowcastSettingEntity`: entity category, unique id and translation key from the setting's key, reading and storing through `settings.py`) | `entity.py` | #13 |
+| Brightness and intensity; the update rate. Each platform also adds the entities the output type provides for it | `number.py`; `select.py` | #13 |
+| The entertainment-area entity of the Hue output type, and reading its list | `outputs/hue_area_select.py` | #13 |
 | Diagnostics (`async_get_config_entry_diagnostics`), read through `entry.runtime_data` and the entry: the versions (Glowcast and the manifest's requirements, installed), the settings, the source and output type with the model, manufacturer and software version of their devices (through `device_id` in `SOURCES` and `OUTPUTS`), whether it syncs, the last `PipelineStatus` (cleared when a start is refused because the TV or bridge is not set up) and the entry's active repair issues. Works while the entry is not loaded (no status then). Bug reports are public, so no stored value of the entry is included: only its shape (each key with the type of its value), so a key a later source or output type adds cannot leak, and generic code needs no list of each type's secret keys. Devices show only manufacturer, model and software version, never a name or serial number; `async_redact_data` (hosts, titles, serial numbers) is a backstop | `diagnostics.py` | #21 |
 | Removing the entry: delete its repair issues and show one persistent notification (`glowcast_bridge_app_left_<entry id>`) on how to remove Glowcast's app in the Hue app, in Home Assistant's server language; nothing on reload or restart | `__init__.py` | #50 |
 | Pipeline behaviour (start order, sub-tasks, failure handling, the status and its phases, stop reasons); fading, hold on black and glow | `core/pipeline.py`; `core/light_state.py` | #5, #64, #65 |
@@ -257,10 +275,10 @@ Failure handling:
 - **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
 - **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area. **Recovery means: Glowcast stops cleanly and the next switch-on works.** A bridge reboot takes longer than the retry, so Glowcast stops; it does not wait for the bridge.
 - **`OutputBusy` / `OutputUnavailable`:** do not start; switch off; log a clear message.
-- **`OutputNotFound` / `OutputTooManyChannels`:** settings problems the user must fix: do not start, switch off, log, and raise a repair issue ("the entertainment area no longer exists; choose another one in Glowcast's settings" / "the entertainment area has more than 20 channels; choose or create a smaller area"). Cleared after the next successful start.
+- **`OutputNotFound` / `OutputTooManyChannels`:** settings problems the user must fix: do not start, switch off, log, and raise a repair issue ("the entertainment area no longer exists; choose another one in Glowcast's settings" / "the entertainment area has more than 20 channels; choose or create a smaller area"). Cleared after the next successful start, or when another area is chosen (4.2).
 - **`OutputAuthFailed`:** switch off and start reauth.
 - **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): checked before starting (and after a stop that may be caused by it); do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again. Cleared after the next successful start.
-- **Every stop reason** turns the switch off and is logged once (info for `USER` and `TV_OFF`, warning for the rest). Changing options while syncing restarts only the pipeline; that stop is not logged and the switch stays on.
+- **Every stop reason** turns the switch off and is logged once (info for `USER` and `TV_OFF`, warning for the rest). Changing what follows the TV while syncing restarts only the pipeline; that stop is not logged and the switch stays on. Other settings reach the running pipeline without a stop (4.2).
 - **HA stops:** HA does not unload entries on shutdown. It first cancels all background tasks and then fires `EVENT_HOMEASSISTANT_STOP`, waiting for both (checked in HA's `core.py`, 2025.7 and 2026.10). Cancelling the pipeline's task makes it release the lights (its shielded cleanup, 3.5); a listener on `EVENT_HOMEASSISTANT_STOP` also stops it and waits for the release, as a backstop. The log says "Home Assistant is stopping".
 - **HA crashed while streaming:** the next start finds Glowcast's own stale stream, stops it and starts normally (3.4).
 
@@ -283,10 +301,10 @@ The selectable output (type and its settings) lives entirely in `options`, so a 
 
 ```python
 SOURCES = {"webos": SourceType(create, is_missing, device_identifier, device_id)}  # sources/__init__.py
-OUTPUTS = {"hue_entertainment": OutputType(create, is_missing, device_id)}         # outputs/__init__.py
+OUTPUTS = {"hue_entertainment": OutputType(create, is_missing, device_id, entities)}  # outputs/__init__.py
 ```
 
-Each adapter module provides these functions itself, so the runtime and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), the source's `device_identifier(data)` names the TV's device for `via_device` (4.3), and `device_id(hass, data)` finds the device of the TV or the bridge in Home Assistant's device registry (for `via_device_id` and diagnostics).
+Each adapter module provides these functions itself, so the runtime and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), the source's `device_identifier(data)` names the TV's device for `via_device` (4.3), and `device_id(hass, data)` finds the device of the TV or the bridge in Home Assistant's device registry (for `via_device_id` and diagnostics). An output type can also provide its own entities on Glowcast's device, for what follows the TV (4.3): `entities` maps a platform to a factory `(hass, entry) -> list[Entity]`, and is optional (empty by default), so a new type such as loose lights (#9) adds its own without changing the generic code. Only platforms whose generic module asks for them (`number`, `select`) can be used; a type that needs another platform adds that module to `PLATFORMS` with the same one-line call.
 
 Config entry `VERSION = 1`. The versioning rule:
 - **New types need no migration.** A new source or output type is a new value of `type` in its block (D5, D16).
@@ -302,7 +320,8 @@ custom_components/glowcast/
   config_flow.py           # setup, options, reauth
   runtime.py               # GlowcastData: runs the pipeline, reacts to stop reasons, repair issues
   settings.py              # options <-> Settings, with defaults for missing keys
-  entity.py                # base entity: the device and the runtime's listener
+  entity.py                # base entities: the device, the runtime's listener, a setting
+  number.py  select.py     # the settings as configuration entities, plus the output type's own
   diagnostics.py           # the diagnostics download, redacted
   switch.py
   translations/en.json  translations/nl.json
@@ -311,6 +330,7 @@ custom_components/glowcast/
     models.py  ports.py  color_engine.py  light_state.py  pipeline.py
   sources/webos.py
   outputs/hue_entertainment.py
+  outputs/hue_area_select.py  # the Hue output type's entertainment-area entity
 tests/
   fakes.py                 # fake clock, source and output, shared by the tests (no HA imports)
   test_color_engine.py
@@ -319,6 +339,7 @@ tests/
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
   test_config_flow.py      # setup, options and reauth, including error cases
   test_settings.py         # reading and writing the settings
+  test_entities.py         # the configuration entities, live settings and the area select
   test_diagnostics.py      # the download, and that it has no secrets or names
   test_webos_source.py  test_hue_output.py  test_manifest.py
 .github/
