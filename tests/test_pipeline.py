@@ -872,9 +872,10 @@ async def test_status_reports_each_change_of_phase_in_order() -> None:
     await h.start()
     assert h.statuses == [PipelineStatus(Phase.STARTING)]
     await h.clock.advance(1)
-    assert h.statuses[1] == PipelineStatus(Phase.STREAMING, channels=1)
+    # Phases and channels only: the captures per second depend on timing.
+    assert (h.statuses[1].phase, h.statuses[1].channels) == (Phase.STREAMING, 1)
     await lose_stream(h)
-    assert h.statuses[-1] == PipelineStatus(Phase.RETRYING, channels=1)
+    assert (h.statuses[-1].phase, h.statuses[-1].channels) == (Phase.RETRYING, 1)
     await h.clock.advance(6)  # retried after 5 s
     assert await h.stop() == StopReason.USER
     assert h.phases == [
