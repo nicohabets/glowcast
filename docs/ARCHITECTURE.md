@@ -254,13 +254,17 @@ Example automation (goes in the README):
 triggers:
   - trigger: state
     entity_id: media_player.living_room_tv
-    from: "off"
+    from:
+      - "off"
+      - "unavailable"
     to: "on"
 actions:
   - action: switch.turn_on
     target:
       entity_id: switch.glowcast_living_room_tv
 ```
+
+The trigger accepts both `off` and `unavailable`, because a TV that Home Assistant has not reached since its start can go from `unavailable` to `on`; it never fires from `unknown`, so a restart of Home Assistant while the TV is on does not start Glowcast (#49). The blueprint `blueprints/automation/glowcast/start_with_tv.yaml` ("Start Glowcast when the TV turns on", linked from the README) uses the same trigger, asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off.
 
 The startup grace period (3.5) covers the seconds between the TV reporting "on" and captures working.
 
