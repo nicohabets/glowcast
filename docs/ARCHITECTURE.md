@@ -365,8 +365,22 @@ Planned as new **source adapters** behind `FrameSource`. Candidates, each still 
 | Android TV / Google TV | ADB `screencap` | slow (about 1 per second), developer mode needed |
 | Any HA camera entity | camera snapshot (HDMI capture card via go2rtc, or a camera aimed at the screen) | works for every TV, needs hardware |
 | Samsung (Tizen) | no known local screenshot API | probably not possible |
+| A PC or Mac screen | a screen helper on the computer serves 64x36 frames; see 8.3 | needs a helper installed on the computer |
 
 Rule: **no code outside `sources/` may know about webOS**, and that includes the UI: the webOS source type provides its own setup step (pick a TV) and its texts. Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
+
+### 8.3 A computer screen (planned, feature #107)
+
+A PC or Mac screen becomes a picture source through a small **screen helper** on that computer (spike #106, D18). Glowcast keeps running in Home Assistant and **pulls** frames from the helper, as it pulls them from the TV, so the switch, automations and settings work unchanged.
+
+- **Helper** (#108): its own package outside `custom_components/` (not installed by HACS). Captures one screen, downscales to 64x36 RGB on the computer, and serves only the latest frame. Started with one `uv` command from the repository first; an installable app later (#113). `--pattern <name>` serves synthetic frames without a display, for agents and automated tests (#112).
+- **Protocol** (version 1, plain HTTP on the LAN, like the TV's image download):
+  - mDNS service `_glowcast._tcp.local.`, TXT record with the helper's `id`, a display `name` and the protocol version.
+  - `POST /v1/pair` with the 6-digit code the helper shows returns a token; every other request needs `Authorization: Bearer <token>`, else 401.
+  - `GET /v1/frame` returns 6,912 bytes (64x36 RGB, row-major), or "no picture" when the screen is locked or capture fails.
+  - `GET /v1/info` returns the id, name, version, screens and the pattern, if any.
+- **`ScreenFrameSource`** (`sources/screen.py`, #110): source type `"screen"` behind `FrameSource`; builds `Frame` directly (no JPEG decoding); `is_on()` false when the helper is unreachable or has no picture; 401 starts reauth. The entry stores the helper id, address and token in `data` (Glowcast's own secret, like the Hue keys).
+- **Setup** (#109, after #66): Home Assistant's zeroconf discovery (`"zeroconf": ["_glowcast._tcp.local."]` in the manifest) shows the helper under Discovered; the screen source type provides the pairing-code step; unique id = the helper id, so a new address updates the entry.
 
 ## 9. Decisions
 
@@ -389,3 +403,4 @@ Rule: **no code outside `sources/` may know about webOS**, and that includes the
 | D15 | Recovery = stop cleanly, next start works | Predictable; no long waits or fights with the bridge |
 | D16 | Selectable output lives in `options` | Output types can be switched in the settings screen without migrations |
 | D17 | Minimum Home Assistant 2025.7.2 | First release with aiowebostv 0.7.4, which current LG firmware needs (0.7 API features are included) |
+| D18 | A computer screen is a source through a helper that Glowcast pulls frames from (#106) | Home Assistant stays in charge (switch, automations), no Home Assistant token on the computer, the existing `FrameSource` port fits, and the same helper serves test patterns for automated tests; a browser page needs HTTPS and a new screen choice every session, a camera stream is heavier and slower |
