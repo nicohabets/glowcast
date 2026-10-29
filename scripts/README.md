@@ -24,7 +24,7 @@ See the docstring at the top of each script for usage. Credentials come from env
 
 ```
 python3 scripts/demo.py start                          # first run installs (a few minutes)
-python3 scripts/demo.py record                         # every flow; or name some: setup settings device
+python3 scripts/demo.py record                         # every flow; or name some: setup settings device entities
 python3 scripts/demo.py record --lang nl --theme dark  # en|nl, light|dark; --out DIR
 python3 scripts/demo.py record settings --still        # a PNG of each step instead of a GIF
 python3 scripts/demo.py stop
@@ -33,10 +33,11 @@ python3 scripts/demo.py clean                          # stop and remove ~/.cach
 
 `start` always begins with a fresh config directory without a Glowcast entry. Log in at http://127.0.0.1:8199 as `demo` / `demo-password` to look around.
 
-`record` records in Home Assistant's mobile view (400 px wide at device scale factor 2, so 800 px wide with sharp text), with a ring where each click lands and a short pause on each step, and saves one GIF per flow as `<lang>-<theme>-<flow>.gif` in `~/.cache/glowcast-demo/recordings` (it warns when one is over GitHub's 10 MB). The flows:
+`record` sets Home Assistant's own language to `--lang` too (entity names come from the server in its language, not from the profile), and records in Home Assistant's mobile view (400 px wide at device scale factor 2, so 800 px wide with sharp text), with a ring where each click lands and a short pause on each step, and saves one GIF per flow as `<lang>-<theme>-<flow>.gif` in `~/.cache/glowcast-demo/recordings` (it warns when one is over GitHub's 10 MB). The flows:
 - `setup`: the setup flow from "Do you want to set up Glowcast?": TV, bridge, link button, pairing (the fake bridge answers), area, done. It first removes a Glowcast entry from an earlier run.
 - `settings`: from the integration page to the settings screen, choosing another update rate, saving.
 - `device`: from the integration page to Glowcast's device page.
+- `entities`: the settings on the device page, under Configuration: brightness, intensity, update rate and entertainment area (#13). It starts from the default settings; the switch stays off, because no TV answers in the demo.
 
 The other flows set Glowcast up first (unrecorded) if needed. With `--still`, each step is saved as `<lang>-<theme>-<flow>-<nn>-<name>.png` instead, in the same mobile view. If a flow fails, `error.png` shows the page at that moment. GIFs and screenshots for a pull request go up as GitHub attachments (rule 11 in `CLAUDE.md`); do not commit them.
 
