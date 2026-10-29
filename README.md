@@ -48,7 +48,7 @@ Glowcast is not in the default HACS list yet; add it as a custom repository:
 
 Updates show up in HACS and under Settings → System → Updates.
 
-From Home Assistant 2026.11, HACS is built into Home Assistant as **Settings → Marketplace**. These steps were checked with HACS on Home Assistant 2026.10; the Marketplace may name things differently.
+These steps are for HACS on Home Assistant 2026.10 and older. From Home Assistant 2026.11, HACS is built into Home Assistant as **Settings → Marketplace**, which may name things differently.
 
 ## Configuration
 
