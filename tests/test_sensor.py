@@ -356,7 +356,7 @@ async def test_names_in_home_assistants_language(
         assert entity.original_name == names[entity_id]
     await enable_rate(hass, entry)
     rate = registry.async_get(by_key["_captures_per_second"].entity_id)
-    # Home Assistant takes a translated unit from English in every language.
+    # The attribute is English in every language; the frontend translates it.
     unit = hass.states.get(rate.entity_id).attributes["unit_of_measurement"]
     assert unit == "captures/s"
 

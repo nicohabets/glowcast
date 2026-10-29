@@ -246,7 +246,7 @@ One device "Glowcast <TV name>", linked to the TV's device with `via_device`, wi
 - **switch** (start/stop syncing), under Controls. The switch is the device's main feature, so it has no name of its own, its unique id is the entry id and its id is `switch.glowcast_<tv name>` (unchanged since v0.1). Off after an HA restart (no state restore).
 - **Configuration entities** (`entity_category: config`, #13), one per setting, with a translation key and the unique id `<entry id>_<key>`: **brightness** (`number`, 1-100, step 1, %, slider), **intensity** (`number`, 0-200, step 1, %, slider) and **update rate** (`select`, the `UpdateRate` values with translated state names). They read their value from the entry's `options` through `read_settings()` on every state write and store a change with `write_settings()` and `async_update_entry`; they keep no copy. The runtime notifies them of every options change, so they follow the options screen and each other. An older entry without the settings keys shows the defaults.
 - **Status** (`sensor`, `device_class: enum`, unique id `<entry id>_status`, #14), derived from the runtime's last `PipelineStatus` and whether it syncs: `idle` (never started, a start refused because a referenced entry is missing, or stopped with `USER`), `starting` (phase `STARTING` or `RETRYING`, and switched on before the pipeline's first report), `streaming`, `black_picture` (`STREAMING` with `black_picture`), `no_picture` (`NO_PICTURE`), `tv_off` (stopped with `TV_OFF`) and `error` (stopped with any other reason). For `tv_off` and `error` the attribute `stop_reason` holds the `StopReason` value; the repair issues explain each one, so the sensor has no long texts. The state names and the reasons are translated.
-- **Capture rate** (`sensor`, `entity_category: diagnostic`, disabled by default, unique id `<entry id>_captures_per_second`, #14): `captures_per_second` rounded to one decimal while the phase is `STREAMING`, unknown otherwise (not measured yet, after a retry or a release, and after a stop, though the status keeps the last measurement for diagnostics). The unit is translated through `unit_of_measurement` in the entity translations; Home Assistant always takes it from English (`captures/s`), whatever its language. No `state_class`, so no long-term statistics.
+- **Capture rate** (`sensor`, `entity_category: diagnostic`, disabled by default, unique id `<entry id>_captures_per_second`, #14): `captures_per_second` rounded to one decimal while the phase is `STREAMING`, unknown otherwise (not measured yet, after a retry or a release, and after a stop, though the status keeps the last measurement for diagnostics). The unit is translated through `unit_of_measurement` in the entity translations: the state attribute is always the English one (`captures/s`, Home Assistant takes it from English whatever its language), and the frontend shows the translation. No `state_class`, so no long-term statistics.
 - Both sensors are generic (no webOS or Hue knowledge) and follow the runtime's status listener (`async_add_status_listener`, every status of the running pipeline, about once per second while streaming) next to its general listener; they write their state only when their value or attributes change. The switch and the configuration entities follow only the general listener (starts, stops and options changes), so they are not written once a second.
 - **What follows the TV**, provided by the output type (decision in #61). The generic `number.py` and `select.py` add the common settings plus whatever the entry's output type provides for their platform (`output_entities()` in `outputs/__init__.py`); they know nothing about Hue or areas. A type that provides nothing gets the common settings only. #66 follows the same pattern for the setup and options steps.
 
@@ -358,8 +358,9 @@ custom_components/glowcast/
   entity.py                # base entities: the device, the runtime's listener, a setting
   number.py  select.py     # the settings as configuration entities, plus the output type's own
   diagnostics.py           # the diagnostics download, redacted
+  sensor.py                # the status and the capture rate
   switch.py
-  translations/en.json  translations/nl.json
+  translations/en.json  translations/nl.json  icons.json
   brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
   core/                    # NO homeassistant imports
     models.py  ports.py  color_engine.py  light_state.py  pipeline.py
@@ -377,6 +378,7 @@ tests/
   test_config_flow.py      # setup, options and reauth, including error cases
   test_settings.py         # reading and writing the settings
   test_entities.py         # the configuration entities, live settings and the area select
+  test_sensor.py           # the status and the capture rate
   test_diagnostics.py      # the download, and that it has no secrets or names
   test_generic_code.py     # the generic modules import and name no source or output type
   test_webos_source.py  test_hue_output.py  test_manifest.py

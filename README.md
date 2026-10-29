@@ -151,7 +151,7 @@ The **Status** sensor on Glowcast's device (for example `sensor.glowcast_living_
 
 For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key) or `source_unavailable` (the TV source failed). Use it in automations, for example to get a notification when Glowcast stops with an error.
 
-The **Capture rate** sensor shows how many pictures per second Glowcast gets from the TV while it streams (about 3-4 on a 2023 LG G3 at Maximum). It is a diagnostic sensor and off by default: on the device page, open it under **Diagnostic**, then its settings (the gear), and turn on **Enabled**. It is unknown when Glowcast is not streaming or has not measured yet; the unit shows as "captures/s" in every language.
+The **Capture rate** sensor shows how many pictures per second Glowcast gets from the TV while it streams (about 3-4 on a 2023 LG G3 at Maximum). It is a diagnostic sensor and off by default: on the device page, open it under **Diagnostic**, then its settings (the gear), and turn on **Enabled**. It is unknown when Glowcast is not streaming or has not measured yet. In automations and templates the unit is always `captures/s`; the screens show it in your language.
 
 ## Known limits
 

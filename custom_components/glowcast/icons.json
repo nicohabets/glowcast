@@ -1,0 +1,20 @@
+{
+  "entity": {
+    "sensor": {
+      "status": {
+        "default": "mdi:television-ambient-light",
+        "state": {
+          "idle": "mdi:power-sleep",
+          "starting": "mdi:timer-sand",
+          "black_picture": "mdi:television-classic",
+          "no_picture": "mdi:television-classic-off",
+          "tv_off": "mdi:television-off",
+          "error": "mdi:alert-circle-outline"
+        }
+      },
+      "captures_per_second": {
+        "default": "mdi:speedometer"
+      }
+    }
+  }
+}
