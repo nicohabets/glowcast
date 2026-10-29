@@ -48,7 +48,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 The product owner (the repository owner) decides what gets built and when. Claude Code builds; it does not plan.
 
 ### The board
-Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → In Review → Done**, swimlanes per milestone. Release plan: v0.2 (see what Glowcast does and control it from Home Assistant), v0.3 (more lights than the entertainment area, feature #76), v0.4 (colours that match the picture, #73), v0.5 (more TVs and sources, #77), v99 Later. The Kanban view hides closed milestones and features.
+Work is tracked as GitHub issues on the project board **Glowcast** (https://github.com/users/nicohabets/projects/12): columns **Backlog → Todo → In Progress → In Review → Done**, swimlanes per milestone. Release plan: v0.2 (see what Glowcast does and control it from Home Assistant), v0.3 (more lights than the entertainment area, feature #76), v0.4 (colours that match the picture, #73), v0.5 (more TVs and sources, #77). Issues without a milestone are not planned yet. The Kanban view hides closed milestones and features.
 
 | Column | Meaning | Who moves items here |
 |---|---|---|
