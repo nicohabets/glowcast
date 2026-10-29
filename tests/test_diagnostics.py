@@ -88,7 +88,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             SOURCES["webos"],
             create=lambda hass, data, options: lights.source(),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     monkeypatch.setitem(
@@ -97,7 +97,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             OUTPUTS["hue_entertainment"],
             create=lambda hass, data, options: FakeOutput(MonotonicClock(), lights.log),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     return lights
@@ -345,7 +345,9 @@ async def test_a_refused_start_does_not_show_the_previous_stop(
     monkeypatch.setitem(
         OUTPUTS,
         "hue_entertainment",
-        dataclasses.replace(OUTPUTS["hue_entertainment"], is_missing=lambda h, d: True),
+        dataclasses.replace(
+            OUTPUTS["hue_entertainment"], is_missing=lambda h, d, o: True
+        ),
     )
     await entry.runtime_data.async_start()  # the bridge is gone from HA
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)

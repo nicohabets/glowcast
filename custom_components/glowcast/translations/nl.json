@@ -108,23 +108,23 @@
     }
   },
   "issues": {
-    "source_missing": {
+    "webos_missing": {
       "title": "Glowcast {name}: de tv is niet ingesteld",
       "description": "Glowcast kan niet synchroniseren omdat de tv die het gebruikt niet meer in Home Assistant is ingesteld, of niet geladen is. Stel de tv opnieuw in met de integratie LG webOS TV (Instellingen > Apparaten en diensten) en zet Glowcast daarna weer aan."
     },
-    "output_missing": {
+    "hue_entertainment_missing": {
       "title": "Glowcast {name}: de Hue-bridge is niet ingesteld",
       "description": "Glowcast kan niet synchroniseren omdat de Hue-bridge die het gebruikt niet meer in Home Assistant is ingesteld, niet geladen is of niet kan streamen. Stel de bridge opnieuw in met de integratie Philips Hue (Instellingen > Apparaten en diensten) en zet Glowcast daarna weer aan."
     },
-    "too_many_channels": {
+    "hue_entertainment_too_many_channels": {
       "title": "Glowcast {name}: de entertainmentruimte is te groot",
       "description": "De entertainmentruimte heeft meer dan 20 kanalen, meer dan Hue kan streamen. Kies een kleinere entertainmentruimte in de instellingen van Glowcast, of maak er een met minder lampen in de Hue-app."
     },
-    "area_not_found": {
+    "hue_entertainment_area_not_found": {
       "title": "Glowcast {name}: de entertainmentruimte bestaat niet meer",
       "description": "De entertainmentruimte waar Glowcast naartoe streamt is van de Hue-bridge verwijderd. Kies een andere in de instellingen van Glowcast."
     },
-    "bridge_app_left": {
+    "hue_entertainment_bridge_app_left": {
       "title": "Glowcast {name}: verwijder ook de app van de Hue-bridge",
       "description": "Glowcast is uit Home Assistant verwijderd, maar de app van Glowcast staat nog op de Hue-bridge. De sleutel van die app geeft volledige toegang tot de bridge. Verwijder hem in de Hue-app: ga naar **Instellingen → Toepassingen → Netwerk-gebaseerd**, tik op de infoknop naast **glowcast** en verwijder hem."
     }

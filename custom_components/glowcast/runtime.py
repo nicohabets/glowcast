@@ -5,7 +5,7 @@ Architecture 4.4. Every platform reaches it through `entry.runtime_data`.
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from typing import Any
 
@@ -15,35 +15,23 @@ from homeassistant.helpers import issue_registry as ir
 
 from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
 from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
-from .outputs import OUTPUTS
+from .issues import Issue
+from .outputs import OUTPUTS, OutputType
 from .settings import read_settings
-from .sources import SOURCES
+from .sources import SOURCES, SourceType
 
 # The package's logger, so log lines read as before the runtime moved here.
 _LOGGER = logging.getLogger(__package__)
 
-# Repair issues (translation keys under "issues" in translations/*.json).
-ISSUE_SOURCE_MISSING = "source_missing"
-ISSUE_OUTPUT_MISSING = "output_missing"
-ISSUE_TOO_MANY_CHANNELS = "too_many_channels"
-ISSUE_AREA_NOT_FOUND = "area_not_found"
-ISSUES = (
-    ISSUE_SOURCE_MISSING,
-    ISSUE_OUTPUT_MISSING,
-    ISSUE_TOO_MANY_CHANNELS,
-    ISSUE_AREA_NOT_FOUND,
-)
-
-# Why syncing stopped, for the log (no secrets, no image URLs).
+# Why syncing stopped, for the log (no secrets, no image URLs). An output
+# type's repair issues bring their own message for their stop reasons.
 _STOP_MESSAGES = {
     StopReason.USER: "switched off",
     StopReason.TV_OFF: "the TV is off or not reachable",
     StopReason.OUTPUT_LOST: "the light stream was lost or taken over by another app",
     StopReason.OUTPUT_BUSY: "another app is streaming to the lights",
-    StopReason.OUTPUT_NOT_FOUND: "the chosen entertainment area no longer exists",
-    StopReason.OUTPUT_TOO_MANY_CHANNELS: (
-        "the chosen entertainment area has more than 20 channels"
-    ),
+    StopReason.OUTPUT_NOT_FOUND: "the chosen lights no longer exist",
+    StopReason.OUTPUT_TOO_MANY_CHANNELS: "the chosen lights have too many channels",
     StopReason.OUTPUT_UNAVAILABLE: "the lights could not be reached",
     StopReason.AUTH_FAILED: "the lights rejected Glowcast's key; pair again",
     StopReason.SOURCE_UNAVAILABLE: "the TV source failed",
@@ -95,7 +83,7 @@ class GlowcastData:
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
-        if self._missing_reference(source_type.is_missing, output_type.is_missing):
+        if self._missing_reference(source_type, output_type):
             # No pipeline ran; the repair issue says why. An earlier stop
             # reason would be misleading now.
             self._status = None
@@ -143,7 +131,11 @@ class GlowcastData:
         self._notify()  # the entities show the new values
         if options[CONF_OUTPUT] != self._output:
             self._output = options[CONF_OUTPUT]
-            for key in (ISSUE_TOO_MANY_CHANNELS, ISSUE_AREA_NOT_FOUND):
+            for key in _keys(
+                issue
+                for output_type in OUTPUTS.values()
+                for issue in output_type.stop_issues.values()
+            ):
                 ir.async_delete_issue(
                     self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
                 )
@@ -169,30 +161,24 @@ class GlowcastData:
     @callback
     def async_remove_issues(self) -> None:
         """Remove this entry's repair issues."""
-        for key in ISSUES:
-            ir.async_delete_issue(
-                self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
-            )
+        async_remove_issues(self._hass, self._entry.entry_id)
 
     def _missing_reference(
-        self,
-        source_missing: Callable[[HomeAssistant, Any], bool],
-        output_missing: Callable[[HomeAssistant, Any], bool],
+        self, source_type: SourceType, output_type: OutputType
     ) -> bool:
-        """Raise a repair issue if the TV or bridge entry is gone or not loaded."""
-        data = self._entry.data
-        for missing, key, what in (
-            (source_missing, ISSUE_SOURCE_MISSING, "TV"),
-            (output_missing, ISSUE_OUTPUT_MISSING, "bridge"),
-        ):
-            if missing(self._hass, data):
+        """Raise the type's repair issue if an entry it uses is gone or not loaded."""
+        data, options = self._entry.data, self._entry.options
+        for part in (source_type, output_type):
+            if part.is_missing(self._hass, data, options):
                 _LOGGER.warning(
-                    "Glowcast %s cannot sync: the %s is not set up (or not loaded) "
-                    "in Home Assistant",
+                    "Glowcast %s cannot sync: %s",
                     self._entry.title,
-                    what,
+                    "an integration it uses is not set up (or not loaded)"
+                    if part.missing is None
+                    else part.missing.message,
                 )
-                self._raise_issue(key)
+                if part.missing is not None:
+                    self._raise_issue(part.missing.key)
                 return True
         return False
 
@@ -219,7 +205,11 @@ class GlowcastData:
             _LOGGER.debug("Glowcast %s restarting with new settings", self._entry.title)
             return
         log = _LOGGER.info if reason in _ROUTINE_STOPS else _LOGGER.warning
-        message = _STOP_MESSAGES[reason]
+        data, options = self._entry.data, self._entry.options
+        source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
+        output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
+        issue = output_type.stop_issues.get(reason)
+        message = _STOP_MESSAGES[reason] if issue is None else issue.message
         if reason is StopReason.USER and self._hass.is_stopping:
             # HA cancels background tasks on shutdown; the pipeline then
             # releases the lights and reports USER.
@@ -227,31 +217,37 @@ class GlowcastData:
         log("Glowcast %s stopped: %s", self._entry.title, message)
         if reason is StopReason.AUTH_FAILED:
             self._entry.async_start_reauth(self._hass)
-        elif reason is StopReason.OUTPUT_TOO_MANY_CHANNELS:
-            self._raise_issue(ISSUE_TOO_MANY_CHANNELS)
-        elif reason is StopReason.OUTPUT_NOT_FOUND:
-            self._raise_issue(ISSUE_AREA_NOT_FOUND)
+        elif issue is not None:
+            self._raise_issue(issue.key)
         elif reason in (
             StopReason.TV_OFF,
             StopReason.SOURCE_UNAVAILABLE,
             StopReason.OUTPUT_UNAVAILABLE,
         ):
-            # The TV or bridge may have been removed from HA while syncing.
-            data, options = self._entry.data, self._entry.options
-            self._missing_reference(
-                SOURCES[data[CONF_SOURCE][CONF_TYPE]].is_missing,
-                OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]].is_missing,
-            )
+            # The TV or the lights may have been removed from HA while syncing.
+            self._missing_reference(source_type, output_type)
         self._notify()
 
     def _raise_issue(self, key: str) -> None:
+        """Raise the repair issue with this key of the entry's source or output."""
+        source_type = SOURCES[self._entry.data[CONF_SOURCE][CONF_TYPE]]
+        output_type = OUTPUTS[self._entry.options[CONF_OUTPUT][CONF_TYPE]]
+        issue = next(
+            issue
+            for issue in (
+                source_type.missing,
+                output_type.missing,
+                *output_type.stop_issues.values(),
+            )
+            if issue is not None and issue.key == key
+        )
         ir.async_create_issue(
             self._hass,
             DOMAIN,
-            issue_id(self._entry.entry_id, key),
+            issue_id(self._entry.entry_id, issue.key),
             is_fixable=False,
             severity=ir.IssueSeverity.ERROR,
-            translation_key=key,
+            translation_key=issue.translation_key,
             translation_placeholders={"name": self._entry.title},
         )
 
@@ -263,3 +259,30 @@ class GlowcastData:
 def issue_id(entry_id: str, key: str) -> str:
     """The id of an entry's repair issue."""
     return f"{key}_{entry_id}"
+
+
+def issue_keys() -> list[str]:
+    """The keys of the repair issues every source and output type can raise."""
+    return _keys(
+        [
+            *(source_type.missing for source_type in SOURCES.values()),
+            *(output_type.missing for output_type in OUTPUTS.values()),
+            *(
+                issue
+                for output_type in OUTPUTS.values()
+                for issue in output_type.stop_issues.values()
+            ),
+        ]
+    )
+
+
+@callback
+def async_remove_issues(hass: HomeAssistant, entry_id: str) -> None:
+    """Remove an entry's repair issues, of every type."""
+    for key in issue_keys():
+        ir.async_delete_issue(hass, DOMAIN, issue_id(entry_id, key))
+
+
+def _keys(issues: Iterable[Issue | None]) -> list[str]:
+    """The issues' keys, each once, in order."""
+    return list(dict.fromkeys(issue.key for issue in issues if issue is not None))

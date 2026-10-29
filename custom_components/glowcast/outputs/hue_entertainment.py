@@ -6,22 +6,17 @@ from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_VERSION, CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.translation import async_get_translations
 from hue_entertainment import EntertainmentSession, HueEntertainmentAPI
 from hue_entertainment.models import LightColorCommand
 
-from ..const import (
-    CONF_APP_KEY,
-    CONF_AREA_ID,
-    CONF_BRIDGE,
-    CONF_CLIENT_KEY,
-    CONF_OUTPUT,
-    CONF_UNIQUE_ID,
-)
+from ..const import CONF_OUTPUT, CONF_UNIQUE_ID, DOMAIN
 from ..core.models import Channel, ChannelColor
 from ..core.ports import (
     OutputAuthFailed,
@@ -31,10 +26,44 @@ from ..core.ports import (
     OutputTooManyChannels,
     OutputUnavailable,
 )
+from ..issues import Issue
 
 _LOGGER = logging.getLogger(__name__)
 
 HUE_DOMAIN = "hue"
+
+# The output type and its keys in the entry (architecture 5): the bridge it
+# paired with in `data` (only once paired), the area in `options["output"]`.
+OUTPUT_HUE_ENTERTAINMENT = "hue_entertainment"
+CONF_BRIDGE = "bridge"
+CONF_APP_KEY = "app_key"
+CONF_CLIENT_KEY = "client_key"
+CONF_AREA_ID = "area_id"
+
+# Repair issues (architecture 4.4); the keys are the ones v0.1 raised.
+ISSUE_OUTPUT_MISSING = "output_missing"
+ISSUE_AREA_NOT_FOUND = "area_not_found"
+ISSUE_TOO_MANY_CHANNELS = "too_many_channels"
+MISSING = Issue(
+    ISSUE_OUTPUT_MISSING,
+    "hue_entertainment_missing",
+    "the bridge is not set up (or not loaded) in Home Assistant",
+)
+AREA_NOT_FOUND = Issue(
+    ISSUE_AREA_NOT_FOUND,
+    "hue_entertainment_area_not_found",
+    "the chosen entertainment area no longer exists",
+)
+TOO_MANY_CHANNELS = Issue(
+    ISSUE_TOO_MANY_CHANNELS,
+    "hue_entertainment_too_many_channels",
+    "the chosen entertainment area has more than 20 channels",
+)
+# Shown once when an entry that paired with a bridge is removed. Its text
+# lives under "issues" because Home Assistant has no translation category for
+# notifications; it is never raised as a repair issue.
+NOTICE_BRIDGE_APP_LEFT = "bridge_app_left"
+NOTICE_TRANSLATION_KEY = "hue_entertainment_bridge_app_left"
 AREAS_PATH = "/clip/v2/resource/entertainment_configuration"
 AUTH_PATH = "/auth/v1"
 
@@ -254,7 +283,9 @@ def create(
     )
 
 
-def is_missing(hass: HomeAssistant, data: Mapping[str, Any]) -> bool:
+def is_missing(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> bool:
     """Whether the referenced hue entry is removed, not loaded or cannot stream."""
     entry = _loaded_bridge(hass, data[CONF_BRIDGE][CONF_UNIQUE_ID])
     return entry is None or entry.data.get(CONF_API_VERSION) != 2
@@ -283,6 +314,26 @@ def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
             return device.id
     roots = [device for device in devices if device.via_device_id is None]
     return roots[0].id if len(roots) == 1 else None
+
+
+async def async_removed(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Tell the user that Glowcast's app stays on the bridge it paired with.
+
+    The bridge has no API to remove an app (architecture 4.1); the user
+    removes it in the Hue app. Text in Home Assistant's server language.
+    """
+    if CONF_BRIDGE not in entry.data:
+        return
+    strings = await async_get_translations(
+        hass, hass.config.language, "issues", {DOMAIN}
+    )
+    prefix = f"component.{DOMAIN}.issues.{NOTICE_TRANSLATION_KEY}"
+    persistent_notification.async_create(
+        hass,
+        strings[f"{prefix}.description"],
+        title=strings[f"{prefix}.title"].replace("{name}", entry.title),
+        notification_id=f"{DOMAIN}_{NOTICE_BRIDGE_APP_LEFT}_{entry.entry_id}",
+    )
 
 
 def bridges(hass: HomeAssistant) -> dict[str, str]:

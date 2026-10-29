@@ -43,7 +43,12 @@ from custom_components.glowcast.core.pipeline import (
     Settings,
     UpdateRate,
 )
-from custom_components.glowcast.outputs import OUTPUTS, OutputType, hue_area_select
+from custom_components.glowcast.outputs import (
+    OUTPUTS,
+    OutputType,
+    hue_area_select,
+    hue_entertainment,
+)
 from custom_components.glowcast.sources import SOURCES
 
 from .fakes import FakeOutput, FakeSource
@@ -93,7 +98,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             SOURCES["webos"],
             create=lambda hass, data, options: fakes.source(),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     monkeypatch.setitem(
@@ -102,7 +107,7 @@ def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
         dataclasses.replace(
             OUTPUTS["hue_entertainment"],
             create=lambda hass, data, options: fakes.output(),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
         ),
     )
     return fakes
@@ -489,11 +494,11 @@ async def test_a_removed_area_shows_unknown_and_choosing_another_clears_the_issu
     assert state(hass, AREA) == STATE_UNKNOWN
     assert hass.states.get(AREA).attributes["options"] == ["Other area"]
     # Raised at switch-on, as before (test_init covers how).
-    raise_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    raise_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
 
     await select(hass, AREA, "Other area")
     assert state(hass, AREA) == "Other area"
-    assert not has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    assert not has_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
     assert FakePipeline.instances == []  # off: nothing starts
 
 
@@ -506,11 +511,11 @@ async def test_an_area_removed_while_running_shows_unknown_after_the_stop(
     FakePipeline.start_error = runtime.StopReason.OUTPUT_NOT_FOUND
     await switch(hass, SERVICE_TURN_ON)
     assert state(hass, SWITCH) == STATE_OFF
-    assert has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    assert has_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
     assert state(hass, AREA) == STATE_UNKNOWN
 
     await select(hass, AREA, "Other area")
-    assert not has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    assert not has_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
 
 
 async def test_another_setting_leaves_the_area_issue_standing(
@@ -518,9 +523,9 @@ async def test_another_setting_leaves_the_area_issue_standing(
 ) -> None:
     bridge.areas = [area("area-other", "Other area")]
     entry = await setup(hass)
-    raise_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    raise_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
     await set_number(hass, BRIGHTNESS, 50)
-    assert has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    assert has_issue(hass, entry, hue_entertainment.ISSUE_AREA_NOT_FOUND)
 
 
 async def test_two_areas_with_the_same_name(
@@ -762,7 +767,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
         "loose_lights",
         OutputType(
             create=lambda hass, data, options: pipeline.output(),
-            is_missing=lambda hass, data: False,
+            is_missing=lambda hass, data, options: False,
             device_id=lambda hass, data: None,
             entities=provided,
         ),
@@ -801,7 +806,7 @@ def test_an_output_type_without_its_own_entities() -> None:
     """The hook is optional, so a new type needs no change to this story's code."""
     output_type = OutputType(
         create=lambda hass, data, options: None,
-        is_missing=lambda hass, data: False,
+        is_missing=lambda hass, data, options: False,
         device_id=lambda hass, data: None,
     )
     assert output_type.entities == {}

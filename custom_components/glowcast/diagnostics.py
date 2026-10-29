@@ -22,7 +22,7 @@ from packaging.requirements import Requirement
 
 from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
 from .outputs import OUTPUTS
-from .runtime import ISSUES, GlowcastConfigEntry, GlowcastData, issue_id
+from .runtime import GlowcastConfigEntry, GlowcastData, issue_id, issue_keys
 from .settings import read_settings
 from .sources import SOURCES
 
@@ -74,7 +74,7 @@ async def async_get_config_entry_diagnostics(
         "status": None if status is None else dataclasses.asdict(status),
         "repair_issues": [
             key
-            for key in ISSUES
+            for key in issue_keys()
             if issues.async_get_issue(DOMAIN, issue_id(entry.entry_id, key))
         ],
     }

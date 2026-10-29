@@ -6,6 +6,7 @@ lights.
 """
 
 import asyncio
+import dataclasses
 import re
 from collections.abc import Callable, Generator
 from typing import Any
@@ -44,8 +45,8 @@ from custom_components.glowcast.core.pipeline import (
     StopReason,
     UpdateRate,
 )
-from custom_components.glowcast.outputs import OUTPUTS, OutputType
-from custom_components.glowcast.sources import SOURCES, SourceType, webos
+from custom_components.glowcast.outputs import OUTPUTS
+from custom_components.glowcast.sources import SOURCES, webos
 
 from .fakes import CLEANUP, FakeOutput, FakeSource
 
@@ -158,9 +159,10 @@ def adapters(monkeypatch: pytest.MonkeyPatch) -> Fakes:
     monkeypatch.setitem(
         SOURCES,
         "webos",
-        SourceType(
+        dataclasses.replace(
+            SOURCES["webos"],
             create=lambda hass, data, options: fakes.source(),
-            is_missing=lambda hass, data: fakes.source_missing,
+            is_missing=lambda hass, data, options: fakes.source_missing,
             device_identifier=lambda data: ("webostv", data["source"]["unique_id"]),
             device_id=webos.device_id,
         ),
@@ -168,9 +170,10 @@ def adapters(monkeypatch: pytest.MonkeyPatch) -> Fakes:
     monkeypatch.setitem(
         OUTPUTS,
         "hue_entertainment",
-        OutputType(
+        dataclasses.replace(
+            OUTPUTS["hue_entertainment"],
             create=lambda hass, data, options: fakes.output(),
-            is_missing=lambda hass, data: fakes.output_missing,
+            is_missing=lambda hass, data, options: fakes.output_missing,
             device_id=lambda hass, data: None,
         ),
     )
