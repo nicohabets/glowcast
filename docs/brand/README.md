@@ -1,6 +1,6 @@
 # Glowcast brand
 
-The Glowcast icon and logo ("Kleurgloed"): a TV whose glow takes on the colours of the picture, on a dark rounded tile, with the wordmark "Glowcast" next to it.
+The Glowcast icon and logo ("Glow strip"): a TV on a dark rounded tile, with six separate light segments around it (blue on the left, through violet and pink, to warm on the right), each with a soft glow behind it, and the wordmark "Glowcast" next to it. The segments stay apart at small sizes, so the colours still read at 32 px.
 
 ## Files
 
@@ -27,11 +27,14 @@ There is no `dark_icon.png`: the icon has its own dark tile, and Home Assistant 
 | `#101218` | Tile; wordmark on light backgrounds |
 | `#15171E` | TV screen |
 | `#F4F1EA` | TV frame and stand; wordmark on dark backgrounds |
-| `#3D7BFF`, `#4A86FF` | Glow, left (blue) |
-| `#FFC37A`, `#FFCB8A` | Glow, top right (warm white) |
-| `#E0489A`, `#EA5AA6` | Glow, bottom right (pink) |
+| `#3D7BFF` | Segment, left |
+| `#6A6CF5` | Segment, top 1 |
+| `#B05CC8` | Segment, top 2 |
+| `#EA5AA6` | Segment, top 3 |
+| `#FF8F6A` | Segment, top 4 |
+| `#FFC37A` | Segment, right |
 
-The glow is two layers of the same shapes blurred with `feGaussianBlur` (a wide one at 70% opacity and a tighter one), clipped to the tile.
+The glow is the same six segments, 6 units larger on each side, blurred with `feGaussianBlur` (stdDeviation 22) at 90% opacity behind the sharp segments, clipped to the tile.
 
 ## Wordmark
 
@@ -47,7 +50,7 @@ The glow is two layers of the same shapes blurred with `feGaussianBlur` (a wide 
 uv run scripts/render_brand.py
 ```
 
-It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It checks that each image is trimmed (no fully transparent row or column at the edges), then compresses it losslessly and interlaced with oxipng, as Home Assistant prefers. The interlaced files are 45-50% larger than non-interlaced ones; the @2x logos are about 155 kB.
+It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It checks that each image is trimmed (no fully transparent row or column at the edges), then compresses it losslessly and interlaced with oxipng, as Home Assistant prefers. The interlaced files are 45-52% larger than non-interlaced ones; the @2x logos are about 115 kB.
 
 To change the wordmark, also pass the font. This rebuilds `logo.svg` and `logo-dark.svg` from `icon.svg` first:
 
@@ -55,4 +58,18 @@ To change the wordmark, also pass the font. This rebuilds `logo.svg` and `logo-d
 uv run scripts/render_brand.py --font "Outfit[wght].ttf"
 ```
 
-After a change, check the PNGs by eye at full size and scaled down to 24 px, on a light and on a dark background. If the glow is missing or cut off, the renderer did not apply the filter.
+After a change, check the PNGs by eye at full size and scaled down to 24 px, on a light and on a dark background. The six segments must stay separate at 24 px. If the glow is missing or cut off, the renderer did not apply the filter.
+
+## Illustrations
+
+The illustrations of what Glowcast does live in [`docs/images/illustrations/`](../images/illustrations/): an isometric, generic living room in which only the light changes from scene to scene. Each scene is an SVG (the source) with an 800 px PNG made from it for the README; scene 1 also has an animated WebP loop. The background is transparent, so the same file works on a light and a dark page.
+
+| Scene | What it shows |
+|---|---|
+| `scene-1-picture-leads` | A sunset on the TV; the strip and lamps take warm on the left, blue on the right. The `-loop.webp` (800 px wide, 5 s) changes the picture and the lights follow. |
+| `scene-2-dark-scene` | A dark picture; every light at a faint warm glow |
+| `scene-3-saturated-colour` | A strong red picture; the lights show pure red |
+| `scene-4-loose-lights` | Planned ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps elsewhere in the room each follow their own side of the picture |
+| `scene-5-before` | The same room with the TV and all lights off |
+
+Like the icon, they show no Philips Hue or LG branding, no people and no text.
