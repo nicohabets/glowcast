@@ -32,6 +32,8 @@ WIDTH, HEIGHT = 64, 36  # as the webOS source delivers them
 SEND_HZ = 25  # as Hue's entertainment stream (max_rate_hz)
 # About as long as a capture from the TV takes (about 4 per second).
 CAPTURE_SECONDS = 0.24
+# How long (fake time) the pipeline may take to clean up after stop().
+STOP_SECONDS = 60
 # Glowcast's default settings (const.py, which belongs to the Home Assistant
 # package and is not imported here).
 BRIGHTNESS = 80
@@ -263,11 +265,10 @@ class RecordingOutput:
 
     def __init__(self, models: ModuleType) -> None:
         self._models = models
-        self.claimed = False
+        # Empty until the first send after a claim, and again once released.
         self.colors: dict[str, list[float]] = {}
 
     async def start(self) -> list[Any]:
-        self.claimed = True
         return [self._models.Channel(id, id, x, z) for id, x, z in CHANNELS]
 
     def send(self, colors: list[Any]) -> None:
@@ -277,7 +278,6 @@ class RecordingOutput:
         pass
 
     async def stop(self) -> None:
-        self.claimed = False
         self.colors = {}
 
     async def close(self) -> None:
@@ -320,13 +320,21 @@ async def _record(core: ModuleType, run: list[Scenario]) -> dict[str, Any]:
                     "time": round(clock.now(), 6),
                     "frame": frame,
                     # A light that was never claimed or is released is off.
-                    "lights": dict(output.colors) if output.claimed else {},
+                    "lights": dict(output.colors),
                 }
             )
         start += ticks
     lights.stop()
-    await clock.advance_to(clock.now() + 1)
-    await task
+    # Advance until the pipeline has cleaned up, but never wait forever on a
+    # core/ that does not stop (--compare against another commit).
+    for _ in range(STOP_SECONDS):
+        if task.done():
+            break
+        await clock.advance_to(clock.now() + 1)
+    else:
+        task.cancel()
+        raise RuntimeError(f"The pipeline did not stop within {STOP_SECONDS} s")
+    task.result()
     return {
         "scenarios": [
             {"name": scenario.name, "still": scenario.still} for scenario in run
