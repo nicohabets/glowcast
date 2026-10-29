@@ -6,5 +6,6 @@ These scripts are tools for developing Glowcast; they are not part of the integr
 - `try_hue_output.py`: runs the Hue entertainment output against a real bridge: a left/centre/right pattern, a very dark colour, then stop.
 - `try_pipeline.py`: runs the pipeline with the real TV source and Hue output for a while, then stops, and prints the start time, rates and stop reason.
 - `render_brand.py`: builds the icon and logo PNGs in `custom_components/glowcast/brand/` from the sources in `docs/brand/`. It does not need the test requirements: run it with `uv run scripts/render_brand.py`, which installs its own pinned dependencies. See [docs/brand/README.md](../docs/brand/README.md).
+- `render_hacs_readme.cjs`: renders `README.md` the way HACS shows it (the same `marked` and `xss` versions and settings), to check that no HTML shows as text. It needs Node and `npm install marked@15.0.4 xss@1.0.15`, not the test requirements; it is not part of CI.
 
 See the docstring at the top of each script for usage. Credentials come from environment variables; never put them in files in the repository.

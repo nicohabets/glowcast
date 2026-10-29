@@ -1,15 +1,16 @@
 <h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="custom_components/glowcast/brand/dark_logo.png">
-    <img src="custom_components/glowcast/brand/logo.png" alt="Glowcast" width="420">
-  </picture>
+  <!-- GitHub ends this comment here, HACS only at the end of the next line, so HACS shows just the icon below --!><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/nicohabets/glowcast/main/custom_components/glowcast/brand/dark_logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/nicohabets/glowcast/main/custom_components/glowcast/brand/logo.png"><!-- -->
+    <img src="https://raw.githubusercontent.com/nicohabets/glowcast/main/custom_components/glowcast/brand/icon.png" alt="Glowcast" height="100">
+  <!-- --!></picture><!-- -->
 </h1>
 
 **Let your Philips Hue lights follow what's on your LG webOS TV - no subscription, no HDMI box, nothing leaves your home.**
 
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
-> **Status: v0.1 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](docs/releases/v0.1.0.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
+> **Status: v0.1 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.1.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
 
 ## Why
 
@@ -117,4 +118,4 @@ Glowcast is an independent project. It is not affiliated with, endorsed by or co
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/nicohabets/glowcast/blob/main/LICENSE)
