@@ -69,6 +69,7 @@ Work is tracked as GitHub issues on the project board **Glowcast** (https://gith
 8. **Found extra work?** Create a new issue (it lands in Backlog) in the format below and link it. Do not widen the current issue.
 9. Small commits with clear messages. Run `pytest` and `ruff check` before every commit.
 10. Update `README.md` and `docs/ARCHITECTURE.md` when behaviour visible to users changes; record new verified hardware facts in the architecture's "Verified facts" table.
+11. **Screenshots for anything visible** (a screen in Home Assistant, the README on GitHub or in HACS, a log or a chart): attach them to the pull request, and to the issue when they answer its question, so the product owner can review visually. Commit them to the `screenshots` branch as `<issue or PR number>/<short-name>.png` (see that branch's README) and show them with `![...](https://raw.githubusercontent.com/nicohabets/glowcast/screenshots/<number>/<name>.png)`. Make them yourself where you can (for example with Playwright on a local render); where you cannot, say which screenshots the product owner should take. No personal details in a screenshot: crop or blur names, entity ids and addresses.
 
 ### Working in parallel (Dispatch, desktop sessions, worktrees)
 Several sessions may work at the same time, each on its own issue.
