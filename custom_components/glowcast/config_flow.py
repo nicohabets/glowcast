@@ -65,14 +65,19 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Start with the source; one source type is used without a choice.
+        """Start with the choice of source type; one is used without a choice.
 
-        A type without setup steps cannot be set up here yet.
+        A type without setup steps cannot be set up here. The menu shows each
+        type's first step, labelled by the type's texts (menu_options).
         """
-        (source_type,) = (
-            source_type for source_type in SOURCES.values() if source_type.setup_step
-        )
-        return await self._async_step(source_type.setup_step, user_input)
+        setup_steps = [
+            source_type.setup_step
+            for source_type in SOURCES.values()
+            if source_type.setup_step
+        ]
+        if len(setup_steps) == 1:
+            return await self._async_step(setup_steps[0], user_input)
+        return self.async_show_menu(step_id="user", menu_options=setup_steps)
 
     async def async_source_chosen(
         self, source: dict[str, Any], title: str

@@ -42,7 +42,11 @@ class FakeHelper:
         self.slow = 10.0
         self.frame_requests = 0
         self.authorization: list[str | None] = []
+        # The /v1/pair answer: (status, body); body None is a page, not JSON.
+        self.pair_answer: tuple[int, Any] = (200, {"token": TOKEN, "id": HELPER_ID})
+        self.pair_bodies: list[Any] = []
         app = web.Application()
+        app.router.add_post("/v1/pair", self._pair)
         app.router.add_get("/v1/info", self._info)
         app.router.add_get("/v1/frame", self._frame)
         self.server = TestServer(app, host="127.0.0.1")
@@ -51,6 +55,13 @@ class FakeHelper:
     def port(self) -> int:
         assert self.server.port is not None
         return self.server.port
+
+    async def _pair(self, request: web.Request) -> web.Response:
+        self.pair_bodies.append(await request.json())
+        status, body = self.pair_answer
+        if body is None:
+            return web.Response(status=status, text="<html>not a helper</html>")
+        return web.json_response(body, status=status)
 
     async def _info(self, request: web.Request) -> web.Response:
         self.authorization.append(request.headers.get("Authorization"))
@@ -132,9 +143,9 @@ async def test_the_registry(hass: HomeAssistant) -> None:
     assert screen_type.device_identifier(data) is None
     assert screen_type.device_id(hass, data) is None
     assert screen_type.missing is None
-    # Its setup and reauth steps come with #109.
-    assert screen_type.setup_step is None
-    assert screen_type.reauth_step is None
+    # Its setup and reauth steps (#109).
+    assert screen_type.setup_step == "screen"
+    assert screen_type.reauth_step == "screen_reauth"
     assert ScreenFrameSource.max_rate_hz == 4.0
 
 
@@ -331,3 +342,79 @@ async def test_the_token_and_frames_are_never_logged(
     text = caplog.text + str(err.value)
     assert TOKEN not in text
     assert "\\x01" not in text
+
+
+# Pairing and the helper's info, for the setup and reauth steps (#109).
+
+
+async def test_pairing_returns_the_token_and_the_id(
+    hass: HomeAssistant, helper: FakeHelper, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    assert await screen.async_pair(hass, "127.0.0.1", helper.port, "123456") == (
+        TOKEN,
+        HELPER_ID,
+    )
+    assert helper.pair_bodies == [{"code": "123456"}]
+    assert TOKEN not in caplog.text
+    assert "123456" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"),
+    [
+        ((403, {"error": "wrong_code"}), "wrong_code"),
+        ((403, {"error": "pairing_unavailable"}), "pairing_unavailable"),
+        ((400, {"error": "bad_request"}), "wrong_code"),
+    ],
+)
+async def test_a_refused_code(
+    hass: HomeAssistant, helper: FakeHelper, answer: tuple[int, Any], reason: str
+) -> None:
+    helper.pair_answer = answer
+    with pytest.raises(screen.PairingRefused) as err:
+        await screen.async_pair(hass, "127.0.0.1", helper.port, "654321")
+    assert err.value.reason == reason
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [(200, None), (200, {"token": TOKEN}), (500, {"error": "oops"}), (403, None)],
+)
+async def test_an_unexpected_pairing_answer(
+    hass: HomeAssistant, helper: FakeHelper, answer: tuple[int, Any]
+) -> None:
+    helper.pair_answer = answer
+    with pytest.raises(SourceUnavailable):
+        await screen.async_pair(hass, "127.0.0.1", helper.port, "123456")
+
+
+async def test_pairing_with_an_unreachable_helper(
+    hass: HomeAssistant, helper: FakeHelper
+) -> None:
+    port = helper.port
+    await helper.server.close()
+    with pytest.raises(SourceUnavailable):
+        await screen.async_pair(hass, "127.0.0.1", port, "123456")
+    assert not await screen.async_reachable(hass, "127.0.0.1", port)
+
+
+async def test_the_info_with_the_token(hass: HomeAssistant, helper: FakeHelper) -> None:
+    assert await screen.async_reachable(hass, "127.0.0.1", helper.port)
+    info = await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+    assert info == {"id": HELPER_ID, "protocol": 1}
+    assert helper.authorization[-1] == f"Bearer {TOKEN}"
+
+    helper.info_status = 401
+    with pytest.raises(SourceAuthFailed):
+        await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+    helper.info_status = 200
+    helper.info = None
+    with pytest.raises(SourceUnavailable):
+        await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+
+
+async def test_an_address_that_is_not_a_host_is_not_reachable(
+    hass: HomeAssistant,
+) -> None:
+    assert not await screen.async_reachable(hass, "not a host/", 8488)

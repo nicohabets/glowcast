@@ -479,7 +479,8 @@ async def test_the_source_reauth_reaches_the_flow_with_its_part(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     """Home Assistant's own reauth start passes the part on: the flow runs
-    the source's step (none yet, #109), never the output's pairing."""
+    the source's step (the webOS source has none), never the output's
+    pairing."""
     await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
     FakePipeline.instances[-1].finish(StopReason.SOURCE_AUTH_FAILED)
