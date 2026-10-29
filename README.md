@@ -200,3 +200,4 @@ Glowcast is an independent project. It is not affiliated with, endorsed by or co
 ## License
 
 [MIT](https://github.com/nicohabets/glowcast/blob/main/LICENSE)
+
