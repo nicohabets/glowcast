@@ -53,6 +53,7 @@ class CountingSource:
 
     def __init__(self, source: WebOsFrameSource) -> None:
         self._source = source
+        self.max_rate_hz = source.max_rate_hz
         self.good = 0
         self.failed = 0
 

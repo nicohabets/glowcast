@@ -60,6 +60,8 @@ def picture(seconds: float) -> Frame:
 class FakeTvSource:
     """A TV that is always on and shows the moving blobs."""
 
+    max_rate_hz = math.inf  # no cap of its own, like the TV
+
     def __init__(self) -> None:
         """Not started yet."""
         self._started = False
