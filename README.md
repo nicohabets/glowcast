@@ -77,13 +77,13 @@ When the TV turns off, syncing stops and the lights are released. If another app
 
 - **About 3 frames per second.** That is the TV's capture limit. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
-- **Streaming apps with DRM** (Netflix and similar) and copy-protected HDMI sources may return a black frame. Not tested yet.
+- **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so the lights show only the minimal glow. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
 
 ## Privacy
 
-Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. After removing Glowcast, you can also remove it from the bridge: in the Hue app, look for "glowcast" in the list of connected apps (or in your Hue account) and delete it.
+Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. After removing Glowcast, you can also remove it from the bridge: in the Hue app, go to **Settings → Apps → Network-based** (Dutch: Instellingen → Toepassingen → Netwerk-gebaseerd), tap the info button next to **glowcast** and remove it.
 
 
 The TV's capture call only works on your local network, after the TV pairing you already approved for Home Assistant. Frames are kept in memory and never stored or sent anywhere. Separately: if privacy matters to you, consider turning off **Live Plus** (LG's ACR feature) in your TV settings. That one does send viewing data to LG.
