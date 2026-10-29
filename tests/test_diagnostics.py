@@ -343,10 +343,11 @@ async def test_a_screen_source_shows_no_token_address_or_id(
     assert download["data"]["source"] == {"type": "screen", "device": None}
     assert download["data"]["entry"]["stored"]["data"]["source"] == {
         "type": "str",
-        "helper_id": "str",
-        "host": "**REDACTED**",  # the backstop
+        # The backstop redacts even the shape of these keys.
+        "helper_id": "**REDACTED**",
+        "host": "**REDACTED**",
         "port": "int",
-        "token": "str",
+        "token": "**REDACTED**",
     }
 
 

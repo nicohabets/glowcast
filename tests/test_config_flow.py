@@ -509,7 +509,10 @@ async def test_a_source_without_setup_steps_is_not_offered(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["step_id"] in {"user", "tv"}
+    # The webOS source's TV step, shown as the first screen.
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert list(result["data_schema"].schema) == ["tv"]
 
 
 async def test_reauth(hass: HomeAssistant) -> None:

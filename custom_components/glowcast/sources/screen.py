@@ -7,7 +7,8 @@ keeps the token in its own entry's data.
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import Any
 
 import aiohttp
@@ -26,6 +27,8 @@ _LOGGER = logging.getLogger(__name__)
 SOURCE_SCREEN = "screen"
 # The helper's id in the source block, which stays when its address changes.
 CONF_HELPER_ID = "helper_id"
+# The helper's protocol version this source speaks (architecture 8.3).
+PROTOCOL = 1
 
 WIDTH, HEIGHT = 64, 36
 FRAME_BYTES = WIDTH * HEIGHT * 3
@@ -47,9 +50,13 @@ class ScreenFrameSource:
 
     max_rate_hz = MAX_RATE_HZ
 
-    def __init__(self, hass: HomeAssistant, host: str, port: int, token: str) -> None:
-        """Initialize for the helper at this address, with Glowcast's token."""
+    def __init__(
+        self, hass: HomeAssistant, helper_id: str, host: str, port: int, token: str
+    ) -> None:
+        """Initialize for the helper with this id at this address, with
+        Glowcast's token."""
         self._hass = hass
+        self._helper_id = helper_id
         self._base = URL.build(scheme="http", host=host, port=port)
         self._headers = {"Authorization": f"Bearer {token}"}
         self._on = False
@@ -59,7 +66,11 @@ class ScreenFrameSource:
         self._delivered = False
 
     async def start(self) -> None:
-        """Check that the helper answers and accepts the token."""
+        """Check that Glowcast's helper answers and accepts the token.
+
+        Frames are only asked from the helper with the stored id that speaks
+        protocol 1, not from another helper or service at that address.
+        """
         self._on = False
         self._delivered = False
         reason: str
@@ -70,13 +81,20 @@ class ScreenFrameSource:
                         raise SourceAuthFailed(
                             "The screen helper rejected Glowcast's token; pair again"
                         )
-                    if response.status == 200:
-                        self._on = True
-                        return
-            reason = "The screen helper gave an unexpected answer"
+                    info = await response.json() if response.status == 200 else None
+            if not isinstance(info, dict):
+                reason = "The screen helper gave an unexpected answer"
+            elif info.get("id") != self._helper_id:
+                reason = "Another screen helper or service answers at this address"
+            elif info.get("protocol") != PROTOCOL:
+                reason = "The screen helper speaks another protocol version"
+            else:
+                self._on = True
+                return
         except TimeoutError:
             reason = "The screen helper did not respond in time"
-        except (OSError, aiohttp.ClientError):
+        except (OSError, ValueError, aiohttp.ClientError):
+            # ValueError: an answer that is not JSON.
             reason = "Could not connect to the screen helper"
         raise SourceUnavailable(reason)
 
@@ -129,6 +147,13 @@ class ScreenFrameSource:
                     if response.status != 200:
                         # 204: no picture (locked or asleep); others: broken.
                         raise _NoPicture
+                    if response.content_length != FRAME_BYTES:
+                        # Not read: an oversized body never reaches memory.
+                        _LOGGER.debug(
+                            "The screen helper sent %s bytes, not a frame",
+                            response.content_length,
+                        )
+                        raise _NoPicture
                     pixels = await response.read()
         except (TimeoutError, OSError, aiohttp.ClientError):
             raise _NoPicture from None
@@ -138,10 +163,14 @@ class ScreenFrameSource:
         self._on = self._delivered = True
         return Frame(width=WIDTH, height=HEIGHT, pixels=pixels)
 
-    def _get(self, path: str) -> Any:
+    @asynccontextmanager
+    async def _get(self, path: str) -> AsyncIterator[aiohttp.ClientResponse]:
         """A GET request to the helper, with the token; never logged."""
         session = async_get_clientsession(self._hass)
-        return session.get(self._base.with_path(path), headers=self._headers)
+        async with session.get(
+            self._base.with_path(path), headers=self._headers
+        ) as response:
+            yield response
 
 
 def create(
@@ -150,7 +179,11 @@ def create(
     """Build the source from a Glowcast entry's data (architecture 5)."""
     source = data[CONF_SOURCE]
     return ScreenFrameSource(
-        hass, source[CONF_HOST], source[CONF_PORT], source[CONF_TOKEN]
+        hass,
+        source[CONF_HELPER_ID],
+        source[CONF_HOST],
+        source[CONF_PORT],
+        source[CONF_TOKEN],
     )
 
 

@@ -37,6 +37,8 @@ class FakeHelper:
         self.frames: list[Any] = []
         self.default: Any = RED
         self.info_status: int | str = 200  # or "slow"
+        # The /v1/info answer; None answers with a page that is not JSON.
+        self.info: Any = {"id": HELPER_ID, "protocol": 1}
         self.slow = 10.0
         self.frame_requests = 0
         self.authorization: list[str | None] = []
@@ -56,7 +58,9 @@ class FakeHelper:
             await asyncio.sleep(self.slow)
         elif self.info_status != 200:
             return web.Response(status=self.info_status)
-        return web.json_response({"id": HELPER_ID, "protocol": 1})
+        if self.info is None:
+            return web.Response(text="<html>not a helper</html>")
+        return web.json_response(self.info)
 
     async def _frame(self, request: web.Request) -> web.StreamResponse:
         self.frame_requests += 1
@@ -219,6 +223,43 @@ async def test_an_unexpected_answer_at_start(
     source = source_for(hass, helper)
     with pytest.raises(SourceUnavailable):
         await source.start()
+
+
+@pytest.mark.parametrize(
+    "info",
+    [
+        {"id": "0123456789abcdef0123456789abcdef", "protocol": 1},
+        {"id": HELPER_ID, "protocol": 2},
+        {"id": HELPER_ID},
+        ["not", "an", "object"],
+        None,
+    ],
+    ids=["another helper", "another protocol", "no protocol", "a list", "not json"],
+)
+async def test_frames_only_from_glowcasts_own_helper(
+    hass: HomeAssistant, helper: FakeHelper, info: Any
+) -> None:
+    """Another helper or service at the stored address is never asked for
+    frames (#110)."""
+    helper.info = info
+    source = source_for(hass, helper)
+    with pytest.raises(SourceUnavailable):
+        await source.start()
+    assert not source.is_on()
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert helper.frame_requests == 0
+
+
+async def test_an_oversized_frame_is_not_a_picture(
+    hass: HomeAssistant, helper: FakeHelper
+) -> None:
+    source = source_for(hass, helper)
+    await source.start()
+    helper.frames = [RED + b"\x00", RED + RED]
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert helper.frame_requests == 2
 
 
 async def test_a_rejected_token_at_start(
