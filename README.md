@@ -8,6 +8,8 @@
 
 **Let your Philips Hue lights follow what's on your LG webOS TV - no subscription, no HDMI box, nothing leaves your home.**
 
+<!-- PHOTO OF THE LIGHTS (#87): the product owner adds a photo or short animation here of a TV with the lights following the picture, as docs/images/lights.jpg (or .gif / .webp, under about 5 MB), in the same form as the images below: an img with width="400", alt text and an absolute raw.githubusercontent.com URL, then a one-line caption in italics. -->
+
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
 > **Status: v0.1.1 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.1.1.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
@@ -46,6 +48,10 @@ Everything stays on your local network.
 3. Restart Home Assistant (Settings → System → the restart button in the top right, or the repair HACS shows).
 4. Go to **Settings → Devices & services → Add integration → Glowcast**.
 
+<img width="400" alt="The Glowcast setup flow in Home Assistant: choose the TV, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/setup-flow.gif">
+
+*Setting up Glowcast: the TV, the Hue bridge and its link button, then the entertainment area.*
+
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
 Updates show up in HACS and under Settings → System → Updates.
@@ -64,7 +70,15 @@ Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcas
 
 Under **Configure**, or on Glowcast's device page (see [Settings on the device page](#settings-on-the-device-page)), you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
 
+<img width="400" alt="Glowcast's settings screen in Home Assistant: entertainment area TV area, brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
+
+*The settings screen under Configure, with the default settings.*
+
 ## Starting and stopping
+
+<img width="400" alt="Glowcast's device page in Home Assistant: the switch under Controls, and brightness, entertainment area, intensity and update rate under Configuration." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/device-page.png">
+
+*Glowcast's device page: the switch under Controls, the settings under Configuration.*
 
 Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls (and its settings under Configuration), for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
 
