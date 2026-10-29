@@ -1,8 +1,13 @@
-"""The switch and the pipeline's lifecycle in Home Assistant, with a fake pipeline."""
+"""The switch and the pipeline's lifecycle in Home Assistant.
+
+Most tests use a fake pipeline for exact control over its lifecycle; the last
+ones run the real pipeline behind the switch, with the shared fakes as TV and
+lights.
+"""
 
 import asyncio
 import re
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
@@ -26,57 +31,21 @@ from pytest_homeassistant_custom_component.common import (
 
 import custom_components.glowcast as glowcast
 from custom_components.glowcast.const import DOMAIN
-from custom_components.glowcast.core.models import Channel, ChannelColor
-from custom_components.glowcast.core.pipeline import StopReason, UpdateRate
+from custom_components.glowcast.core.pipeline import (
+    MonotonicClock,
+    StopReason,
+    UpdateRate,
+)
 from custom_components.glowcast.outputs import OUTPUTS, OutputType
 from custom_components.glowcast.sources import SOURCES, SourceType, webos
+
+from .fakes import CLEANUP, FakeOutput, FakeSource
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 TV_ID = "tv-unique-id"
 BRIDGE_ID = "bridge-unique-id"
 ENTITY = "switch.glowcast_living_room_tv"
-
-
-class FakeSource:
-    def __init__(self, log: list[str]) -> None:
-        self.log = log
-
-    async def start(self) -> None:
-        self.log.append("source.start")
-
-    def is_on(self) -> bool:
-        return True
-
-    async def capture(self) -> Any:
-        raise NotImplementedError
-
-    async def close(self) -> None:
-        self.log.append("source.close")
-
-
-class FakeOutput:
-    max_rate_hz = 25.0
-
-    def __init__(self, log: list[str]) -> None:
-        self.log = log
-
-    async def start(self) -> list[Channel]:
-        self.log.append("output.start")
-        return []
-
-    def send(self, colors: list[ChannelColor]) -> None:
-        pass
-
-    async def check(self) -> None:
-        pass
-
-    async def stop(self) -> None:
-        await asyncio.sleep(0)  # releasing takes a moment
-        self.log.append("output.stop")
-
-    async def close(self) -> None:
-        self.log.append("output.close")
 
 
 class FakePipeline:
@@ -138,24 +107,35 @@ class FakePipeline:
 
 
 class Fakes:
+    """The TV and the lights the registries build, on the real clock."""
+
     def __init__(self) -> None:
         self.log: list[str] = []
         self.source_missing = False
         self.output_missing = False
+        self.sources: list[FakeSource] = []
+        self.outputs: list[FakeOutput] = []
+
+    def source(self) -> FakeSource:
+        source = FakeSource(MonotonicClock(), self.log, capture_time=0)
+        self.sources.append(source)
+        return source
+
+    def output(self) -> FakeOutput:
+        output = FakeOutput(MonotonicClock(), self.log, slow_stop=True)
+        self.outputs.append(output)
+        return output
 
 
 @pytest.fixture
-def fakes(monkeypatch: pytest.MonkeyPatch) -> Fakes:
-    """Fake source, output and pipeline; the real adapters are never built."""
+def adapters(monkeypatch: pytest.MonkeyPatch) -> Fakes:
+    """Fake source and output; the real adapters are never built."""
     fakes = Fakes()
-    FakePipeline.instances = []
-    FakePipeline.start_error = None
-    monkeypatch.setattr(glowcast, "Pipeline", FakePipeline)
     monkeypatch.setitem(
         SOURCES,
         "webos",
         SourceType(
-            create=lambda hass, data, options: FakeSource(fakes.log),
+            create=lambda hass, data, options: fakes.source(),
             is_missing=lambda hass, data: fakes.source_missing,
             device_identifier=lambda data: ("webostv", data["source"]["unique_id"]),
             device_id=webos.device_id,
@@ -165,11 +145,20 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> Fakes:
         OUTPUTS,
         "hue_entertainment",
         OutputType(
-            create=lambda hass, data, options: FakeOutput(fakes.log),
+            create=lambda hass, data, options: fakes.output(),
             is_missing=lambda hass, data: fakes.output_missing,
         ),
     )
     return fakes
+
+
+@pytest.fixture
+def fakes(adapters: Fakes, monkeypatch: pytest.MonkeyPatch) -> Fakes:
+    """Fake source and output, and a fake pipeline."""
+    FakePipeline.instances = []
+    FakePipeline.start_error = None
+    monkeypatch.setattr(glowcast, "Pipeline", FakePipeline)
+    return adapters
 
 
 @pytest.fixture(autouse=True)
@@ -604,3 +593,46 @@ async def test_home_assistant_stop_releases_the_lights(
     await settle(hass)
     assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
     assert state(hass) == STATE_OFF
+
+
+# The real pipeline behind the switch
+
+
+async def wait_for(condition: Callable[[], Any], limit: float = 2.0) -> None:
+    """Wait until `condition()` holds; the real pipeline runs on the real clock."""
+    for _ in range(round(limit / 0.01)):
+        if condition():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"not reached within {limit} s")
+
+
+async def test_the_real_pipeline_behind_the_switch(
+    hass: HomeAssistant, adapters: Fakes
+) -> None:
+    await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    [output] = adapters.outputs
+    await wait_for(lambda: output.sent)
+    assert state(hass) == STATE_ON
+    # A red picture at brightness 60 %, with the glow floor.
+    assert output.rgb_at(-1) == pytest.approx((0.60, 0.078, 0.050), abs=0.005)
+
+    await switch(hass, SERVICE_TURN_OFF)
+    assert adapters.log == ["source.start", "output.start", *CLEANUP]
+    assert state(hass) == STATE_OFF
+
+
+async def test_the_real_pipeline_stopping_by_itself_turns_the_switch_off(
+    hass: HomeAssistant, adapters: Fakes, caplog: pytest.LogCaptureFixture
+) -> None:
+    await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    [source], [output] = adapters.sources, adapters.outputs
+    await wait_for(lambda: output.sent)
+
+    source.on = False  # the TV reports that it is off
+    await wait_for(lambda: state(hass) == STATE_OFF)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert adapters.log == ["source.start", "output.start", *CLEANUP]
+    assert "stopped: the TV is off or not reachable" in caplog.text

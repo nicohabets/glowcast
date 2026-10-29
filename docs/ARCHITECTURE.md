@@ -293,9 +293,12 @@ custom_components/glowcast/
   sources/webos.py
   outputs/hue_entertainment.py
 tests/
+  fakes.py                 # fake clock, source and output, shared by the tests (no HA imports)
   test_color_engine.py
-  test_pipeline.py         # fake source + fake output + fake clock
+  test_pipeline.py         # the pipeline with the fakes and a fake clock
+  test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
   test_config_flow.py      # setup, options and reauth, including error cases
+  test_webos_source.py  test_hue_output.py  test_manifest.py
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
