@@ -516,10 +516,10 @@ async def test_reload_and_stop_show_no_removal_notice(
     await switch(hass, SERVICE_TURN_ON)
     assert await hass.config_entries.async_reload(entry.entry_id)
     await settle(hass)
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    await settle(hass)
+    await switch(hass, SERVICE_TURN_ON)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
     await settle(hass)
+    assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
     assert notices(hass) == {}
 
 
