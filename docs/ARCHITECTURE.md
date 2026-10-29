@@ -294,7 +294,7 @@ custom_components/glowcast/
 tests/
   test_color_engine.py
   test_pipeline.py         # fake source + fake output + fake clock
-  test_config_flow.py      # minimal: happy path, already configured, reauth
+  test_config_flow.py      # setup, options and reauth, including error cases
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
