@@ -1,6 +1,6 @@
 # Glowcast - Architecture
 
-Status: **design for v0.1** (nothing built yet). This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 and Later), not here; this document only describes how the design leaves room for them (section 8).
+Status: **v0.1 in progress**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2, v0.3 and v99 Later), not here; this document only describes how the design leaves room for them (section 8).
 
 ## 1. Goal
 
@@ -17,7 +17,7 @@ Glowcast only translates picture into colour into light. Everything Home Assista
 
 ### Not in v0.1
 
-Loose lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2 and Later. Do not build them, and do not build placeholders for them. Section 8 shows where they will plug in.
+Loose lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2, v0.3 and v99 Later. Do not build them, and do not build placeholders for them. Section 8 shows where they will plug in.
 
 ## 2. Verified facts (tested 2026-10-28 on an LG OLED65G36LA, 2023)
 
@@ -284,6 +284,7 @@ custom_components/glowcast/
   config_flow.py           # setup, options, reauth
   switch.py
   translations/en.json  translations/nl.json
+  brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
   core/                    # NO homeassistant imports
     models.py  ports.py  color_engine.py  pipeline.py
   sources/webos.py
@@ -295,7 +296,9 @@ tests/
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
+scripts/                   # developer tools, not installed (render_brand.py builds brand/)
 docs/ARCHITECTURE.md
+docs/brand/                # icon and logo sources (SVG), colours, font
 hacs.json  README.md  LICENSE  CLAUDE.md
 ```
 
@@ -307,7 +310,7 @@ Translations live in `translations/en.json` and `translations/nl.json` (custom i
 
 - **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget.
 - **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula, every stop reason, and that `stop()` and `close()` run on every exit path.
-- **Config flow (minimal in v0.1):** happy path, already configured, reauth. Full coverage is a v0.2 issue.
+- **Config flow:** every setup, options and reauth path, including the error cases (built with #6).
 - **Soak test:** two hours of real viewing; no crash, no memory growth; after a TV standby, a bridge restart and an HA restart Glowcast has stopped cleanly and the next switch-on works.
 - **Manual end-to-end:** an LG webOS TV, a Hue bridge and an entertainment area with a gradient lightstrip.
 

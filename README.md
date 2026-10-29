@@ -1,4 +1,9 @@
-# Glowcast
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="custom_components/glowcast/brand/dark_logo.png">
+    <img src="custom_components/glowcast/brand/logo.png" alt="Glowcast" width="420">
+  </picture>
+</h1>
 
 **Let your Philips Hue lights follow what's on your LG webOS TV - no subscription, no HDMI box, nothing leaves your home.**
 
