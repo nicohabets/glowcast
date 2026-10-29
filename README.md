@@ -102,7 +102,7 @@ actions:
 
 Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". Brightness, intensity and the update rate change while it runs without interrupting the lights. Choosing another entertainment area restarts syncing on the new area (a few seconds); the switch stays on.
 
-**When it stops by itself**, the switch turns off and the reason is in the Home Assistant log:
+**When it stops by itself**, the switch turns off, the [status](#seeing-what-glowcast-does) shows TV off or Error, and the reason is in the Home Assistant log:
 
 - **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours to the state the bridge restores.
 - **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start.
@@ -135,6 +135,24 @@ actions:
 
 The entity ids follow Home Assistant's language when the entities are created (in Dutch, for example, `number.glowcast_living_room_tv_helderheid`). If the bridge cannot be reached, the entertainment area keeps showing the area Glowcast uses; the list of areas is read again once the bridge is back, or when you open the settings screen.
 
+## Seeing what Glowcast does
+
+The **Status** sensor on Glowcast's device (for example `sensor.glowcast_living_room_tv_status`) shows what it is doing:
+
+| Status | Meaning |
+|---|---|
+| Idle | Not syncing: never started since Home Assistant started, or switched off. Also when the TV or the bridge is not set up in Home Assistant, so syncing cannot start; a repair says which. |
+| Starting | Waiting for the TV's picture (up to 10 seconds) and claiming the lights, also during the retry after a lost light stream. |
+| Streaming | The lights follow the picture. |
+| Black picture | Syncing, but the picture is black (a dark scene): the lights keep the last colours for a moment, then show the faint glow. |
+| No picture | The TV gives no picture (for example a streaming app with DRM, see [Known limits](#known-limits)): the lights are released; Glowcast stays on and follows again when the picture returns. Before this, the status shows Black picture for about 3 seconds. |
+| TV off | Stopped because the TV turned off or could not be reached. |
+| Error | Stopped for another reason; Home Assistant shows a repair or asks to pair again where you can fix it, and the log says why. |
+
+For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key) or `source_unavailable` (the TV source failed). Use it in automations, for example to get a notification when Glowcast stops with an error.
+
+The **Capture rate** sensor shows how many pictures per second Glowcast gets from the TV while it streams (about 3-4 on a 2023 LG G3 at Maximum). It is a diagnostic sensor and off by default: on the device page, open it under **Diagnostic**, then its settings (the gear), and turn on **Enabled**. It is unknown when Glowcast is not streaming or has not measured yet; the unit shows as "captures/s" in every language.
+
 ## Known limits
 
 - **About 3 captures per second.** That is the TV's capture limit, so the lights follow scenes, not every flash or cut. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
@@ -147,7 +165,7 @@ The entity ids follow Home Assistant's language when the entities are created (i
 - **Glowcast's icon** in Settings → Devices & services only shows on Home Assistant 2026.3 or newer; older versions show no icon for Glowcast.
 - **Tested on one TV model so far**, a 2023 LG G3. Other webOS TVs should work the same way, but that is not confirmed yet.
 
-**Tried it on your TV?** Please tell us how it went, also when it just works: [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version, bridge and how many captures per second you get.
+**Tried it on your TV?** Please tell us how it went, also when it just works: [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version, bridge and how many captures per second you get (the [Capture rate](#seeing-what-glowcast-does) sensor shows it).
 
 ## Reporting a problem
 
