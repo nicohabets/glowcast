@@ -38,6 +38,8 @@ from custom_components.glowcast.const import (
 )
 from custom_components.glowcast.core.pipeline import (
     MonotonicClock,
+    Phase,
+    PipelineStatus,
     Settings,
     StopReason,
     UpdateRate,
@@ -77,18 +79,19 @@ class FakePipeline:
         settings: Any,
         runner: Any,
         clock: Any,
-        on_stopped: Any,
+        on_status: Any,
     ) -> None:
         self.source = source
         self.output = output
         self.settings = settings
         self.runner = runner
-        self.on_stopped = on_stopped
+        self.on_status = on_status
         self.reason = StopReason.USER
         self._stop = asyncio.Event()
         FakePipeline.instances.append(self)
 
     async def run(self) -> None:
+        self.on_status(PipelineStatus(Phase.STARTING))
         try:
             await self.source.start()
             if (error := FakePipeline.start_error) is not None:
@@ -96,14 +99,19 @@ class FakePipeline:
                 self.reason = error
             else:
                 await self.output.start()
+                self.on_status(PipelineStatus(Phase.STREAMING, channels=1))
                 await self._stop.wait()
         except asyncio.CancelledError:
             # Like the real pipeline: release, report USER, re-raise.
             await asyncio.shield(self._release())
-            self.on_stopped(StopReason.USER)
+            self.on_status(self.stopped(StopReason.USER))
             raise
         await self._release()
-        self.on_stopped(self.reason)
+        self.on_status(self.stopped(self.reason))
+
+    @staticmethod
+    def stopped(reason: StopReason) -> PipelineStatus:
+        return PipelineStatus(Phase.STOPPED, stop_reason=reason)
 
     async def _release(self) -> None:
         await self.output.stop()
@@ -391,6 +399,24 @@ async def test_switching_off_during_a_restart_wins(
     assert state(hass) == STATE_OFF
 
 
+async def test_a_restart_keeps_the_new_pipelines_status(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    await data.async_restart()
+    await settle(hass)
+    first, _ = FakePipeline.instances
+    assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
+    # A late report from the old pipeline must not overwrite the new status.
+    first.on_status(FakePipeline.stopped(StopReason.OUTPUT_LOST))
+    await settle(hass)
+    assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
 async def test_new_settings_while_off_start_nothing(
     hass: HomeAssistant, fakes: Fakes
 ) -> None:
@@ -433,6 +459,37 @@ async def test_stopping_by_itself_turns_the_switch_off(
     assert caplog.text.count("Glowcast Living room TV stopped") == 1
 
 
+async def test_the_last_status_is_kept_until_the_next_start(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    data = entry.runtime_data
+    assert data.status is None  # never started
+    await switch(hass, SERVICE_TURN_ON)
+    assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
+    FakePipeline.instances[-1].finish(StopReason.OUTPUT_UNAVAILABLE)
+    await settle(hass)
+    assert data.status == FakePipeline.stopped(StopReason.OUTPUT_UNAVAILABLE)
+    await switch(hass, SERVICE_TURN_ON)
+    assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
+    await switch(hass, SERVICE_TURN_OFF)
+    assert data.status == FakePipeline.stopped(StopReason.USER)
+
+
+async def test_switching_off_during_a_restart_keeps_the_stop(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    restart = asyncio.ensure_future(data.async_restart())
+    await asyncio.sleep(0)
+    await data.async_stop()
+    await restart
+    await settle(hass)
+    assert data.status == FakePipeline.stopped(StopReason.USER)
+
+
 async def test_auth_failed_starts_reauth(hass: HomeAssistant, fakes: Fakes) -> None:
     await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
@@ -461,6 +518,22 @@ async def test_settings_problems_raise_a_repair_issue_until_a_start_works(
 
     await switch(hass, SERVICE_TURN_ON)
     assert state(hass) == STATE_ON
+    assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_successful_retry_clears_the_repair_issues(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    entry.runtime_data._raise_issue("area_not_found")
+    pipeline = FakePipeline.instances[-1]
+    pipeline.on_status(PipelineStatus(Phase.RETRYING, channels=1))
+    await settle(hass)
+    assert issues(hass, entry) == {"area_not_found"}
+    pipeline.on_status(PipelineStatus(Phase.STREAMING, channels=1))
+    await settle(hass)
     assert issues(hass, entry) == set()
     await switch(hass, SERVICE_TURN_OFF)
 

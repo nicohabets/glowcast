@@ -37,8 +37,8 @@ from custom_components.glowcast.core.models import (  # noqa: E402
 from custom_components.glowcast.core.pipeline import (  # noqa: E402
     MonotonicClock,
     Pipeline,
+    PipelineStatus,
     Settings,
-    StopReason,
     UpdateRate,
 )
 from custom_components.glowcast.outputs.hue_entertainment import (  # noqa: E402
@@ -138,14 +138,14 @@ async def main(args: argparse.Namespace) -> None:
                     env["GLOWCAST_HUE_AREA_ID"],
                 )
             )
-            reasons: list[StopReason] = []
+            statuses: list[PipelineStatus] = []
             pipeline = Pipeline(
                 source,
                 output,
                 Settings(args.brightness, args.intensity, UpdateRate(args.rate)),
                 hass.async_add_executor_job,
                 MonotonicClock(),
-                reasons.append,
+                statuses.append,
             )
 
             begin = time.perf_counter()
@@ -156,7 +156,9 @@ async def main(args: argparse.Namespace) -> None:
                 await task
             end = time.perf_counter()
 
-            print(f"stop reason: {reasons[0] if reasons else 'none'}")
+            print(f"phases: {', '.join(status.phase for status in statuses)}")
+            reason = statuses[-1].stop_reason if statuses else None
+            print(f"stop reason: {reason or 'none'}")
             if output.first_send is not None:
                 streamed = end - output.first_send
                 print(f"start to first send: {output.first_send - begin:.2f}s")
