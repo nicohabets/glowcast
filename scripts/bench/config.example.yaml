@@ -33,8 +33,13 @@ lights:
     region: [462, 142, 48, 34]
 # A region on the monitor that shows the test picture (screen mode delay).
 monitor_region: [220, 540, 180, 120]
-# The warm white used as the camera's white reference (lights at full brightness).
+# The camera's references, the lights at full brightness: a warm white (the
+# colour rule of spike #133) and a cool white (Glowcast's sRGB white reads
+# blue against the warm one).
 calibration_kelvin: 2242
+cool_kelvin: 6500
+# Pattern mode: how many whole cycles of the helper's patterns to judge.
+pattern_cycles: 2
 
 # The webcam, read on Windows (OpenCV, DirectShow). Settings of spike #133.
 camera:
