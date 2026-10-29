@@ -14,7 +14,6 @@ import dataclasses
 import logging
 
 import homeassistant.helpers.config_validation as cv
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
@@ -30,7 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Swap in the fakes, then reload a Glowcast entry that loaded before."""
+    """Swap in the fakes before any Glowcast pipeline is built."""
     # Through HA's loader: importing Glowcast imports its libraries, which
     # must not happen in the event loop.
     await (await async_get_integration(hass, GLOWCAST)).async_get_component()
@@ -47,10 +46,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         OUTPUTS[OUTPUT],
         create=lambda hass, data, options: FakeLightOutput(options),
     )
+    # No reload needed: `start` writes a config without a Glowcast entry, and
+    # a pipeline is only built when the switch is turned on.
     _LOGGER.warning("demo: fake TV source and fake light output active")
-    # `start` writes a config without a Glowcast entry, so there is none yet;
-    # a loaded one would still hold a pipeline built with the real adapters.
-    for entry in hass.config_entries.async_entries(GLOWCAST):
-        if entry.state is ConfigEntryState.LOADED:
-            await hass.config_entries.async_reload(entry.entry_id)
     return True

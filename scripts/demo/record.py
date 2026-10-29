@@ -256,10 +256,6 @@ def entities(rec: Recorder) -> None:
     entertainment area that the Hue output type provides, while the switch
     stays on (a new area restarts the pipeline), and switches off.
     """
-    if not rec.args.fake_sync:
-        raise RuntimeError(
-            "The entities flow needs syncing: start the demo without --no-fake-sync."
-        )
     registry = [
         entry
         for entry in rec.ws({"type": "config/entity_registry/list"})
@@ -355,6 +351,8 @@ def row(rec: Recorder, entity_id: str) -> Locator:
     return rows.nth(index)
 
 
+# Flows that switch Glowcast on: they need the demo's fake TV source and lights.
+SYNCING_FLOWS = {"entities"}
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
@@ -543,6 +541,15 @@ def main() -> None:
     args = parser.parse_args()
     if unknown := [flow for flow in args.flows if flow not in FLOWS]:
         parser.error(f"unknown flow {unknown}; the flows are {list(FLOWS)}")
+    flows = args.flows or list(FLOWS)
+    if not args.fake_sync and (syncing := SYNCING_FLOWS.intersection(flows)):
+        if args.flows:
+            parser.error(
+                f"{sorted(syncing)} switch Glowcast on: start the demo without "
+                "--no-fake-sync"
+            )
+        print(f"Skipping {sorted(syncing)}: the demo runs without the fakes.")
+        flows = [flow for flow in flows if flow not in syncing]
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -551,7 +558,7 @@ def main() -> None:
         abort_flows = abort_flows_on_exit(page)
         try:
             log_in(page, args)
-            for flow in args.flows or FLOWS:
+            for flow in flows:
                 prepare(Recorder(page, args, "quiet"), flow)
                 if args.still:
                     FLOWS[flow](Recorder(page, args, "still", flow))

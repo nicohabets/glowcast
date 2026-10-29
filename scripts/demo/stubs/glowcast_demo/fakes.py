@@ -1,7 +1,7 @@
 """The fakes behind Glowcast's FrameSource and LightOutput ports, for the demo.
 
 No network: the source makes its picture in memory, the output keeps the last
-colours. Built on Glowcast's core only, like the adapters they replace.
+colours.
 """
 
 import asyncio
@@ -11,11 +11,15 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from custom_components.glowcast.const import CONF_OUTPUT
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
+from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.outputs.hue_entertainment import CONF_AREA_ID
+from custom_components.glowcast.sources.webos import FRAME_SIZE
 
 _LOGGER = logging.getLogger(__package__)
 
-WIDTH, HEIGHT = 64, 36  # as the webOS source delivers them
+WIDTH, HEIGHT = FRAME_SIZE  # as the webOS source delivers them
 # About as long as a capture from the TV takes (about 4 per second).
 CAPTURE_SECONDS = 0.24
 # Blobs of colour moving across the picture: (r, g, b), start x in the
@@ -32,7 +36,10 @@ AREA_CHANNELS = {"area-tv": 5, "area-room": 3}
 
 
 def picture(seconds: float) -> Frame:
-    """The picture at this moment: the blobs over a dark background."""
+    """The picture at this moment: the blobs over a dark background.
+
+    Never all zero: Glowcast takes that as no picture and releases the lights.
+    """
     columns = []
     for x in range(WIDTH):
         rgb = [0.03, 0.03, 0.05]
@@ -67,6 +74,8 @@ class FakeTvSource:
 
     async def capture(self) -> Frame:
         """The picture, after about as long as the TV takes."""
+        if not self._started:
+            raise SourceUnavailable("The fake TV is not started")
         await asyncio.sleep(CAPTURE_SECONDS)
         return picture(time.monotonic())
 
@@ -82,7 +91,7 @@ class FakeLightOutput:
 
     def __init__(self, options: Mapping[str, Any]) -> None:
         """For the area in the entry's options."""
-        self._area_id = str(options["output"].get("area_id", ""))
+        self._area_id = str(options[CONF_OUTPUT].get(CONF_AREA_ID, ""))
         self._claimed = False
         self.colors: list[ChannelColor] = []
 
