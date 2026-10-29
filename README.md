@@ -33,7 +33,7 @@ Everything stays on your local network.
 
 - Home Assistant 2025.7.2 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
-- A Philips Hue Bridge v2 or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge cannot stream.
+- A Philips Hue Bridge v2 or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge (sold 2012-2015) cannot stream.
 - An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
 - [HACS](https://hacs.xyz/)
 
