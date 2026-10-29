@@ -99,6 +99,10 @@
     "area_not_found": {
       "title": "Glowcast {name}: de entertainmentruimte bestaat niet meer",
       "description": "De entertainmentruimte waar Glowcast naartoe streamt is van de Hue-bridge verwijderd. Kies een andere in de instellingen van Glowcast."
+    },
+    "bridge_app_left": {
+      "title": "Glowcast {name}: verwijder ook de app van de Hue-bridge",
+      "description": "Glowcast is uit Home Assistant verwijderd, maar de app van Glowcast staat nog op de Hue-bridge. De sleutel van die app geeft volledige toegang tot de bridge. Verwijder hem in de Hue-app: ga naar **Instellingen → Toepassingen → Netwerk-gebaseerd**, tik op de infoknop naast **glowcast** en verwijder hem."
     }
   }
 }

@@ -99,6 +99,10 @@
     "area_not_found": {
       "title": "Glowcast {name}: the entertainment area no longer exists",
       "description": "The entertainment area Glowcast streams to was removed from the Hue bridge. Choose another one in Glowcast's settings."
+    },
+    "bridge_app_left": {
+      "title": "Glowcast {name}: remove its app from the Hue bridge",
+      "description": "Glowcast is removed from Home Assistant, but its app is still on the Hue bridge. That app's key gives full access to the bridge. To remove it, open the Hue app and go to **Settings → Apps → Network-based**, tap the info button next to **glowcast** and remove it."
     }
   }
 }

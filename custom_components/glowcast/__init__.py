@@ -6,10 +6,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_BRIGHTNESS,
@@ -41,6 +43,10 @@ ISSUES = (
     ISSUE_TOO_MANY_CHANNELS,
     ISSUE_AREA_NOT_FOUND,
 )
+# Shown once when the entry is removed. Its text lives under "issues" because
+# Home Assistant has no translation category for notifications; it is never
+# raised as a repair issue.
+NOTICE_BRIDGE_APP_LEFT = "bridge_app_left"
 
 # Why syncing stopped, for the log (no secrets, no image URLs).
 _STOP_MESSAGES = {
@@ -283,9 +289,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) ->
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
-    """Remove the entry's repair issues."""
+    """Remove the entry's repair issues; tell the user its app stays on the bridge."""
     for key in ISSUES:
         ir.async_delete_issue(hass, DOMAIN, f"{key}_{entry.entry_id}")
+    # The bridge has no API to remove an app (architecture 4.1); the user
+    # removes it in the Hue app. Text in Home Assistant's server language.
+    strings = await async_get_translations(
+        hass, hass.config.language, "issues", {DOMAIN}
+    )
+    prefix = f"component.{DOMAIN}.issues.{NOTICE_BRIDGE_APP_LEFT}"
+    persistent_notification.async_create(
+        hass,
+        strings[f"{prefix}.description"],
+        title=strings[f"{prefix}.title"].replace("{name}", entry.title),
+        notification_id=f"{DOMAIN}_{NOTICE_BRIDGE_APP_LEFT}_{entry.entry_id}",
+    )
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:

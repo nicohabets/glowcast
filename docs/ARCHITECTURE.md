@@ -199,7 +199,7 @@ Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
 - **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
-- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Redact it in diagnostics. The README explains how to remove it in the Hue app after uninstalling Glowcast.
+- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Redact it in diagnostics. The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` shows a persistent notification with the steps in the Hue app (the same as in the README).
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
 ### 4.2 Options (the settings screen)
@@ -239,6 +239,7 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 |---|---|---|
 | Config flow, options flow and reauth flow (the screens), `async_setup_entry` / `async_unload_entry`, `entry.runtime_data` | `config_flow.py`, `__init__.py` | #6 |
 | Switch entity; running the pipeline with `entry.async_create_background_task`; stopping it on switch off, unload and `EVENT_HOMEASSISTANT_STOP`; the update listener that restarts the pipeline when options change; reacting to stop reasons (switch off, start reauth, repair issue) | `switch.py`, `__init__.py` | #7 |
+| Removing the entry: delete its repair issues and show one persistent notification (`glowcast_bridge_app_left_<entry id>`) on how to remove Glowcast's app in the Hue app, in Home Assistant's server language; nothing on reload or restart | `__init__.py` | #50 |
 | Pipeline behaviour (start order, sub-tasks, fading, glow, failure handling, stop reasons) | `core/pipeline.py` | #5 |
 
 Failure handling:
