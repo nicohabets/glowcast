@@ -35,9 +35,9 @@ LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-
 
 Everything stays on your local network.
 
-<img width="400" alt="The same room with a dark picture on the TV: the lights glow dim and warm instead of going off." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-2-dark-scene-800.png">
+<img width="400" alt="The same room with a dark picture on the TV: the lights keep a faint warm glow instead of going off." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-2-dark-scene-800.png">
 
-*When the picture is dark, the lights keep a dim warm glow instead of going off.*
+*When the picture is dark, the lights keep a faint warm glow instead of going off.*
 
 <img width="400" alt="The same room with a red picture on the TV: the light strip and lamps show the same pure red." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-3-saturated-colour-800.png">
 
@@ -45,7 +45,7 @@ Everything stays on your local network.
 
 <img width="400" alt="The same room with extra lamps beside the sofa, each following its own side of the picture." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-4-loose-lights-800.png">
 
-*Coming in v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps outside the entertainment area will each follow their own side of the picture; today only the entertainment area follows it.*
+*Coming in v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps outside the entertainment area will each follow their own side of the picture; today only the lights in the entertainment area follow it.*
 
 ## Requirements
 

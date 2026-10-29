@@ -50,7 +50,7 @@ The glow is the same six segments, 6 units larger on each side, blurred with `fe
 uv run scripts/render_brand.py
 ```
 
-It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It checks that each image is trimmed (no fully transparent row or column at the edges), then compresses it losslessly and interlaced with oxipng, as Home Assistant prefers. The interlaced files are 45-50% larger than non-interlaced ones; the @2x logos are about 115 kB.
+It renders the SVGs with [resvg](https://github.com/linebender/resvg) (through `resvg-py`), which supports the blur filter (not every SVG converter does). It checks that each image is trimmed (no fully transparent row or column at the edges), then compresses it losslessly and interlaced with oxipng, as Home Assistant prefers. The interlaced files are 45-52% larger than non-interlaced ones; the @2x logos are about 115 kB.
 
 To change the wordmark, also pass the font. This rebuilds `logo.svg` and `logo-dark.svg` from `icon.svg` first:
 
@@ -67,7 +67,7 @@ The illustrations of what Glowcast does live in [`docs/images/illustrations/`](.
 | Scene | What it shows |
 |---|---|
 | `scene-1-picture-leads` | A sunset on the TV; the strip and lamps take warm on the left, blue on the right. The `-loop.webp` (800 px wide, 5 s) changes the picture and the lights follow. |
-| `scene-2-dark-scene` | A dark picture; every light at a dim warm glow |
+| `scene-2-dark-scene` | A dark picture; every light at a faint warm glow |
 | `scene-3-saturated-colour` | A strong red picture; the lights show pure red |
 | `scene-4-loose-lights` | Planned ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps elsewhere in the room each follow their own side of the picture |
 | `scene-5-before` | The same room with the TV and all lights off |
