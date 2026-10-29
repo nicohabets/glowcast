@@ -13,7 +13,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
-from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
+from .const import (
+    CONF_OUTPUT,
+    CONF_SOURCE,
+    CONF_TYPE,
+    DOMAIN,
+    REAUTH_PART,
+    REAUTH_SOURCE,
+)
 from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType
@@ -35,6 +42,7 @@ _STOP_MESSAGES = {
     StopReason.OUTPUT_UNAVAILABLE: "the lights could not be reached",
     StopReason.AUTH_FAILED: "the lights rejected Glowcast's key; pair again",
     StopReason.SOURCE_UNAVAILABLE: "the TV source failed",
+    StopReason.SOURCE_AUTH_FAILED: "the source rejected Glowcast's key; pair again",
 }
 # Stops the user does not need to act on are logged at info level.
 _ROUTINE_STOPS = {StopReason.USER, StopReason.TV_OFF}
@@ -235,6 +243,10 @@ class GlowcastData:
         log("Glowcast %s stopped: %s", self._entry.title, message)
         if reason is StopReason.AUTH_FAILED:
             self._entry.async_start_reauth(self._hass)
+        elif reason is StopReason.SOURCE_AUTH_FAILED:
+            self._entry.async_start_reauth(
+                self._hass, data={REAUTH_PART: REAUTH_SOURCE}
+            )
         elif issue is not None:
             self._raise_issue(issue.key)
         elif reason in (

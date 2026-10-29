@@ -32,6 +32,8 @@ from .const import (
     CONF_TYPE,
     CONF_UPDATE_RATE,
     DOMAIN,
+    REAUTH_PART,
+    REAUTH_SOURCE,
     UPDATE_RATES,
 )
 from .outputs import OUTPUT_STEPS, OUTPUTS, OutputType
@@ -63,8 +65,13 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Start with the source; one source type is used without a choice."""
-        (source_type,) = SOURCES.values()
+        """Start with the source; one source type is used without a choice.
+
+        A type without setup steps cannot be set up here yet.
+        """
+        (source_type,) = (
+            source_type for source_type in SOURCES.values() if source_type.setup_step
+        )
         return await self._async_step(source_type.setup_step, user_input)
 
     async def async_source_chosen(
@@ -91,11 +98,16 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Pair again after the output rejected Glowcast's key."""
+        """Pair again with the source or the output that rejected Glowcast's key."""
         entry = self._get_reauth_entry()
         self._title = entry.title
-        output_type = OUTPUTS[entry.options[CONF_OUTPUT][CONF_TYPE]]
-        return await self._async_step(output_type.reauth_step)
+        if entry_data.get(REAUTH_PART) == REAUTH_SOURCE:
+            step = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]].reauth_step
+        else:
+            step = OUTPUTS[entry.options[CONF_OUTPUT][CONF_TYPE]].reauth_step
+        if step is None:
+            return self.async_abort(reason="reauth_unavailable")
+        return await self._async_step(step)
 
     async def _async_step(
         self, step_id: str | None, user_input: dict[str, Any] | None = None

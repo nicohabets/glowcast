@@ -13,6 +13,11 @@ CONF_BRIGHTNESS = "brightness"
 CONF_INTENSITY = "intensity"
 CONF_UPDATE_RATE = "update_rate"
 
+# In the data of a reauth flow: which part rejected Glowcast's key. Without
+# it, the output did.
+REAUTH_PART = "glowcast_reauth_part"
+REAUTH_SOURCE = "source"
+
 UPDATE_RATES = [rate.value for rate in UpdateRate]
 
 DEFAULT_BRIGHTNESS = 80

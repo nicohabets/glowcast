@@ -46,7 +46,8 @@
       "already_configured": "Glowcast is al ingesteld voor deze tv.",
       "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge.",
       "already_in_progress": "Glowcast wordt al ingesteld voor deze tv. Rond die installatie eerst af of sluit hem.",
-      "all_tvs_configured": "Glowcast is al ingesteld voor elke LG webOS-tv in Home Assistant."
+      "all_tvs_configured": "Glowcast is al ingesteld voor elke LG webOS-tv in Home Assistant.",
+      "reauth_unavailable": "Opnieuw koppelen kan voor deze beeldbron nog niet. Verwijder de vermelding van Glowcast en stel hem opnieuw in."
     }
   },
   "options": {
@@ -130,7 +131,8 @@
               "output_too_many_channels": "Te veel kanalen",
               "output_unavailable": "Lampen niet bereikbaar",
               "auth_failed": "Sleutel geweigerd",
-              "source_unavailable": "Fout in de tv-bron"
+              "source_unavailable": "Fout in de tv-bron",
+              "source_auth_failed": "Beeldbron weigerde de sleutel"
             }
           }
         }

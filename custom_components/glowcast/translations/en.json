@@ -46,7 +46,8 @@
       "already_configured": "Glowcast is already set up for this TV.",
       "reauth_successful": "Glowcast is paired with the Hue bridge again.",
       "already_in_progress": "Glowcast is already being set up for this TV. Finish or close that setup first.",
-      "all_tvs_configured": "Glowcast is already set up for every LG webOS TV in Home Assistant."
+      "all_tvs_configured": "Glowcast is already set up for every LG webOS TV in Home Assistant.",
+      "reauth_unavailable": "Pairing again is not available for this picture source yet. Remove Glowcast's entry and set it up again."
     }
   },
   "options": {
@@ -130,7 +131,8 @@
               "output_too_many_channels": "Too many channels",
               "output_unavailable": "Lights not reachable",
               "auth_failed": "Key rejected",
-              "source_unavailable": "TV source failed"
+              "source_unavailable": "TV source failed",
+              "source_auth_failed": "Picture source rejected the key"
             }
           }
         }
