@@ -29,10 +29,16 @@ from pytest_homeassistant_custom_component.common import (
     async_get_persistent_notifications,
 )
 
-import custom_components.glowcast as glowcast
-from custom_components.glowcast.const import DOMAIN
+from custom_components.glowcast import runtime
+from custom_components.glowcast.const import (
+    DEFAULT_BRIGHTNESS,
+    DEFAULT_INTENSITY,
+    DEFAULT_UPDATE_RATE,
+    DOMAIN,
+)
 from custom_components.glowcast.core.pipeline import (
     MonotonicClock,
+    Settings,
     StopReason,
     UpdateRate,
 )
@@ -46,6 +52,12 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 TV_ID = "tv-unique-id"
 BRIDGE_ID = "bridge-unique-id"
 ENTITY = "switch.glowcast_living_room_tv"
+OPTIONS = {
+    "output": {"type": "hue_entertainment", "area_id": "area"},
+    "brightness": 60,
+    "intensity": 120,
+    "update_rate": "medium",
+}
 
 
 class FakePipeline:
@@ -157,7 +169,7 @@ def fakes(adapters: Fakes, monkeypatch: pytest.MonkeyPatch) -> Fakes:
     """Fake source and output, and a fake pipeline."""
     FakePipeline.instances = []
     FakePipeline.start_error = None
-    monkeypatch.setattr(glowcast, "Pipeline", FakePipeline)
+    monkeypatch.setattr(runtime, "Pipeline", FakePipeline)
     return adapters
 
 
@@ -186,7 +198,9 @@ async def settle(hass: HomeAssistant) -> None:
         await asyncio.sleep(0)
 
 
-async def setup(hass: HomeAssistant) -> MockConfigEntry:
+async def setup(
+    hass: HomeAssistant, options: dict[str, Any] | None = None
+) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Living room TV",
@@ -199,12 +213,7 @@ async def setup(hass: HomeAssistant) -> MockConfigEntry:
                 "client_key": "client-key",
             },
         },
-        options={
-            "output": {"type": "hue_entertainment", "area_id": "area"},
-            "brightness": 60,
-            "intensity": 120,
-            "update_rate": "medium",
-        },
+        options=OPTIONS if options is None else options,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -246,6 +255,25 @@ async def test_entity_and_device(
     assert device.name == "Glowcast Living room TV"
     assert device.via_device_id == tv_device.id
     assert state(hass) == STATE_OFF
+
+
+async def test_the_switch_keeps_its_ids_and_device(
+    hass: HomeAssistant, fakes: Fakes, tv_device: dr.DeviceEntry
+) -> None:
+    """As in v0.1, so automations, dashboards and history keep working."""
+    entry = await setup(hass)
+    [entity] = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+    assert entity.entity_id == ENTITY
+    assert entity.unique_id == entry.entry_id
+    assert entity.platform == DOMAIN
+    assert entity.original_name is None
+    assert entity.translation_key == "sync"
+    [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert entity.device_id == device.id
+    assert device.identifiers == {(DOMAIN, entry.entry_id)}
+    assert device.name == "Glowcast Living room TV"
+    assert device.entry_type is dr.DeviceEntryType.SERVICE
+    assert device.via_device_id == tv_device.id
 
 
 async def test_off_after_a_restart(hass: HomeAssistant, fakes: Fakes) -> None:
@@ -298,6 +326,26 @@ async def test_switch_on_while_the_tv_is_off(
 
 
 # Settings
+
+
+@pytest.mark.parametrize(
+    ("key", "default"),
+    [
+        ("brightness", Settings(DEFAULT_BRIGHTNESS, 120, UpdateRate.MEDIUM)),
+        ("intensity", Settings(60, DEFAULT_INTENSITY, UpdateRate.MEDIUM)),
+        ("update_rate", Settings(60, 120, UpdateRate(DEFAULT_UPDATE_RATE))),
+    ],
+)
+async def test_a_missing_setting_starts_with_its_default(
+    hass: HomeAssistant, fakes: Fakes, key: str, default: Settings
+) -> None:
+    """An entry from an older version may lack a key added later."""
+    await setup(hass, {k: v for k, v in OPTIONS.items() if k != key})
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_ON
+    [pipeline] = FakePipeline.instances
+    assert pipeline.settings == default
+    await switch(hass, SERVICE_TURN_OFF)
 
 
 async def test_new_settings_while_syncing_restart_only_the_pipeline(

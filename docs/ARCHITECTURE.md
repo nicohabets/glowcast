@@ -240,8 +240,12 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 
 | What | Where | Story |
 |---|---|---|
-| Config flow, options flow and reauth flow (the screens), `async_setup_entry` / `async_unload_entry`, `entry.runtime_data` | `config_flow.py`, `__init__.py` | #6 |
-| Switch entity; running the pipeline with `entry.async_create_background_task`; stopping it on switch off, unload and `EVENT_HOMEASSISTANT_STOP`; the update listener that restarts the pipeline when options change; reacting to stop reasons (switch off, start reauth, repair issue) | `switch.py`, `__init__.py` | #7 |
+| Config flow, options flow and reauth flow (the screens) | `config_flow.py` | #6 |
+| The entry's lifecycle: `async_setup_entry` / `async_unload_entry` (which create and stop the runtime in `entry.runtime_data`), stopping on `EVENT_HOMEASSISTANT_STOP`, and the update listener that restarts the pipeline when options change | `__init__.py` | #6, #7 |
+| The runtime (`GlowcastData`, one per entry, reached by every platform through `entry.runtime_data`): running the pipeline with `entry.async_create_background_task`, stopping and restarting it, its listeners, reacting to stop reasons (switch off, start reauth, repair issue), and the repair issues and their ids | `runtime.py` | #7, #63 |
+| Reading the settings from `options` into `Settings` (defaults from `const.py` for missing keys) and writing them back; used by the setup flow, the options flow and the pipeline start | `settings.py` | #63 |
+| The base entity: `has_entity_name`, the device "Glowcast <TV name>" with its link to the TV's device (`via_device_id` on newer HA, `via_device` on 2025.7.2), following the runtime's listener | `entity.py` | #63 |
+| Switch entity | `switch.py` | #7 |
 | Removing the entry: delete its repair issues and show one persistent notification (`glowcast_bridge_app_left_<entry id>`) on how to remove Glowcast's app in the Hue app, in Home Assistant's server language; nothing on reload or restart | `__init__.py` | #50 |
 | Pipeline behaviour (start order, sub-tasks, failure handling, stop reasons); fading, hold on black and glow | `core/pipeline.py`; `core/light_state.py` | #5, #65 |
 
@@ -278,16 +282,23 @@ SOURCES = {"webos": SourceType(create, is_missing, device_identifier)}      # so
 OUTPUTS = {"hue_entertainment": OutputType(create, is_missing)}              # outputs/__init__.py
 ```
 
-Each adapter module provides these functions itself, so `__init__.py` and `switch.py` never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), and the source's `device_identifier(data)` names the TV's device for `via_device` (4.3).
+Each adapter module provides these functions itself, so the runtime and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), and the source's `device_identifier(data)` names the TV's device for `via_device` (4.3).
 
-Config entry `VERSION = 1`, so later changes get a proper migration.
+Config entry `VERSION = 1`. The versioning rule:
+- **New types need no migration.** A new source or output type is a new value of `type` in its block (D5, D16).
+- **New keys get defaults on read.** A key added by a later version is missing in older entries; `settings.py` reads every setting with its default from `const.py`, so an older entry keeps working. A stored update rate that no longer exists also gets the default, with a warning in the log.
+- **`MINOR_VERSION` with `async_migrate_entry` only for a change to the shape of stored data** (a key moved or renamed, a block split). A version bump without a migration function stops existing entries from loading.
 
 ## 6. Repository layout
 
 ```
 custom_components/glowcast/
-  __init__.py  manifest.json  const.py
+  __init__.py              # entry setup, unload and removal (with the removal notice)
+  manifest.json  const.py
   config_flow.py           # setup, options, reauth
+  runtime.py               # GlowcastData: runs the pipeline, reacts to stop reasons, repair issues
+  settings.py              # options <-> Settings, with defaults for missing keys
+  entity.py                # base entity: the device and the runtime's listener
   switch.py
   translations/en.json  translations/nl.json
   brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
@@ -302,6 +313,7 @@ tests/
   test_pipeline.py         # the pipeline with the fakes and a fake clock
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
   test_config_flow.py      # setup, options and reauth, including error cases
+  test_settings.py         # reading and writing the settings
   test_webos_source.py  test_hue_output.py  test_manifest.py
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
