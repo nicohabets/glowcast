@@ -9,7 +9,7 @@
 
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
-> **Status: in development, not released yet.** Setup, settings and the switch work and are tested on an LG OLED65G36LA (2023, G3) with a Hue Pro bridge; the first release (v0.1) is still to come. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of v0.1. Expect breaking changes until v1.0.
+> **Status: v0.1 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](docs/releases/v0.1.0.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
 
 ## Why
 
@@ -32,18 +32,23 @@ Everything stays on your local network.
 
 - Home Assistant 2025.7.2 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
-- A Philips Hue Bridge with colour lights, set up in Home Assistant with the **Philips Hue** integration
+- A Philips Hue Bridge v2 or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge cannot stream.
 - An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
 - [HACS](https://hacs.xyz/)
 
 ## Installation
 
-> Not installable yet - the first release is coming. These are the steps once it is.
+Glowcast is not in the default HACS list yet; add it as a custom repository:
 
-1. In HACS, open the menu (⋮) → **Custom repositories**.
-2. Add `https://github.com/nicohabets/glowcast` with type **Integration**.
-3. Install **Glowcast** and restart Home Assistant.
-4. Go to **Settings → Devices & services → Add integration → Glowcast**.
+1. Open **HACS**, then the menu (⋮) in the top right corner → **Custom repositories**.
+2. Enter `https://github.com/nicohabets/glowcast` as the repository, choose type **Integration** and click **Add**. Close the dialog.
+3. Search for **Glowcast**, open it and click **Download** (bottom right), then **Download** again in the dialog. The newest version is selected.
+4. Restart Home Assistant (Settings → System → the restart button in the top right, or the repair HACS shows).
+5. Go to **Settings → Devices & services → Add integration → Glowcast**.
+
+Updates show up in HACS and under Settings → System → Updates.
+
+From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketplace](https://hacs.xyz/docs/marketplace/) (Settings → Marketplace); custom repositories added in HACS carry over. Updated steps follow in [#57](https://github.com/nicohabets/glowcast/issues/57).
 
 ## Configuration
 
@@ -59,7 +64,7 @@ Under **Configure** you can change the area, brightness (1-100 %, default 80 %),
 
 ## Starting and stopping
 
-Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; the lights then return to how they were. Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on:
+Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; when it stops, the Hue bridge restores the lights (tested with the Hue app's default "when syncing stops" setting). Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on:
 
 ```yaml
 triggers:
@@ -77,7 +82,7 @@ Glowcast waits up to 10 seconds for the TV to show a picture, so it can start th
 
 **When it stops by itself**, the switch turns off and the reason is in the Home Assistant log:
 
-- **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours back to how they were.
+- **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours to the state the bridge restores.
 - **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start.
 - **The light stream is lost** (bridge restarted, another app took over): one retry after 5 seconds; if that does not work, Glowcast stops. The next switch-on works once the bridge is back.
 - **The bridge rejects Glowcast's key** (for example after removing the app in the Hue app): Home Assistant asks you to press the bridge's link button again; your settings are kept.
@@ -92,14 +97,17 @@ On a black picture the lights keep a faint warm glow instead of going dark.
 
 - **About 3 frames per second.** That is the TV's capture limit. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
+- **One stream per bridge at a time** (as far as known; being checked for the Bridge Pro, #37). A Hue bridge streams to one entertainment area at a time, so two Glowcast entries (two TVs) on one bridge cannot sync together.
+- **Changing a setting while syncing** briefly restarts the light stream (a few seconds).
+- **TV lightstrip segments sample about 30 % in from the picture's edges**, not the edges themselves, because of where the Hue app places them. Improving this is planned (#23).
 - **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so the lights show only the minimal glow. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.
+- **Glowcast's icon** in Settings → Devices & services only shows on Home Assistant 2026.3 or newer; older versions show no icon for Glowcast.
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
 
 ## Privacy
 
 Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. Removing Glowcast from Home Assistant does not remove its app from the bridge (the bridge does not allow that), so Home Assistant shows a notification with these steps when you remove Glowcast. To remove it from the bridge: in the Hue app, go to **Settings → Apps → Network-based** (Dutch: Instellingen → Toepassingen → Netwerk-gebaseerd), tap the info button next to **glowcast** and remove it.
-
 
 The TV's capture call only works on your local network, after the TV pairing you already approved for Home Assistant. Frames are kept in memory and never stored or sent anywhere. Separately: if privacy matters to you, consider turning off **Live Plus** (LG's ACR feature) in your TV settings. That one does send viewing data to LG.
 
