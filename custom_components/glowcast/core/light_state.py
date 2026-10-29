@@ -53,11 +53,6 @@ class LightState:
         self._target = target
         self._fade_start = now
 
-    def skip(self, now: float) -> None:
-        """A frame without a picture: keep the colours, but count the capture,
-        so the next frame fades over one capture interval, not the whole gap."""
-        self._last_capture = now
-
     def resume(self, channel_ids: set[str]) -> None:
         """After a retry: keep showing the last colours on the channels that
         still exist, and do not fade over the gap."""

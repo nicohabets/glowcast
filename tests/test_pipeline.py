@@ -643,7 +643,7 @@ async def test_no_picture_for_3_s_releases_the_lights() -> None:
     await h.clock.advance(3.0)  # all zero since about 2.25-2.6 s: still waiting
     assert h.log == ["source.start", "output.start"]
     after = [c[0].rgb for t, c in h.output.sent if t >= 2]
-    # The lights keep their last colours: no hold on black, no glow.
+    # The hold on black keeps the last colours (3.5 s, longer than the wait).
     assert all(rgb == approx_rgb(RED_SENT) for rgb in after)
     await h.clock.advance(1.0)
     assert h.log == ["source.start", "output.start", "output.stop", "output.close"]
@@ -692,6 +692,23 @@ async def test_the_wait_starts_again_after_a_frame_with_a_picture() -> None:
     h.source.frames = [zero, zero, solid(DARK), zero, zero, zero]
     await h.clock.advance(7)
     assert h.log == ["source.start", "output.start"]
+    assert await h.stop() == StopReason.USER
+
+
+async def test_the_hold_on_black_runs_during_the_wait() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(DARK)  # a fade: dark first (from about 2.6 s) ...
+    await h.clock.advance(2)
+    h.source.default = solid(NO_PICTURE)  # ... then all zero (from about 4.6 s)
+    await h.clock.advance(1.2)  # the hold ends at about 6.1 s
+    assert h.output.rgb_at(-1) == approx_rgb(RED_SENT)
+    await h.clock.advance(2)  # the fade to the glow has finished at about 6.6 s
+    assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)  # glow, still claimed
+    assert h.log == ["source.start", "output.start"]
+    await h.clock.advance(1)  # 3 s after the first all-zero frame (about 4.6 s)
+    assert h.log[-2:] == ["output.stop", "output.close"]
     assert await h.stop() == StopReason.USER
 
 

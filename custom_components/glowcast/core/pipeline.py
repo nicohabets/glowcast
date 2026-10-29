@@ -474,20 +474,19 @@ class Pipeline:
 
     async def _async_set_target(self, frame: Frame) -> None:
         """Give the lights the frame's colours; raise _NoPicture after all-zero
-        frames for NO_PICTURE_WAIT, during which the lights keep their colours."""
+        frames for NO_PICTURE_WAIT. Until then an all-zero frame is a black
+        frame, with the hold on black and the glow."""
         colors, frame_black, no_picture = await self._async_run_job(
             _compute, frame, self._channels, self._settings.intensity / 100
         )
         now = self._clock.now()
         if not no_picture:
             self._no_picture_since = None
-            self._lights.set_target(colors, frame_black, now)
-            return
-        if self._no_picture_since is None:
+        elif self._no_picture_since is None:
             self._no_picture_since = now
-        if now - self._no_picture_since >= NO_PICTURE_WAIT:
+        elif now - self._no_picture_since >= NO_PICTURE_WAIT:
             raise _NoPicture
-        self._lights.skip(now)
+        self._lights.set_target(colors, frame_black, now)
 
     async def _async_run_job(self, func: Callable[..., Any], *args: Any) -> Any:
         """Run the colour engine's work in the executor."""
