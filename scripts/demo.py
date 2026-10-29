@@ -25,7 +25,8 @@ than this working copy's.
 
 Runs on Linux and macOS (on Windows: in WSL). `start` needs Python 3.14.2 or
 newer, or uv (https://docs.astral.sh/uv/) to fetch it. Everything it makes
-lives in ~/.cache/glowcast-demo, outside the repository.
+lives in ~/.cache/glowcast-demo, outside the repository, except the GIFs and
+stills of `room`: those go to room-out/, which git ignores.
 """
 
 import argparse
