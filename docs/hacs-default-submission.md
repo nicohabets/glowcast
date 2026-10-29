@@ -21,13 +21,11 @@ So the README, the brand images and `hacs.json` that the reviewers see are the o
 ## Steps, in order
 
 1. **Merge the PR for #48**, so `main` runs the HACS action without `ignore`.
-2. **Make a new release from `main`** (version: see the question on #48; v0.1.1 is proposed). As with v0.1.0: bump `version` in `custom_components/glowcast/manifest.json` to match the tag, add release notes under `docs/releases/`, and publish a full GitHub release, not a pre-release.
-3. **Wait for CI on `main` to be green** after the release commit, and note the links of:
-   - the release: `https://github.com/nicohabets/glowcast/releases/tag/<tag>`
-   - the CI run on `main` (`https://github.com/nicohabets/glowcast/actions/runs/<id>`), with its **HACS** job (`.../job/<id>`) and its **hassfest** job.
-   The HACS job must show `category: integration` and no `ignore` in its "Run hacs/action@main" step.
-4. **Fork [hacs/default](https://github.com/hacs/default)** under your personal account, and create a new branch from `master` (for example `add-glowcast`). Do not work on the fork's `master`: the bot closes PRs from `master`.
-5. **Add one line to the file `integration`**, in alphabetical order (case-insensitive), and change nothing else:
+2. **Merge the release preparation** (#86; version: see the question on #48, v0.1.1 is proposed). As with v0.1.0: `version` in `custom_components/glowcast/manifest.json` matches the tag, and release notes are under `docs/releases/`.
+3. **Wait for CI on `main` to be green** for that merge, and note the links of the CI run (`https://github.com/nicohabets/glowcast/actions/runs/<id>`): its **HACS** job (`.../job/<id>`) and its **hassfest** job. The HACS job must show `category: integration` and no `ignore` in its "Run hacs/action@main" step. The template asks for a release made *after* the actions passed, so keep this order.
+4. **Publish the GitHub release** from that commit: a full release, not a pre-release. Note its link: `https://github.com/nicohabets/glowcast/releases/tag/<tag>`.
+5. **Fork [hacs/default](https://github.com/hacs/default)** under your personal account, and create a new branch from `master` (for example `add-glowcast`). Do not work on the fork's `master`: the bot closes PRs from `master`.
+6. **Add one line to the file `integration`**, in alphabetical order (case-insensitive), and change nothing else:
 
    ```json
      "NickM-27/swatch-hass-integration",
@@ -36,9 +34,9 @@ So the README, the brand images and `hacs.json` that the reviewers see are the o
    ```
 
    The neighbours were checked on 2026-10-29; if they changed, keep the order of `sorted(..., key=str.casefold)`. The name must match GitHub's spelling exactly: `nicohabets/glowcast`. Keep the 2-space indentation and the newline at the end of the file.
-6. **Open the PR** to `hacs/default` `master` with the template below, every box ticked and all three links filled in. Leave "Allow edits by maintainers" on. **Do not request reviews**; the template says that gets the PR closed.
-7. **Wait.** A bot adds the label `New default repository` and runs the checks. If it does not add the label, the checks do not run; closing and reopening the PR started them in other submissions. A reviewer then approves, asks for changes, or drafts the PR. After changes: push a new release, then re-request the review.
-8. **After the merge**, Glowcast is in the next scheduled scan (the catalog is rebuilt every few hours). Then search for "Glowcast" in HACS and in the Marketplace and check that it installs like the custom repository (scenario "listed" of #48). Reviewers often ask for the README's install section to start with searching in HACS; that change is then a small follow-up.
+7. **Open the PR** to `hacs/default` `master` with the template below, every box ticked and all three links filled in (from steps 3 and 4). Leave "Allow edits by maintainers" on. **Do not request reviews**; the template says that gets the PR closed.
+8. **Wait.** A bot adds the label `New default repository` and runs the checks. If it does not add the label, the checks do not run; closing and reopening the PR started them in other submissions. A reviewer then approves, asks for changes, or drafts the PR. After changes: push a new release, then re-request the review.
+9. **After the merge**, Glowcast is in the next scheduled scan (the catalog is rebuilt every few hours). Then search for "Glowcast" in HACS and in the Marketplace and check that it installs like the custom repository (scenario "listed" of #48). Reviewers often ask for the README's install section to start with searching in HACS; that change is then a small follow-up.
 
 ## The PR to hacs/default
 
@@ -71,7 +69,7 @@ Link to successful hassfest action (if integration): https://github.com/nicohabe
 <!-- tid:73253df5-5376-4e68-8c16-b234da6a2de3 -->
 ```
 
-Keep the last comment line (`tid:...`): it is part of HACS's template. Fill in the three links from step 3.
+Keep the last comment line (`tid:...`): it is part of HACS's template. Fill in the three links from steps 3 and 4.
 
 ## Common reasons a submission is closed or sent back
 
@@ -80,7 +78,7 @@ Seen in recent `hacs/default` PRs (October 2026), with Glowcast's status:
 | Reason | Glowcast |
 |---|---|
 | Checklist not ticked, or fewer than 3 links | Use the template above in full |
-| PR from the fork's `master`, several repositories in one PR, wrong letter case of the name | Steps 4 to 6 |
+| PR from the fork's `master`, several repositories in one PR, wrong letter case of the name | Steps 5 to 7 |
 | No `brand/icon.png` in the latest release | In v0.1.0 and later (#44) |
 | No `translations/en.json` | Present, with `nl.json` |
 | `categories` in the manifest | Not used: hassfest rejects it for custom integrations at the moment, although the HACS action warns that it is missing |
