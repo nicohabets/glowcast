@@ -387,6 +387,8 @@ tests/
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
+screen_helper/             # the screen helper (#108, 8.3): its own package, tests and lock file,
+                           #   not installed by HACS, not imported by the integration
 scripts/                   # developer tools, not installed (render_brand.py builds brand/;
                            #   demo.py + demo/: a local HA with stubs for review GIFs)
 docs/ARCHITECTURE.md
@@ -433,18 +435,19 @@ Planned as new **source adapters** behind `FrameSource`. Candidates, each still 
 
 Rule: **no code outside `sources/` may know about webOS**, and that includes the UI: the webOS source type provides its own setup step (pick a TV) and its texts. Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
 
-### 8.3 A computer screen (planned, feature #107)
+### 8.3 A computer screen (feature #107)
 
 A PC or Mac screen becomes a picture source through a small **screen helper** on that computer (spike #106, D18). Glowcast keeps running in Home Assistant and **pulls** frames from the helper, as it pulls them from the TV, so the switch, automations and settings work unchanged.
 
-- **Helper** (#108): its own package outside `custom_components/` (not installed by HACS). Captures one screen, downscales to 64x36 RGB on the computer, and serves only the latest frame. Started with one `uv` command from the repository first; an installable app later (#113). `--pattern <name>` serves synthetic frames without a display, for agents and automated tests (#112).
-- **Protocol** (version 1, plain HTTP on the LAN, like the TV's image download):
-  - mDNS service `_glowcast._tcp.local.`, TXT record with the helper's `id`, a display `name` and the protocol version.
-  - `POST /v1/pair` with the 6-digit code the helper shows returns a token; every other request needs `Authorization: Bearer <token>`, else 401.
-  - `GET /v1/frame` returns 6,912 bytes (64x36 RGB, row-major), or "no picture" when the screen is locked or capture fails.
-  - `GET /v1/info` returns the id, name, version, screens and the pattern, if any.
-- **`ScreenFrameSource`** (`sources/screen.py`, #110): source type `"screen"` behind `FrameSource`; the same update-rate levels as the TV, with Maximum capped at 4 frames per second (product owner's decision); builds `Frame` directly (no JPEG decoding); `is_on()` false when the helper is unreachable or has no picture; 401 starts reauth. The entry stores the helper id, address and token in `data` (Glowcast's own secret, like the Hue keys).
-- **Setup** (#109, after #66): Home Assistant's zeroconf discovery (`"zeroconf": ["_glowcast._tcp.local."]` in the manifest) shows the helper under Discovered; the screen source type provides the pairing-code step; unique id = the helper id, so a new address updates the entry.
+- **Helper** (#108, built): its own package `screen_helper/` outside `custom_components/` (not installed by HACS, not imported by the integration), with its own `pyproject.toml`, `uv.lock`, tests and CI job. Captures one screen with `mss` only when a frame is asked for (one grab per request, shared by requests within 50 ms, on one thread), shrinks it with Pillow (`reduce`, then a box resize; the whole screen stretched to 64x36, not cropped) and serves only the latest frame; no JPEG. Started with one `uv` command from the repository (`uv run --project screen_helper glowcast-screen`); an installable app later (#113). `--pattern <name>` serves synthetic frames without a display, for agents and automated tests (#112, #134); `--non-interactive`, `--pairing-code`, `--port` and `--json` (one JSON line per event) run it without a person. The flags, events, exit codes and the exact pixels of every pattern are in [`screen_helper/README.md`](../screen_helper/README.md).
+- **Protocol** (version 1, plain HTTP on the LAN, like the TV's image download; default port 8488):
+  - mDNS service `_glowcast._tcp.local.`, instance name `<name> (<first 6 characters of the id>)`, TXT record `id=<helper id>`, `name=<display name>`, `protocol=1`. Not announced when the helper listens on a loopback address.
+  - The helper id is a random 32-character hex id, made on the first start and stored with the pairings in the user's config directory; it stays across restarts and `--unpair`.
+  - `POST /v1/pair` with `{"code": "<6 digits>"}` (the code the helper shows) returns `200` `{"token": ..., "id": ...}`; a wrong code `403` `{"error": "wrong_code"}` after a 1 s delay, one attempt at a time. A new code on every start; tokens survive restarts until `--unpair`. Every other request needs `Authorization: Bearer <token>`, else `401` `{"error": "unauthorized"}`.
+  - `GET /v1/frame` returns `200` with 6,912 bytes (`application/octet-stream`, 64x36 RGB, one byte per channel, row-major from the top left), or **`204` with no body for "no picture"**: the screen is locked, capture fails, or a grab takes longer than 1 s. A black picture is a picture (`200`), never "no picture". A client tells the cases apart by status alone: `200` a frame, `204` no picture, `401` pair again, anything else or no answer within its timeout unavailable.
+  - `GET /v1/info` returns JSON: `id`, `name`, `protocol`, `version` (of the helper), `width`, `height`, `screens` (`index`, `width`, `height`, `left`, `top`, `primary`; empty for a pattern), `screen` (the index captured, or `null`), `pattern` (`null`, or `name`, `showing`, `since` in UTC and, for `cycle`, `interval`) and `no_picture` (`null`, or the reason of the last "no picture": `capture_failed`, `capture_timeout`).
+- **`ScreenFrameSource`** (planned, `sources/screen.py`, #110): source type `"screen"` behind `FrameSource`; the same update-rate levels as the TV, with Maximum capped at 4 frames per second (product owner's decision); builds `Frame` directly (no JPEG decoding); `is_on()` false when the helper is unreachable or has no picture; 401 starts reauth. The entry stores the helper id, address and token in `data` (Glowcast's own secret, like the Hue keys).
+- **Setup** (planned, #109, after #66): Home Assistant's zeroconf discovery (`"zeroconf": ["_glowcast._tcp.local."]` in the manifest) shows the helper under Discovered; the screen source type provides the pairing-code step; unique id = the helper id, so a new address updates the entry.
 
 ## 9. Decisions
 
