@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
 
@@ -12,9 +13,11 @@ from aiowebostv.exceptions import WebOsTvError, WebOsTvPairError
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from PIL import Image
 
+from ..const import CONF_SOURCE, CONF_UNIQUE_ID
 from ..core.models import Frame
 from ..core.ports import SourceUnavailable
 
@@ -76,7 +79,9 @@ class WebOsFrameSource:
             reason = "The TV did not respond in time"
         except WebOsTvPairError:
             reason = "The TV rejected the pairing of the LG webOS TV integration"
-        except (OSError, aiohttp.ClientError, WebOsTvError):
+        except (OSError, aiohttp.ClientError, aiohttp.WSMessageTypeError, WebOsTvError):
+            # A TV in standby can accept the websocket and close it at once,
+            # which aiohttp reports as WSMessageTypeError (a TypeError).
             reason = "Could not connect to the TV"
         if reason is not None:
             await self.close()
@@ -174,11 +179,54 @@ class WebOsFrameSource:
             try:
                 async with asyncio.timeout(RECONNECT_TIMEOUT):
                     await client.connect()
-            except (TimeoutError, OSError, aiohttp.ClientError, WebOsTvError):
+            except (
+                TimeoutError,
+                OSError,
+                aiohttp.ClientError,
+                aiohttp.WSMessageTypeError,
+                WebOsTvError,
+            ):
                 _LOGGER.warning("Lost the connection to the TV and could not reconnect")
                 self._lost = True
                 return
             _LOGGER.debug("Reconnected to the TV")
+
+
+def create(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> WebOsFrameSource:
+    """Build the source from a Glowcast entry's data (architecture 5)."""
+    return WebOsFrameSource(hass, data[CONF_SOURCE][CONF_UNIQUE_ID])
+
+
+def is_missing(hass: HomeAssistant, data: Mapping[str, Any]) -> bool:
+    """Whether the referenced webostv entry is removed or not loaded."""
+    entry = hass.config_entries.async_entry_for_domain_unique_id(
+        WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID]
+    )
+    return entry is None or entry.state is not ConfigEntryState.LOADED
+
+
+def device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
+    """The TV's device in Home Assistant, to link Glowcast's device to."""
+    return (WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
+
+
+def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
+    """The TV device's id in Home Assistant's device registry, if it exists."""
+    entry = hass.config_entries.async_entry_for_domain_unique_id(
+        WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID]
+    )
+    if entry is None:
+        return None
+    registry = dr.async_get(hass)
+    identifier = device_identifier(data)
+    if hasattr(registry, "async_get_device_by_identifier"):
+        # Newer HA: identifiers are only unique within a config entry.
+        device = registry.async_get_device_by_identifier(identifier, entry.entry_id)
+    else:
+        device = registry.async_get_device(identifiers={identifier})
+    return device.id if device else None
 
 
 def tvs(hass: HomeAssistant) -> dict[str, str]:

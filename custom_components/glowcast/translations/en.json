@@ -82,5 +82,23 @@
         "maximum": "Maximum (as fast as the TV allows)"
       }
     }
+  },
+  "issues": {
+    "source_missing": {
+      "title": "Glowcast {name}: the TV is not set up",
+      "description": "Glowcast cannot sync because the TV it uses is no longer set up in Home Assistant, or is not loaded. Set up the TV again with the LG webOS TV integration (Settings > Devices & services), then switch Glowcast on again."
+    },
+    "output_missing": {
+      "title": "Glowcast {name}: the Hue bridge is not set up",
+      "description": "Glowcast cannot sync because the Hue bridge it uses is no longer set up in Home Assistant, is not loaded, or cannot stream. Set up the bridge again with the Philips Hue integration (Settings > Devices & services), then switch Glowcast on again."
+    },
+    "too_many_channels": {
+      "title": "Glowcast {name}: the entertainment area is too big",
+      "description": "The entertainment area has more than 20 channels, more than Hue can stream to. Choose a smaller area in Glowcast's settings, or create one with fewer lights in the Hue app."
+    },
+    "area_not_found": {
+      "title": "Glowcast {name}: the entertainment area no longer exists",
+      "description": "The entertainment area Glowcast streams to was removed from the Hue bridge. Choose another one in Glowcast's settings."
+    }
   }
 }

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
@@ -12,6 +13,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from hue_entertainment import EntertainmentSession, HueEntertainmentAPI
 from hue_entertainment.models import LightColorCommand
 
+from ..const import (
+    CONF_APP_KEY,
+    CONF_AREA_ID,
+    CONF_BRIDGE,
+    CONF_CLIENT_KEY,
+    CONF_OUTPUT,
+    CONF_UNIQUE_ID,
+)
 from ..core.models import Channel, ChannelColor
 from ..core.ports import (
     OutputAuthFailed,
@@ -228,6 +237,26 @@ class HueEntertainmentOutput:
 
 class PairingFailed(Exception):
     """The bridge did not hand out a key (link button not pressed in time)."""
+
+
+def create(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> HueEntertainmentOutput:
+    """Build the output from a Glowcast entry's data and options (architecture 5)."""
+    bridge = data[CONF_BRIDGE]
+    return HueEntertainmentOutput(
+        hass,
+        bridge[CONF_UNIQUE_ID],
+        bridge[CONF_APP_KEY],
+        bridge[CONF_CLIENT_KEY],
+        options[CONF_OUTPUT][CONF_AREA_ID],
+    )
+
+
+def is_missing(hass: HomeAssistant, data: Mapping[str, Any]) -> bool:
+    """Whether the referenced hue entry is removed, not loaded or cannot stream."""
+    entry = _loaded_bridge(hass, data[CONF_BRIDGE][CONF_UNIQUE_ID])
+    return entry is None or entry.data.get(CONF_API_VERSION) != 2
 
 
 def bridges(hass: HomeAssistant) -> dict[str, str]:

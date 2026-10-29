@@ -9,7 +9,7 @@
 
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
-> **Status: design phase.** The capture path has been tested on an LG OLED65G36LA (2023, G3); the integration itself is not built yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of v0.1. Expect breaking changes until v1.0.
+> **Status: in development, not released yet.** Setup, settings and the switch work and are tested on an LG OLED65G36LA (2023, G3) with a Hue Pro bridge; the first release (v0.1) is still to come. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of v0.1. Expect breaking changes until v1.0.
 
 ## Why
 
@@ -57,7 +57,9 @@ Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcas
 
 Under **Configure** you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
 
-*Planned, not built yet:* Glowcast creates one **switch** to start and stop syncing. It never starts by itself, so start it from a dashboard or an automation, for example when the TV turns on:
+## Starting and stopping
+
+Glowcast adds one device, "Glowcast *TV name*", with one **switch**, for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop; the lights then return to how they were. Glowcast never starts by itself: the switch is off after a restart of Home Assistant. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on:
 
 ```yaml
 triggers:
@@ -71,7 +73,20 @@ actions:
       entity_id: switch.glowcast_living_room_tv
 ```
 
-When the TV turns off, syncing stops and the lights are released. If another app (the Hue Sync app or a Sync Box) is already streaming to the area, Glowcast does not take over; it tells you instead. On a black picture the lights keep a faint glow instead of going dark.
+Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". Changing the settings while it runs restarts syncing with the new settings; the switch stays on.
+
+**When it stops by itself**, the switch turns off and the reason is in the Home Assistant log:
+
+- **The TV turns off** (or is not reachable): the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours back to how they were.
+- **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start.
+- **The light stream is lost** (bridge restarted, another app took over): one retry after 5 seconds; if that does not work, Glowcast stops. The next switch-on works once the bridge is back.
+- **The bridge rejects Glowcast's key** (for example after removing the app in the Hue app): Home Assistant asks you to press the bridge's link button again; your settings are kept.
+- **The entertainment area was removed, or has more than 20 channels**: Home Assistant shows a repair with what to change in Glowcast's settings or in the Hue app.
+- **The TV or the bridge is no longer set up in Home Assistant**: Home Assistant shows a repair saying which integration to set up again.
+
+When Home Assistant shuts down or restarts while syncing, Glowcast releases the lights first.
+
+On a black picture the lights keep a faint warm glow instead of going dark.
 
 ## Known limits
 

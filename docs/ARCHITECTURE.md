@@ -46,6 +46,8 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 | HDMI streamer with a DRM app (#5) | Prime Video on a streaming stick over HDMI: captures show the real picture (not black). Letterbox bars in that film were pure black (0-7 of 255) and changed width between scenes. |
 | `Pipeline` on real hardware (#5) | Real source and output, update rate High, brightness 80 %: first colour 4.1-4.3 s after start (mostly the Hue handshake), 23.9 sends and 2.87-2.90 captures per second over 27 s, no failed captures. With the TV off: `TV_OFF` after 10.0 s, no area touched. TV switched off with the remote during a run: `TV_OFF` through `is_on()` before any capture failed, area released. A Hue app sync running: `OUTPUT_BUSY` 0.9 s after start (after the TV came up), no sends, the sync kept running. |
 | Black before "off" (#39) | Switching the TV off with the remote: the TV first shows an almost black switch-off animation (1-2 % of the pixels lit, some nearly white) for 2.7-3.0 s, then `is_on()` turns false (4 tries with whole-frame black: 2.99, 2.84, 2.87, 2.72 s; the last frame with a picture 2.96-3.24 s before). No capture failed in between. A first measurement that counted a frame as black only when every channel region was black found 0.3-0.6 s, because the animation's bright element kept one region lit. `output.stop()` then takes about 1.2 s before the bridge restores the lights. |
+| The switch on Home Assistant (#7) | Home Assistant 2026.10.4. `switch.turn_on` to the entertainment area active on the bridge: 2.1 s, then the DTLS handshake (3.5-4.4 s, #4), so the first colour comes after about 5.5-6.5 s. `switch.turn_off` to the area inactive: about 2.1 s (`output.stop()` itself about 1.2 s). TV switched off with the remote while syncing: the switch was off 1.2 s after the TV's `media_player` turned `off`. Switched on with the TV in standby: off again after about 10.5 s (startup grace), area untouched. A Hue app sync running: `output_busy` after about 2 s, the sync kept running. HA restarted while syncing: area inactive 1.8 s after the restart command, long before HA stopped; the switch was off after the restart. Bridge key removed in the Hue app: `auth_failed` and reauth; after pairing again the next switch-on worked with all settings kept. The README automation (TV `off` to `on`) started Glowcast 2 ms after the TV turned on. |
+| TV in standby (#7) | With the TV in standby the `webostv` entry stays loaded and its `media_player` reads `off` for a few minutes, then `unavailable`; switching the TV on always passes `off` before `on`. The TV accepts the websocket and closes it at once with code 1008, which aiohttp reports as `WSMessageTypeError`, a `TypeError`: the source treats it as "not reachable". |
 | Not yet tested | Other DRM apps (Netflix etc.) and HDCP-protected HDMI sources may also return black frames. `executeOneShot` is undocumented and could disappear in a firmware update. |
 
 ## 3. Architecture: ports and adapters
@@ -213,7 +215,7 @@ The TV and bridge are fixed after setup (remove and re-add to change them). Savi
 
 ### 4.3 Entities
 
-One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). Off after an HA restart. The switch can be used in automations, dashboards and voice.
+One device "Glowcast <TV name>", linked to the TV's device with `via_device`, with one entity: **switch** (start/stop syncing). The switch is the device's main feature, so it has no name of its own and its id is `switch.glowcast_<tv name>`. Off after an HA restart (no state restore). The switch can be used in automations, dashboards and voice.
 
 Example automation (goes in the README):
 
@@ -242,10 +244,12 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 Failure handling:
 - **TV off:** `source.is_on()` false (after the source's own reconnect attempt), or 5 failed captures in a row after the startup grace: stop, release the lights, switch off.
 - **`OutputLost`** (stream dropped, bridge restarted, another app took over): one retry after 5 s if the bridge is free; otherwise stop, switch off, log why. Never fight for the area. **Recovery means: Glowcast stops cleanly and the next switch-on works.** A bridge reboot takes longer than the retry, so Glowcast stops; it does not wait for the bridge.
-- **`OutputBusy` / `OutputNotFound` / `OutputTooManyChannels` / `OutputUnavailable`:** do not start; switch off; log a clear message.
+- **`OutputBusy` / `OutputUnavailable`:** do not start; switch off; log a clear message.
+- **`OutputNotFound` / `OutputTooManyChannels`:** settings problems the user must fix: do not start, switch off, log, and raise a repair issue ("the entertainment area no longer exists; choose another one in Glowcast's settings" / "the entertainment area has more than 20 channels; choose or create a smaller area"). Cleared after the next successful start.
 - **`OutputAuthFailed`:** switch off and start reauth.
-- **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again.
-- **HA stops:** HA does not unload entries on shutdown, so a listener on `EVENT_HOMEASSISTANT_STOP` stops the pipeline and releases the lights.
+- **Referenced entry gone** (the `webostv` or `hue` entry with the stored unique id is removed or not loaded): checked before starting (and after a stop that may be caused by it); do not start, switch off, log clearly and raise a repair issue in HA explaining which integration to set up again. Cleared after the next successful start.
+- **Every stop reason** turns the switch off and is logged once (info for `USER` and `TV_OFF`, warning for the rest). Changing options while syncing restarts only the pipeline; that stop is not logged and the switch stays on.
+- **HA stops:** HA does not unload entries on shutdown. It first cancels all background tasks and then fires `EVENT_HOMEASSISTANT_STOP`, waiting for both (checked in HA's `core.py`, 2025.7 and 2026.10). Cancelling the pipeline's task makes it release the lights (its shielded cleanup, 3.5); a listener on `EVENT_HOMEASSISTANT_STOP` also stops it and waits for the release, as a backstop. The log says "Home Assistant is stopping".
 - **HA crashed while streaming:** the next start finds Glowcast's own stale stream, stops it and starts normally (3.4).
 
 ## 5. Configuration data model - built for growth
@@ -266,9 +270,11 @@ options = {     # everything the user can change in the settings screen
 The selectable output (type and its settings) lives entirely in `options`, so a later output type (loose lights, #9) can be chosen in the settings screen without a migration. Adapters are looked up in two small registries:
 
 ```python
-SOURCES = {"webos": WebOsFrameSource}
-OUTPUTS = {"hue_entertainment": HueEntertainmentOutput}
+SOURCES = {"webos": SourceType(create, is_missing, device_identifier)}      # sources/__init__.py
+OUTPUTS = {"hue_entertainment": OutputType(create, is_missing)}              # outputs/__init__.py
 ```
+
+Each adapter module provides these functions itself, so `__init__.py` and `switch.py` never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), and the source's `device_identifier(data)` names the TV's device for `via_device` (4.3).
 
 Config entry `VERSION = 1`, so later changes get a proper migration.
 

@@ -245,19 +245,25 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_save(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Store the new keys; all settings stay as they are."""
+        """Store the new keys; all settings stay as they are.
+
+        No reload: the entry has an update listener (#7), and the keys are read
+        from the entry at every start, so the next switch-on uses them.
+        """
         entry = self._get_reauth_entry()
         app_key, client_key = self._keys
-        return self.async_update_reload_and_abort(
+        self.hass.config_entries.async_update_entry(
             entry,
-            data_updates={
+            data={
+                **entry.data,
                 CONF_BRIDGE: {
                     **entry.data[CONF_BRIDGE],
                     CONF_APP_KEY: app_key,
                     CONF_CLIENT_KEY: client_key,
-                }
+                },
             },
         )
+        return self.async_abort(reason="reauth_successful")
 
     @callback
     def async_remove(self) -> None:
