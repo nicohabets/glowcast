@@ -592,6 +592,27 @@ async def test_setup_and_unload(hass: HomeAssistant) -> None:
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
+async def test_reauth_of_a_loaded_entry_does_not_reload_it(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The entry has an update listener (#7): reauth only stores the keys."""
+    entry = glowcast_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    FakeHueAPI.pair_results = [PAIRED]
+
+    result = await entry.start_reauth_flow(hass)
+    result = await press_and_wait(hass, result["flow_id"])
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data["bridge"]["app_key"] == "new-app-key"
+    assert entry.state is ConfigEntryState.LOADED
+    assert "should use it for scheduling a reload" not in caplog.text
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 def test_device_type_fits_the_bridge() -> None:
     """The bridge allows 20 characters before the # and 19 after."""
     device_type = _device_type("A very long television name #2")
