@@ -19,10 +19,15 @@ class OutputType:
     create: Callable[[HomeAssistant, Mapping[str, Any], Mapping[str, Any]], LightOutput]
     # Whether the integration entry the output uses is removed or not loaded.
     is_missing: Callable[[HomeAssistant, Mapping[str, Any]], bool]
+    # The device registry id of the device the output drives through (for
+    # example the bridge), for diagnostics.
+    device_id: Callable[[HomeAssistant, Mapping[str, Any]], str | None]
 
 
 OUTPUTS = {
     OUTPUT_HUE_ENTERTAINMENT: OutputType(
-        hue_entertainment.create, hue_entertainment.is_missing
+        hue_entertainment.create,
+        hue_entertainment.is_missing,
+        hue_entertainment.device_id,
     ),
 }

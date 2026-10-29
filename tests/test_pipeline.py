@@ -56,6 +56,7 @@ class Harness:
         self.source = FakeSource(self.clock, self.log)
         self.output = FakeOutput(self.clock, self.log)
         self.statuses: list[PipelineStatus] = []
+        self.status_times: list[float] = []
         self.status_error: Exception | None = None
         self.compute_error: Exception | None = None
         self.pipeline = Pipeline(
@@ -74,10 +75,12 @@ class Harness:
 
     @property
     def phases(self) -> list[Phase]:
-        return [s.phase for s in self.statuses]
+        """The changes of phase, without the updates of the captures per second."""
+        return [phase for phase, _ in itertools.groupby(s.phase for s in self.statuses)]
 
     def _on_status(self, status: PipelineStatus) -> None:
         self.statuses.append(status)
+        self.status_times.append(self.clock.now())
         if self.status_error is not None:
             raise self.status_error
 
@@ -564,7 +567,7 @@ async def test_status_reports_each_change_of_phase_in_order() -> None:
     await h.start()
     assert h.statuses == [PipelineStatus(Phase.STARTING)]
     await h.clock.advance(1)
-    assert h.statuses[-1] == PipelineStatus(Phase.STREAMING, channels=1)
+    assert h.statuses[1] == PipelineStatus(Phase.STREAMING, channels=1)
     await lose_stream(h)
     assert h.statuses[-1] == PipelineStatus(Phase.RETRYING, channels=1)
     await h.clock.advance(6)  # retried after 5 s
@@ -575,10 +578,50 @@ async def test_status_reports_each_change_of_phase_in_order() -> None:
         Phase.RETRYING,
         Phase.STREAMING,
         Phase.STOPPED,
-    ]  # once per change of phase, not per frame
-    assert h.statuses[-1] == PipelineStatus(
-        Phase.STOPPED, channels=1, stop_reason=StopReason.USER
-    )
+    ]
+    stopped = h.statuses[-1]
+    assert (stopped.phase, stopped.channels) == (Phase.STOPPED, 1)
+    assert stopped.stop_reason is StopReason.USER
+
+
+@pytest.mark.parametrize(
+    ("rate", "per_second"),
+    [(UpdateRate.LOW, 1), (UpdateRate.HIGH, 3), (UpdateRate.MAXIMUM, 4)],
+)
+async def test_streaming_reports_the_captures_per_second_once_a_second(
+    rate: UpdateRate, per_second: int
+) -> None:
+    h = Harness(rate=rate)
+    await h.start()
+    await h.clock.advance(10)
+    updates = [
+        (t, s)
+        for t, s in zip(h.status_times, h.statuses, strict=True)
+        if s.phase is Phase.STREAMING
+    ]
+    first, *measured = updates
+    assert first[1].captures_per_second is None  # not measured yet
+    assert 8 <= len(measured) <= 10  # about once per second, not per frame
+    times = [first[0]] + [t for t, _ in measured]
+    assert all(b - a >= 1.0 for a, b in itertools.pairwise(times))
+    for _, status in measured:
+        assert status.captures_per_second == pytest.approx(per_second, abs=0.3)
+    assert await h.stop() == StopReason.USER
+    last = measured[-1][1].captures_per_second
+    assert h.statuses[-1].captures_per_second == last  # kept after the stop
+
+
+async def test_failed_captures_lower_the_captures_per_second() -> None:
+    h = Harness(rate=UpdateRate.LOW)  # one capture per second
+    await h.start()
+    await h.clock.advance(3)
+    before = len(h.statuses)
+    h.source.frames = [SourceUnavailable("hiccup")] * 2
+    await h.clock.advance(4)
+    rates = [s.captures_per_second for s in h.statuses[before:]]
+    assert rates.count(0.0) == 2  # only the captures that delivered a frame count
+    assert rates[-1] == pytest.approx(1.0)
+    assert await h.stop() == StopReason.USER
 
 
 async def test_a_stop_before_the_lights_are_claimed_has_no_channels() -> None:
@@ -606,7 +649,7 @@ async def test_a_failing_status_callback_is_logged_and_does_not_stop(
     assert await h.stop() == StopReason.USER
     assert h.phases == [Phase.STARTING, Phase.STREAMING, Phase.STOPPED]
     assert h.log[-3:] == CLEANUP
-    assert caplog.text.count("Error in the status callback") == 3
+    assert caplog.text.count("Error in the status callback") == len(h.statuses)
 
 
 # Errors at start

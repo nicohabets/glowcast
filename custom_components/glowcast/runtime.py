@@ -93,6 +93,9 @@ class GlowcastData:
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
         if self._missing_reference(source_type.is_missing, output_type.is_missing):
+            # No pipeline ran; the repair issue says why. An earlier stop
+            # reason would be misleading now.
+            self._status = None
             self._notify()
             return
         pipeline = Pipeline(
@@ -175,12 +178,15 @@ class GlowcastData:
         """Keep the pipeline's status and react to it (architecture 4.4)."""
         if pipeline is not self._pipeline:
             return  # an old pipeline, for example after a restart
-        self._status = status
+        previous, self._status = self._status, status
         if status.phase is Phase.STREAMING:
-            # The lights were claimed: earlier problems are solved.
-            self.async_remove_issues()
-        elif status.phase is Phase.STOPPED and status.stop_reason is not None:
-            self._async_stopped(status.stop_reason)
+            # The lights were claimed: earlier problems are solved. Later
+            # streaming reports only update the captures per second.
+            if previous is None or previous.phase is not Phase.STREAMING:
+                self.async_remove_issues()
+        elif status.phase is Phase.STOPPED:
+            # The pipeline always gives a reason; without one, still turn off.
+            self._async_stopped(status.stop_reason or StopReason.OUTPUT_UNAVAILABLE)
 
     @callback
     def _async_stopped(self, reason: StopReason) -> None:

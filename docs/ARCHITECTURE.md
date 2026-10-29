@@ -176,7 +176,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
 - **Minimal glow:** then `out = c + max(0, 1 - m / g) × g × warm` per channel, with `m` the brightest component of `c`, `g = min(0.10, brightness)` and `warm = (1.0, 0.78, 0.50)`. On black this is the whole glow, `g × warm`: a dim warm white of about 2700K on the lights at 10 %. The glow is for dark channels: it gets smaller as the channel gets brighter and is gone once the brightest component reaches `g`, so bright, saturated colours stay pure, and the colour changes continuously during a fade (#43). While the glow is added, no component goes above `g`, so the result is never brighter than the brightness setting. Constants, not options. Examples: a black picture at 80 % gives (0.10, 0.078, 0.050); brightness 40 % and a red picture give (0.40, 0, 0); brightness 20 % and a blue picture give (0, 0, 0.20); brightness 50 % and an engine colour (0.10, 0, 0), so `c` = (0.05, 0, 0), give (0.10, 0.039, 0.025); brightness 3 % and black give (0.03, 0.0234, 0.015). Until #43 the glow was a floor per RGB component, `max(c, g × warm)`, which mixed warm white into every colour (a blue at 20 % became lilac). The level and the colour were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) too red, especially in a dark room, so the ratio is two steps cooler in sRGB.
 - **Hold on sudden black:** when the whole frame turns (almost) black after a picture, keep the last colours for 3.5 s before fading to the glow. "Whole frame black" uses the colour engine's black level and 5 % share over the whole frame (`is_black()` in 3.3's module), so a small bright element such as a TV's switch-off animation does not count as a picture. A TV being switched off shows such an animation for up to 3.0 s before it reports off (see "Verified facts"), so the lights go straight from the picture to their previous state; a genuinely black scene reaches the glow 3.5 s later. Starting on black shows the glow at once. The hold only changes colours, never when the pipeline stops. A constant, not an option (#39).
-- **Status:** a frozen `PipelineStatus` with the `phase`, the number of `channels` (0 until the lights are claimed) and the `stop_reason` (only when stopped). It is reported on every change of phase, not per frame: `STARTING` (waiting for the TV, then claiming the lights), `STREAMING` (the lights are claimed; also after a successful retry), `RETRYING` (the stream was lost, before the retry) and `STOPPED` (the lights are released; always the last report, exactly once, with the reason). A stop is only reported this way; there is no separate stop callback. The phases are an enum that can grow (a phase with the lights released while the switch stays on, #68); `STREAMING` says what the pipeline does, not what the switch shows. A callback that raises is logged and does not stop the pipeline.
+- **Status:** a frozen `PipelineStatus` with the `phase`, the number of `channels` (0 until the lights are claimed), the `stop_reason` (only when stopped) and the measured `captures_per_second` (frames delivered per second, counted in the capture loop from the end of one capture to the end of later ones; `None` until measured, kept after a stop). It is reported on every change of phase, and while streaming about once per second with a new `captures_per_second` (never per frame, so entities do not write their state 25 times per second): `STARTING` (waiting for the TV, then claiming the lights), `STREAMING` (the lights are claimed; also after a successful retry), `RETRYING` (the stream was lost, before the retry) and `STOPPED` (the lights are released; always the last report, exactly once, with the reason). A stop is only reported this way; there is no separate stop callback. The phases are an enum that can grow (a phase with the lights released while the switch stays on, #68); `STREAMING` says what the pipeline does, not what the switch shows. A callback that raises is logged and does not stop the pipeline.
 - **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
 
 ### 3.6 Update rate
@@ -205,7 +205,7 @@ Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
 - **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
-- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Redact it in diagnostics. The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` shows a persistent notification with the steps in the Hue app (the same as in the README).
+- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Diagnostics never include it (4.4). The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` shows a persistent notification with the steps in the Hue app (the same as in the README).
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
 ### 4.2 Options (the settings screen)
@@ -249,6 +249,7 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 | Reading the settings from `options` into `Settings` (defaults from `const.py` for missing keys) and writing them back; used by the setup flow, the options flow and the pipeline start | `settings.py` | #63 |
 | The base entity: `has_entity_name`, the device "Glowcast <TV name>" with its link to the TV's device (`via_device_id` on newer HA, `via_device` on 2025.7.2), following the runtime's listener | `entity.py` | #63 |
 | Switch entity | `switch.py` | #7 |
+| Diagnostics (`async_get_config_entry_diagnostics`), read through `entry.runtime_data` and the entry: the versions (Glowcast and the manifest's requirements, installed), the settings, the source and output type with the model, manufacturer and software version of their devices (through `device_id` in `SOURCES` and `OUTPUTS`), whether it syncs, the last `PipelineStatus` (cleared when a start is refused because the TV or bridge is not set up) and the entry's active repair issues. Works while the entry is not loaded (no status then). Bug reports are public, so no stored value of the entry is included: only its shape (each key with the type of its value), so a key a later source or output type adds cannot leak, and generic code needs no list of each type's secret keys. Devices show only manufacturer, model and software version, never a name or serial number; `async_redact_data` (hosts, titles, serial numbers) is a backstop | `diagnostics.py` | #21 |
 | Removing the entry: delete its repair issues and show one persistent notification (`glowcast_bridge_app_left_<entry id>`) on how to remove Glowcast's app in the Hue app, in Home Assistant's server language; nothing on reload or restart | `__init__.py` | #50 |
 | Pipeline behaviour (start order, sub-tasks, failure handling, the status and its phases, stop reasons); fading, hold on black and glow | `core/pipeline.py`; `core/light_state.py` | #5, #64, #65 |
 
@@ -281,11 +282,11 @@ options = {     # everything the user can change in the settings screen
 The selectable output (type and its settings) lives entirely in `options`, so a later output type (loose lights, #9) can be chosen in the settings screen without a migration. Adapters are looked up in two small registries:
 
 ```python
-SOURCES = {"webos": SourceType(create, is_missing, device_identifier)}      # sources/__init__.py
-OUTPUTS = {"hue_entertainment": OutputType(create, is_missing)}              # outputs/__init__.py
+SOURCES = {"webos": SourceType(create, is_missing, device_identifier, device_id)}  # sources/__init__.py
+OUTPUTS = {"hue_entertainment": OutputType(create, is_missing, device_id)}         # outputs/__init__.py
 ```
 
-Each adapter module provides these functions itself, so the runtime and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), and the source's `device_identifier(data)` names the TV's device for `via_device` (4.3).
+Each adapter module provides these functions itself, so the runtime and the entities never read a source's or output's keys: `create(hass, data, options)` builds the adapter, `is_missing(hass, data)` says whether the referenced `webostv` or `hue` entry is removed or not loaded (4.4), the source's `device_identifier(data)` names the TV's device for `via_device` (4.3), and `device_id(hass, data)` finds the device of the TV or the bridge in Home Assistant's device registry (for `via_device_id` and diagnostics).
 
 Config entry `VERSION = 1`. The versioning rule:
 - **New types need no migration.** A new source or output type is a new value of `type` in its block (D5, D16).
@@ -302,6 +303,7 @@ custom_components/glowcast/
   runtime.py               # GlowcastData: runs the pipeline, reacts to stop reasons, repair issues
   settings.py              # options <-> Settings, with defaults for missing keys
   entity.py                # base entity: the device and the runtime's listener
+  diagnostics.py           # the diagnostics download, redacted
   switch.py
   translations/en.json  translations/nl.json
   brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
@@ -317,6 +319,7 @@ tests/
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
   test_config_flow.py      # setup, options and reauth, including error cases
   test_settings.py         # reading and writing the settings
+  test_diagnostics.py      # the download, and that it has no secrets or names
   test_webos_source.py  test_hue_output.py  test_manifest.py
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
