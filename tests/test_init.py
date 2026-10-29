@@ -491,6 +491,19 @@ async def test_switching_off_during_a_restart_keeps_the_stop(
     assert data.status == FakePipeline.stopped(StopReason.USER)
 
 
+async def test_a_stop_without_a_reason_still_turns_the_switch_off(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    pipeline = FakePipeline.instances[-1]
+    pipeline.on_status(PipelineStatus(Phase.STOPPED))
+    await settle(hass)
+    assert state(hass) == STATE_OFF
+    pipeline.stop()  # the fake itself still runs
+    await settle(hass)
+
+
 async def test_auth_failed_starts_reauth(hass: HomeAssistant, fakes: Fakes) -> None:
     await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
@@ -572,6 +585,8 @@ async def test_tv_or_bridge_gone_from_ha(
     assert state(hass) == STATE_OFF
     assert FakePipeline.instances == []  # nothing was started
     assert issues(hass, entry) == {issue}
+
+    assert entry.runtime_data.status is None  # no pipeline ran
 
     setattr(fakes, missing, False)
     await switch(hass, SERVICE_TURN_ON)

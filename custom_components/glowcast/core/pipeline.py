@@ -57,7 +57,7 @@ class StopReason(StrEnum):
 
 
 class Phase(StrEnum):
-    """What the pipeline is doing; reported on every change."""
+    """What the pipeline is doing; every change is reported."""
 
     STARTING = "starting"  # waiting for the TV, then claiming the lights
     STREAMING = "streaming"  # the lights follow the picture
@@ -153,8 +153,9 @@ class Pipeline:
     ) -> None:
         """Initialize; nothing happens until run().
 
-        `on_status` is called on the event loop on every change of phase; the
-        last call is always the stop, with its reason.
+        `on_status` is called on the event loop on every change of phase, and
+        while streaming about once per second with new captures per second
+        (the same phase); the last call is always the stop, with its reason.
         """
         self._source = source
         self._output = output

@@ -281,11 +281,97 @@ async def test_no_secrets_or_names_anywhere_in_the_download(
     # Glowcast's part; Home Assistant's system info has version numbers that
     # look like addresses (the kernel's, for example).
     assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", json.dumps(download["data"]))
-    entry_data = download["data"]["entry"]
-    assert entry_data["title"] == "**REDACTED**"
-    assert entry_data["data"]["bridge"] == {
-        "unique_id": "**REDACTED**",
-        "app_key": "**REDACTED**",
-        "client_key": "**REDACTED**",
+    # The stored entry shows its shape, never its values.
+    stored = download["data"]["entry"]["stored"]
+    assert stored["data"]["bridge"] == {
+        "unique_id": "str",
+        "app_key": "str",
+        "client_key": "str",
     }
-    assert entry_data["options"]["output"]["area_id"] == "**REDACTED**"
+    assert stored["options"]["output"] == {"type": "str", "area_id": "str"}
+    assert download["data"]["repair_issues"] == ["area_not_found"]
+
+
+async def test_a_key_a_later_type_adds_does_not_leak(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    """Nothing is redacted by key name, so an unknown key cannot slip through."""
+    options = dict(entry.options)
+    options["output"] = {
+        **options["output"],
+        "lights": [{"entity_id": "light.annas_bedroom", "name": AREA_NAME}],
+    }
+    hass.config_entries.async_update_entry(entry, options=options)
+    await hass.async_block_till_done()
+    download = await _get_diagnostics_for_config_entry(hass, hass_client, entry)
+    text = json.dumps(download)
+    assert "annas_bedroom" not in text
+    assert AREA_NAME not in text
+    assert download["data"]["entry"]["stored"]["options"]["output"]["lights"] == "list"
+
+
+async def test_the_download_while_the_entry_is_not_loaded(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    await sync_until_measured(entry)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["syncing"] is False
+    assert diagnostics["status"] is None
+    assert diagnostics["versions"]["glowcast"] == "0.1.1"
+    assert await hass.config_entries.async_setup(entry.entry_id)  # for teardown
+
+
+async def test_a_refused_start_does_not_show_the_previous_stop(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    entry: Any,
+    lights: Lights,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await sync_until_measured(entry)
+    lights.sources[-1].on = False
+    await wait_for(lambda: not entry.runtime_data.is_on)
+    monkeypatch.setitem(
+        OUTPUTS,
+        "hue_entertainment",
+        dataclasses.replace(OUTPUTS["hue_entertainment"], is_missing=lambda h, d: True),
+    )
+    await entry.runtime_data.async_start()  # the bridge is gone from HA
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["status"] is None
+    assert diagnostics["repair_issues"] == ["output_missing"]
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [BRIDGE_ID.upper(), "6c0b2f7a-3d1e-4a5b-9c8d-7e6f5a4b3c2d"],
+    ids=["in other case", "another identifier"],
+)
+async def test_the_bridge_is_found_however_hue_names_it(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    entry: Any,
+    identifier: str,
+) -> None:
+    registry = dr.async_get(hass)
+    bridge = registry.async_get(
+        OUTPUTS["hue_entertainment"].device_id(hass, entry.data)
+    )
+    hue_entry_id = hass.config_entries.async_entry_for_domain_unique_id(
+        "hue", BRIDGE_ID
+    ).entry_id
+    registry.async_remove_device(bridge.id)
+    bridge = registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", identifier)},
+        model="Hue Bridge Pro",
+    )
+    light = registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", "light-resource-id")},
+        model="Hue gradient lightstrip",
+    )
+    registry.async_update_device(light.id, via_device_id=bridge.id)
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["output"]["device"]["model"] == "Hue Bridge Pro"

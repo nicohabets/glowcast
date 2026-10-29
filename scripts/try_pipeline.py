@@ -14,6 +14,7 @@ and GLOWCAST_HUE_AREA_ID.
 
 import argparse
 import asyncio
+import itertools
 import os
 import sys
 import tempfile
@@ -156,9 +157,15 @@ async def main(args: argparse.Namespace) -> None:
                 await task
             end = time.perf_counter()
 
-            print(f"phases: {', '.join(status.phase for status in statuses)}")
-            reason = statuses[-1].stop_reason if statuses else None
-            print(f"stop reason: {reason or 'none'}")
+            # Streaming is reported again every second with a new rate.
+            phases = [
+                phase for phase, _ in itertools.groupby(s.phase for s in statuses)
+            ]
+            print(f"phases: {', '.join(phases)}")
+            last = statuses[-1] if statuses else None
+            print(f"stop reason: {last.stop_reason if last else 'none'}")
+            if last is not None and last.captures_per_second is not None:
+                print(f"last measured: {last.captures_per_second} captures per second")
             if output.first_send is not None:
                 streamed = end - output.first_send
                 print(f"start to first send: {output.first_send - begin:.2f}s")

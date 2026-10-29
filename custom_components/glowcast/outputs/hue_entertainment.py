@@ -264,7 +264,9 @@ def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     """The bridge's device id in Home Assistant's device registry, if it exists.
 
     The hue integration gives the bridge's device the bridge id, which is also
-    its entry's unique id, as an identifier.
+    its entry's unique id, as an identifier (compared without case). If that
+    ever differs, the bridge is the entry's one device that is not linked
+    through another device: every light and sensor is linked through it.
     """
     bridge_unique_id = data[CONF_BRIDGE][CONF_UNIQUE_ID]
     entry = hass.config_entries.async_entry_for_domain_unique_id(
@@ -272,10 +274,15 @@ def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     )
     if entry is None:
         return None
-    for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id):
-        if (HUE_DOMAIN, bridge_unique_id) in device.identifiers:
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    for device in devices:
+        if any(
+            domain == HUE_DOMAIN and identifier.lower() == bridge_unique_id.lower()
+            for domain, identifier in device.identifiers
+        ):
             return device.id
-    return None
+    roots = [device for device in devices if device.via_device_id is None]
+    return roots[0].id if len(roots) == 1 else None
 
 
 def bridges(hass: HomeAssistant) -> dict[str, str]:
