@@ -213,3 +213,15 @@ def test_resume_does_not_stretch_the_next_fade_over_the_gap() -> None:
     lights.set_target(target(BLUE), False, 7.0)  # 6 s later, after the retry
     assert rgb_at(lights, 7.5) == approx_rgb((0.50, 0.0, 0.50))
     assert rgb_at(lights, 8.0) == approx_rgb(BLUE)
+
+
+def test_skip_keeps_the_colours_and_does_not_stretch_the_next_fade() -> None:
+    lights = LightState()
+    lights.set_target(target(RED), False, 0.0)
+    lights.set_target(target(RED), False, 1.0)  # measured interval: 1 s
+    for now in (2.0, 3.0):  # frames without a picture (#68)
+        lights.skip(now)
+        assert rgb_at(lights, now) == approx_rgb(RED_SENT)
+    lights.set_target(target(BLUE), False, 4.0)
+    assert rgb_at(lights, 4.5) == approx_rgb((0.50, 0.0, 0.50))
+    assert rgb_at(lights, 5.0) == approx_rgb(BLUE)

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
-from .color_engine import compute, is_black
+from .color_engine import compute, is_all_zero, is_black
 from .light_state import LightState
 from .models import Channel, ChannelColor, Frame
 from .ports import (
@@ -38,6 +38,10 @@ LOST_RETRY_DELAY = 5.0
 LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
 CAPTURE_RATE_WINDOW = 1.0  # seconds; the captures per second are reported this often
+# Release the lights after this long of all-zero frames (no picture, as from a
+# protected app); shorter all-zero moments at a hard cut or an input switch
+# lasted under 2 s (measured, see "Verified facts").
+NO_PICTURE_WAIT = 3.0
 
 Runner = Callable[..., Awaitable[Any]]
 
@@ -62,6 +66,7 @@ class Phase(StrEnum):
     STARTING = "starting"  # waiting for the TV, then claiming the lights
     STREAMING = "streaming"  # the lights follow the picture
     RETRYING = "retrying"  # the stream was lost; claiming the lights again
+    NO_PICTURE = "no_picture"  # the TV shows no picture; the lights are released
     STOPPED = "stopped"  # finished; the lights are released
 
 
@@ -130,6 +135,10 @@ class _Stop(Exception):
         self.reason = reason
 
 
+class _NoPicture(Exception):
+    """The frames have been all zero for NO_PICTURE_WAIT: release the lights."""
+
+
 _START_ERRORS: dict[type[Exception], StopReason] = {
     OutputBusy: StopReason.OUTPUT_BUSY,
     OutputNotFound: StopReason.OUTPUT_NOT_FOUND,
@@ -168,6 +177,8 @@ class Pipeline:
         self._lights = LightState()
         self._retried_at: float | None = None
         self._captures_per_second: float | None = None
+        self._failures = 0  # captures in a row that failed
+        self._no_picture_since: float | None = None
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the stop once.
@@ -214,12 +225,22 @@ class Pipeline:
             if frame is None:
                 _LOGGER.info("The TV did not come up within the startup grace")
                 return StopReason.TV_OFF
-            self._channels = await self._async_start_output()
-            self._report(Phase.STREAMING)
+            if await self._async_run_job(is_all_zero, frame):
+                # Nothing is claimed yet, so there is nothing to wait for.
+                frame = await self._async_without_lights()
+            else:
+                self._channels = await self._async_start_output()
+                self._report(Phase.STREAMING)
             await self._async_set_target(frame)
             while True:
                 try:
                     await self._async_stream()
+                except _NoPicture:
+                    _LOGGER.info("The TV shows no picture; releasing the lights")
+                    await self._async_release_output()
+                    self._channels = []
+                    frame = await self._async_without_lights()
+                    await self._async_set_target(frame)
                 except OutputLost as err:
                     if (
                         self._retried_at is not None
@@ -312,6 +333,32 @@ class Pipeline:
         self._lights.resume({channel.id for channel in channels})
         self._report(Phase.STREAMING)
 
+    async def _async_without_lights(self) -> Frame:
+        """Report NO_PICTURE and capture until there is a picture again, then
+        claim the lights as at switch-on. Returns the frame with the picture.
+
+        Only a frame that is not black by the whole-frame rule claims them, so
+        subtitles, player controls or a switch-off animation over no picture
+        do not; each claim costs the bridge's handshake.
+        """
+        self._report(Phase.NO_PICTURE)
+        while True:
+            begin = self._clock.now()
+            if not self._source.is_on():
+                _LOGGER.info("The TV reports that it is off")
+                raise _Stop(StopReason.TV_OFF)
+            frame = await self._async_unless_stopped(self._async_capture())
+            if frame is not None and not await self._async_run_job(is_black, frame):
+                break
+            await self._async_unless_stopped(self._async_pace(begin))
+        _LOGGER.info("The picture is back; claiming the lights again")
+        self._channels = await self._async_unless_stopped(self._async_start_output())
+        # Start afresh: the first colour is shown at once, as at a start.
+        self._lights = LightState()
+        self._no_picture_since = None
+        self._report(Phase.STREAMING)
+        return frame
+
     async def _async_unless_stopped(self, awaitable: Awaitable[Any]) -> Any:
         """Await something, but give up with USER as soon as stop() is called."""
         work = asyncio.ensure_future(awaitable)
@@ -352,25 +399,13 @@ class Pipeline:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _async_capture_loop(self) -> None:
-        failures = 0
         # Captures per second, from the end of the first capture to the end of
         # each later one, over at least CAPTURE_RATE_WINDOW.
         captures = 0
         window_start: float | None = None
         while True:
             begin = self._clock.now()
-            try:
-                frame = await self._source.capture()
-            except SourceUnavailable:
-                failures += 1
-                if failures >= MAX_CAPTURE_FAILURES:
-                    _LOGGER.info("%d captures in a row failed", failures)
-                    raise _Stop(StopReason.TV_OFF) from None
-            except Exception as err:
-                _LOGGER.exception("Unexpected error from the TV source")
-                raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
-            else:
-                failures = 0
+            if (frame := await self._async_capture()) is not None:
                 captures += 1
                 await self._async_set_target(frame)
             now = self._clock.now()
@@ -380,9 +415,29 @@ class Pipeline:
                 self._captures_per_second = round(captures / elapsed, 2)
                 self._report(Phase.STREAMING)
                 captures, window_start = 0, now
-            # Read on every capture: the update rate can change while streaming.
-            interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
-            await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
+            await self._async_pace(begin)
+
+    async def _async_capture(self) -> Frame | None:
+        """One capture, or None if it failed; too many failures in a row stop."""
+        try:
+            frame = await self._source.capture()
+        except SourceUnavailable:
+            self._failures += 1
+            if self._failures >= MAX_CAPTURE_FAILURES:
+                _LOGGER.info("%d captures in a row failed", self._failures)
+                raise _Stop(StopReason.TV_OFF) from None
+            return None
+        except Exception as err:
+            _LOGGER.exception("Unexpected error from the TV source")
+            raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
+        self._failures = 0
+        return frame
+
+    async def _async_pace(self, begin: float) -> None:
+        """Wait until the next capture is due after one that began at `begin`."""
+        # Read on every capture: the update rate can change while streaming.
+        interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
+        await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
 
     async def _async_send_loop(self) -> None:
         tick = 1 / self._output.max_rate_hz
@@ -416,14 +471,29 @@ class Pipeline:
                     await check
 
     async def _async_set_target(self, frame: Frame) -> None:
+        """Give the lights the frame's colours; raise _NoPicture after all-zero
+        frames for NO_PICTURE_WAIT, during which the lights keep their colours."""
+        colors, frame_black, no_picture = await self._async_run_job(
+            _compute, frame, self._channels, self._settings.intensity / 100
+        )
+        now = self._clock.now()
+        if not no_picture:
+            self._no_picture_since = None
+            self._lights.set_target(colors, frame_black, now)
+            return
+        if self._no_picture_since is None:
+            self._no_picture_since = now
+        if now - self._no_picture_since >= NO_PICTURE_WAIT:
+            raise _NoPicture
+        self._lights.skip(now)
+
+    async def _async_run_job(self, func: Callable[..., Any], *args: Any) -> Any:
+        """Run the colour engine's work in the executor."""
         try:
-            colors, frame_black = await self._runner(
-                _compute, frame, self._channels, self._settings.intensity / 100
-            )
+            return await self._runner(func, *args)
         except Exception as err:
             _LOGGER.exception("Unexpected error computing the colours")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
-        self._lights.set_target(colors, frame_black, self._clock.now())
 
     async def _async_cleanup(self) -> None:
         """Release everything, in order, whatever happened."""
@@ -445,9 +515,9 @@ class Pipeline:
 
 def _compute(
     frame: Frame, channels: list[Channel], intensity: float
-) -> tuple[list[ChannelColor], bool]:
+) -> tuple[list[ChannelColor], bool, bool]:
     """The colour engine's work for one frame, in one executor job."""
-    return compute(frame, channels, intensity), is_black(frame)
+    return compute(frame, channels, intensity), is_black(frame), is_all_zero(frame)
 
 
 def _raise_check_result(check: asyncio.Task[None]) -> None:
