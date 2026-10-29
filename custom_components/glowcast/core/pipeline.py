@@ -342,6 +342,7 @@ class Pipeline:
         do not; each claim costs the bridge's handshake.
         """
         self._report(Phase.NO_PICTURE)
+        self._failures = 0
         while True:
             begin = self._clock.now()
             if not self._source.is_on():
@@ -392,13 +393,14 @@ class Pipeline:
             if stop in done:
                 raise _Stop(StopReason.USER)
             for task in done:
-                task.result()  # raises _Stop or OutputLost
+                task.result()  # raises _Stop, OutputLost or _NoPicture
         finally:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _async_capture_loop(self) -> None:
+        self._failures = 0
         # Captures per second, from the end of the first capture to the end of
         # each later one, over at least CAPTURE_RATE_WINDOW.
         captures = 0
