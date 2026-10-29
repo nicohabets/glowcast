@@ -8,6 +8,10 @@
 
 **Let your Philips Hue lights follow what's on your LG webOS TV - no subscription, no HDMI box, nothing leaves your home.**
 
+<img width="400" alt="An illustrated living room: the picture on the TV changes colour and the light strip and lamps follow it." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-1-picture-leads-loop.webp">
+
+*The picture changes; a moment later the lights around the TV and in the room follow it.*
+
 <!-- PHOTO OF THE LIGHTS (#87): the product owner adds a photo or short animation here of a TV with the lights following the picture, as docs/images/lights.jpg (or .gif / .webp, under about 5 MB), in the same form as the images below: an img with width="400", alt text and an absolute raw.githubusercontent.com URL, then a one-line caption in italics. -->
 
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
@@ -30,6 +34,18 @@ LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-
 4. The colours go to the Hue Bridge: Glowcast streams to an entertainment area you set up in the Hue app, up to 25 times per second, fading smoothly between frames. Lights use the positions you gave them in the Hue app, left/right and floor/ceiling. A gradient lightstrip shows several colours along its length.
 
 Everything stays on your local network.
+
+<img width="400" alt="The same room with a dark picture on the TV: the lights glow dim and warm instead of going off." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-2-dark-scene-800.png">
+
+*When the picture is dark, the lights keep a dim warm glow instead of going off.*
+
+<img width="400" alt="The same room with a red picture on the TV: the light strip and lamps show the same pure red." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-3-saturated-colour-800.png">
+
+*A strong colour on the screen shows as that pure colour on the lights, not mixed with white.*
+
+<img width="400" alt="The same room with extra lamps beside the sofa, each following its own side of the picture." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/illustrations/scene-4-loose-lights-800.png">
+
+*Coming in v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps outside the entertainment area will each follow their own side of the picture; today only the entertainment area follows it.*
 
 ## Requirements
 
