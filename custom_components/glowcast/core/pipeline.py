@@ -75,10 +75,13 @@ class PipelineStatus:
     """What the pipeline reports through its status callback."""
 
     phase: Phase
-    channels: int = 0  # the number of channels, once the lights are claimed
+    # The number of channels while the lights are claimed; 0 before and once
+    # they are released.
+    channels: int = 0
     stop_reason: StopReason | None = None  # only when stopped
     # Frames delivered per second, measured while streaming; kept after a
-    # stop. None until the first measurement.
+    # stop. None until the first measurement, and again once the lights are
+    # released for a retry or for no picture.
     captures_per_second: float | None = None
 
 
@@ -202,6 +205,7 @@ class Pipeline:
                 await asyncio.shield(cleanup)
             except asyncio.CancelledError:
                 cancelled = True
+        self._channels = []
         _LOGGER.info("Glowcast stopped: %s", reason)
         self._report(Phase.STOPPED, reason)
         if cancelled:
@@ -238,7 +242,6 @@ class Pipeline:
                 except _NoPicture:
                     _LOGGER.info("The TV shows no picture; releasing the lights")
                     await self._async_release_output()
-                    self._channels = []
                     frame = await self._async_without_lights()
                     await self._async_set_target(frame)
                 except OutputLost as err:
@@ -381,6 +384,9 @@ class Pipeline:
             await self._output.stop()
         with suppress(Exception):
             await self._output.close()
+        # Released for a retry or for no picture: measured again on the next stream.
+        self._channels = []
+        self._captures_per_second = None
 
     async def _async_stream(self) -> None:
         """Run the capture and send loops until one of them ends the run."""

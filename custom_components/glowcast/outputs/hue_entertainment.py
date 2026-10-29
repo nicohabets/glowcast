@@ -10,7 +10,6 @@ from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_API_VERSION, CONF_HOST
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.translation import async_get_translations
 from hue_entertainment import EntertainmentSession, HueEntertainmentAPI
@@ -26,6 +25,7 @@ from ..core.ports import (
     OutputTooManyChannels,
     OutputUnavailable,
 )
+from ..devices import entry_devices
 from ..issues import Issue
 
 _LOGGER = logging.getLogger(__name__)
@@ -300,12 +300,7 @@ def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     through another device: every light and sensor is linked through it.
     """
     bridge_unique_id = data[CONF_BRIDGE][CONF_UNIQUE_ID]
-    entry = hass.config_entries.async_entry_for_domain_unique_id(
-        HUE_DOMAIN, bridge_unique_id
-    )
-    if entry is None:
-        return None
-    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    devices = entry_devices(hass, HUE_DOMAIN, bridge_unique_id)
     for device in devices:
         if any(
             domain == HUE_DOMAIN and identifier.lower() == bridge_unique_id.lower()

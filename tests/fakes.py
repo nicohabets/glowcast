@@ -1,6 +1,7 @@
 """Fakes shared by the pipeline tests and the Home Assistant tests.
 
-No Home Assistant imports (architecture D13). The source and the output take
+No Home Assistant imports (architecture D13); the fixtures that put these
+fakes into Home Assistant are in conftest.py. The source and the output take
 any clock: the pipeline tests pass a FakeClock, the Home Assistant tests the
 real one.
 """
@@ -8,10 +9,18 @@ real one.
 import asyncio
 import heapq
 import itertools
+from collections.abc import Callable
 from typing import Any
 
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
-from custom_components.glowcast.core.pipeline import Clock
+from custom_components.glowcast.core.pipeline import (
+    Clock,
+    MonotonicClock,
+    Phase,
+    PipelineStatus,
+    Settings,
+    StopReason,
+)
 from custom_components.glowcast.core.ports import SourceUnavailable
 
 RED = (255, 0, 0)
@@ -31,6 +40,15 @@ def solid(rgb: tuple[int, int, int]) -> Frame:
 async def settle() -> None:
     for _ in range(20):
         await asyncio.sleep(0)
+
+
+async def wait_for(condition: Callable[[], Any], limit: float = 2.0) -> None:
+    """Wait until `condition()` holds; the real pipeline runs on the real clock."""
+    for _ in range(round(limit / 0.01)):
+        if condition():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"not reached within {limit} s")
 
 
 class FakeClock:
@@ -114,10 +132,17 @@ class FakeOutput:
 
     max_rate_hz = 25.0
 
-    def __init__(self, clock: Clock, log: list[str], slow_stop: bool = False) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        log: list[str],
+        slow_stop: bool = False,
+        channels: list[Channel] | None = None,
+    ) -> None:
         self.clock = clock
         self.log = log
         self.slow_stop = slow_stop
+        self.channels = [CHANNEL] if channels is None else channels
         self.start_errors: list[Any] = []  # None, an exception, or "hang"
         self.check_error: Exception | None = None
         self.check_hangs = False
@@ -130,7 +155,7 @@ class FakeOutput:
             if error == "hang":
                 await asyncio.Event().wait()
             raise error
-        return [CHANNEL]
+        return list(self.channels)
 
     def send(self, colors: list[ChannelColor]) -> None:
         self.sent.append((self.clock.now(), colors))
@@ -152,3 +177,99 @@ class FakeOutput:
 
     def rgb_at(self, index: int) -> tuple[float, float, float]:
         return self.sent[index][1][0].rgb
+
+
+class FakeAdapters:
+    """The TV and the lights the source and output types build, on the real clock.
+
+    `source_missing` and `output_missing` say whether the integration each
+    one uses is set up; `channels` are the lights the outputs claim.
+    """
+
+    def __init__(self) -> None:
+        self.log: list[str] = []
+        self.source_missing = False
+        self.output_missing = False
+        self.channels = [CHANNEL]
+        self.sources: list[FakeSource] = []
+        self.outputs: list[FakeOutput] = []
+
+    def source(self) -> FakeSource:
+        source = FakeSource(MonotonicClock(), self.log, capture_time=0)
+        self.sources.append(source)
+        return source
+
+    def output(self) -> FakeOutput:
+        output = FakeOutput(
+            MonotonicClock(), self.log, slow_stop=True, channels=self.channels
+        )
+        self.outputs.append(output)
+        return output
+
+
+class FakePipeline:
+    """Uses the source and output like the real pipeline, without timing.
+
+    `start_error` makes the next pipeline stop before the lights are claimed;
+    finish() makes a running one stop by itself.
+    """
+
+    instances: list["FakePipeline"] = []
+    start_error: StopReason | None = None
+
+    def __init__(
+        self,
+        source: FakeSource,
+        output: Any,
+        settings: Any,
+        runner: Any,
+        clock: Any,
+        on_status: Any,
+    ) -> None:
+        self.source = source
+        self.output = output
+        self.settings = settings
+        self.runner = runner
+        self.on_status = on_status
+        self.reason = StopReason.USER
+        self.updates: list[Settings] = []
+        self._stop = asyncio.Event()
+        FakePipeline.instances.append(self)
+
+    async def run(self) -> None:
+        self.on_status(PipelineStatus(Phase.STARTING))
+        try:
+            await self.source.start()
+            if (error := FakePipeline.start_error) is not None:
+                FakePipeline.start_error = None
+                self.reason = error
+            else:
+                await self.output.start()
+                self.on_status(PipelineStatus(Phase.STREAMING, channels=1))
+                await self._stop.wait()
+        except asyncio.CancelledError:
+            # Like the real pipeline: release, report USER, re-raise.
+            await asyncio.shield(self._release())
+            self.on_status(self.stopped(StopReason.USER))
+            raise
+        await self._release()
+        self.on_status(self.stopped(self.reason))
+
+    @staticmethod
+    def stopped(reason: StopReason) -> PipelineStatus:
+        return PipelineStatus(Phase.STOPPED, stop_reason=reason)
+
+    async def _release(self) -> None:
+        await self.output.stop()
+        await self.output.close()
+        await self.source.close()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def update_settings(self, settings: Settings) -> None:
+        self.updates.append(settings)
+
+    def finish(self, reason: StopReason) -> None:
+        self.reason = reason
+        self._stop.set()
