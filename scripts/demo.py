@@ -1,4 +1,4 @@
-"""A local Home Assistant with Glowcast from the working copy, for screenshots.
+"""A local Home Assistant with Glowcast from the working copy, for review GIFs.
 
 Nothing in it reaches a real TV or bridge: stub hue and webostv integrations
 report their entries as loaded, a fake bridge on 127.0.0.1 answers the setup
@@ -7,7 +7,8 @@ any discovery integration. See scripts/README.md.
 
 Usage:
     python scripts/demo.py start
-    python scripts/demo.py shoot [--lang en|nl] [--theme light|dark] [--out DIR]
+    python scripts/demo.py record [FLOW ...] [--lang en|nl] [--theme light|dark]
+                                  [--still] [--out DIR]
     python scripts/demo.py stop
     python scripts/demo.py clean
 
@@ -36,7 +37,8 @@ HOME = Path.home() / ".cache" / "glowcast-demo"
 VENV = HOME / "venv"
 CONFIG = HOME / "config"
 RUN = HOME / "run"
-SCREENSHOTS = HOME / "screenshots"
+RECORDINGS = HOME / "recordings"
+FLOWS = ["setup", "settings", "device"]  # the flows in demo/record.py
 
 HA_PORT = 8199
 BRIDGE_PORT = 8443
@@ -50,6 +52,7 @@ REQUIREMENTS = [
     "aiowebostv==0.10.0",
     "hue-entertainment==0.1.2",
     "playwright==1.64.1",
+    "imageio-ffmpeg==0.6.0",  # ffmpeg for the GIFs, without a system install
 ]
 PYTHON = (3, 14, 2)
 
@@ -94,18 +97,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("start", help="start Home Assistant and the fake bridge")
-    shoot = commands.add_parser("shoot", help="make the screenshots")
-    shoot.add_argument("--lang", choices=["en", "nl"], default="en")
-    shoot.add_argument("--theme", choices=["light", "dark"], default="light")
-    shoot.add_argument("--out", type=Path, default=SCREENSHOTS)
+    record = commands.add_parser("record", help="record GIFs of the flows")
+    record.add_argument("flows", nargs="*", choices=FLOWS, metavar="FLOW")
+    record.add_argument("--lang", choices=["en", "nl"], default="en")
+    record.add_argument("--theme", choices=["light", "dark"], default="light")
+    record.add_argument(
+        "--still", action="store_true", help="a PNG of each step instead of a GIF"
+    )
+    record.add_argument("--out", type=Path, default=RECORDINGS)
     commands.add_parser("stop", help="stop Home Assistant and the fake bridge")
     commands.add_parser("clean", help="stop and remove everything the demo made")
     args = parser.parse_args()
 
     if args.command == "start":
         start()
-    elif args.command == "shoot":
-        shoot_screens(args.lang, args.theme, args.out)
+    elif args.command == "record":
+        record_flows(args)
     elif args.command == "stop":
         stop()
     else:
@@ -132,19 +139,25 @@ def start() -> None:
     _check_isolated(token)
     print(
         f"Ready: {HA_URL} (user {USERNAME!r}, password {PASSWORD!r}).\n"
-        "Glowcast is not set up yet; `shoot` runs the setup flow."
+        "Glowcast is not set up yet; `record` runs the setup flow."
     )
 
 
-def shoot_screens(lang: str, theme: str, out: Path) -> None:
-    """Run the screenshot script in the demo's environment."""
+def record_flows(args: argparse.Namespace) -> None:
+    """Run the recording script in the demo's environment."""
     if not _running():
         sys.exit("The demo is not running; run `start` first.")
-    out.mkdir(parents=True, exist_ok=True)
+    started_from = (CONFIG / "custom_components" / "glowcast").resolve()
+    if started_from != (REPO / "custom_components" / "glowcast").resolve():
+        sys.exit(
+            f"The running demo uses Glowcast from {started_from}; "
+            "run `stop`, then `start` from this working copy."
+        )
+    args.out.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
         [
             str(_python()),
-            str(DEMO / "shoot.py"),
+            str(DEMO / "record.py"),
             "--url",
             HA_URL,
             "--bridge",
@@ -154,11 +167,13 @@ def shoot_screens(lang: str, theme: str, out: Path) -> None:
             "--password",
             PASSWORD,
             "--lang",
-            lang,
+            args.lang,
             "--theme",
-            theme,
+            args.theme,
             "--out",
-            str(out),
+            str(args.out),
+            *(["--still"] if args.still else []),
+            *args.flows,
         ],
     )
     sys.exit(result.returncode)

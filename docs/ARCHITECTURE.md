@@ -319,7 +319,7 @@ tests/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
   ISSUE_TEMPLATE/  pull_request_template.md
 scripts/                   # developer tools, not installed (render_brand.py builds brand/;
-                           #   demo.py + demo/: a local HA with stubs for screenshots)
+                           #   demo.py + demo/: a local HA with stubs for review GIFs)
 docs/ARCHITECTURE.md
 docs/brand/                # icon and logo sources (SVG), colours, font
 hacs.json  README.md  LICENSE  CLAUDE.md
