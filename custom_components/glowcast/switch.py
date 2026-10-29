@@ -4,7 +4,6 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -41,13 +40,13 @@ class GlowcastSwitch(SwitchEntity):
             name=f"Glowcast {entry.title}",
             entry_type=DeviceEntryType.SERVICE,
         )
-        tv = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]].device_identifier(entry.data)
+        source = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]]
         if "via_device_id" in DeviceInfo.__annotations__:
             # Newer HA versions link by device id; via_device is deprecated there.
-            if device := dr.async_get(hass).async_get_device(identifiers={tv}):
-                self._attr_device_info["via_device_id"] = device.id
+            if tv_device_id := source.device_id(hass, entry.data):
+                self._attr_device_info["via_device_id"] = tv_device_id
         else:
-            self._attr_device_info["via_device"] = tv
+            self._attr_device_info["via_device"] = source.device_identifier(entry.data)
 
     @property
     def is_on(self) -> bool:

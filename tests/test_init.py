@@ -25,7 +25,7 @@ from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.core.models import Channel, ChannelColor
 from custom_components.glowcast.core.pipeline import StopReason, UpdateRate
 from custom_components.glowcast.outputs import OUTPUTS, OutputType
-from custom_components.glowcast.sources import SOURCES, SourceType
+from custom_components.glowcast.sources import SOURCES, SourceType, webos
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -154,6 +154,7 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> Fakes:
             create=lambda hass, data, options: FakeSource(fakes.log),
             is_missing=lambda hass, data: fakes.source_missing,
             device_identifier=lambda data: ("webostv", data["source"]["unique_id"]),
+            device_id=webos.device_id,
         ),
     )
     monkeypatch.setitem(

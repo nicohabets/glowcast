@@ -19,10 +19,14 @@ class SourceType:
     create: Callable[[HomeAssistant, Mapping[str, Any], Mapping[str, Any]], FrameSource]
     # Whether the integration entry the source uses is removed or not loaded.
     is_missing: Callable[[HomeAssistant, Mapping[str, Any]], bool]
-    # The TV's device in Home Assistant, to link Glowcast's device to.
+    # The TV's device in Home Assistant, to link Glowcast's device to: its
+    # identifier (older HA) and its device registry id (newer HA).
     device_identifier: Callable[[Mapping[str, Any]], tuple[str, str]]
+    device_id: Callable[[HomeAssistant, Mapping[str, Any]], str | None]
 
 
 SOURCES = {
-    SOURCE_WEBOS: SourceType(webos.create, webos.is_missing, webos.device_identifier),
+    SOURCE_WEBOS: SourceType(
+        webos.create, webos.is_missing, webos.device_identifier, webos.device_id
+    ),
 }
