@@ -4,12 +4,10 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import GlowcastConfigEntry
-from .const import CONF_SOURCE, CONF_TYPE, DOMAIN
-from .sources import SOURCES
+from .entity import GlowcastEntity
+from .runtime import GlowcastConfigEntry
 
 
 async def async_setup_entry(
@@ -21,41 +19,23 @@ async def async_setup_entry(
     async_add_entities([GlowcastSwitch(hass, entry)])
 
 
-class GlowcastSwitch(SwitchEntity):
+class GlowcastSwitch(GlowcastEntity, SwitchEntity):
     """Syncing on or off. Off after a restart: Glowcast never starts by itself."""
 
-    _attr_has_entity_name = True
     # The device's main feature: the entity is named after the device, so its
     # id comes out as switch.glowcast_<tv name>.
     _attr_name = None
     _attr_translation_key = "sync"
-    _attr_should_poll = False
 
     def __init__(self, hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
         """Initialize for one Glowcast entry."""
-        self._data = entry.runtime_data
+        super().__init__(hass, entry)
         self._attr_unique_id = entry.entry_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=f"Glowcast {entry.title}",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-        source = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]]
-        if "via_device_id" in DeviceInfo.__annotations__:
-            # Newer HA versions link by device id; via_device is deprecated there.
-            if tv_device_id := source.device_id(hass, entry.data):
-                self._attr_device_info["via_device_id"] = tv_device_id
-        else:
-            self._attr_device_info["via_device"] = source.device_identifier(entry.data)
 
     @property
     def is_on(self) -> bool:
         """Whether Glowcast is syncing."""
         return self._data.is_on
-
-    async def async_added_to_hass(self) -> None:
-        """Follow the pipeline's state, including stops it makes by itself."""
-        self.async_on_remove(self._data.async_add_listener(self.async_write_ha_state))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Start syncing."""
