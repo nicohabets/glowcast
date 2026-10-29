@@ -3,8 +3,9 @@ blueprint:
   description: >-
     Turns the Glowcast switch on when the TV turns on, so the lights follow
     the picture. Glowcast waits for the TV to show a picture, so it can start
-    the moment the TV reports "on". A restart of Home Assistant does not start
-    Glowcast. Optionally turns the switch off again when the TV turns off.
+    the moment the TV reports "on". A restart of Home Assistant normally does
+    not start Glowcast. Optionally turns the switch off again when the TV turns
+    off.
   domain: automation
   source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/start_with_tv.yaml
   homeassistant:
@@ -46,6 +47,9 @@ variables:
 triggers:
   # From "off" or "unavailable" only: when Home Assistant starts while the TV
   # is on, the TV goes from "unknown" to "on", and that must not start Glowcast.
+  # "unavailable" also catches a short network drop of the TV while it is on
+  # (on -> unavailable -> on), which turns Glowcast on again, and, rarely, a
+  # TV that Home Assistant only reaches after its automations have started.
   - trigger: state
     entity_id: !input tv
     from:
