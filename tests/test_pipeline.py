@@ -886,7 +886,7 @@ async def test_status_reports_each_change_of_phase_in_order() -> None:
         Phase.STOPPED,
     ]
     stopped = h.statuses[-1]
-    assert (stopped.phase, stopped.channels) == (Phase.STOPPED, 1)
+    assert (stopped.phase, stopped.channels) == (Phase.STOPPED, 0)  # released
     assert stopped.stop_reason is StopReason.USER
 
 
@@ -927,6 +927,46 @@ async def test_failed_captures_lower_the_captures_per_second() -> None:
     rates = [s.captures_per_second for s in h.statuses[before:]]
     assert rates.count(0.0) == 2  # only the captures that delivered a frame count
     assert rates[-1] == pytest.approx(1.0)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_a_stop_releases_the_channels_and_keeps_the_last_measurement() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(3)
+    measured = h.statuses[-1]
+    assert (measured.channels, measured.captures_per_second) == (1, 3.0)
+    assert await h.stop() == StopReason.USER
+    stopped = h.statuses[-1]
+    assert (stopped.channels, stopped.captures_per_second) == (0, 3.0)
+
+
+async def test_a_failed_retry_shows_nothing_of_the_earlier_stream() -> None:
+    h = Harness()
+    h.output.start_errors = [None, OutputBusy("taken")]
+    await h.start()
+    await h.clock.advance(3)
+    await lose_stream(h)
+    retrying = h.statuses[-1]
+    assert (retrying.phase, retrying.channels) == (Phase.RETRYING, 1)
+    assert await h.finish() == StopReason.OUTPUT_LOST
+    assert h.statuses[-1] == PipelineStatus(
+        Phase.STOPPED, stop_reason=StopReason.OUTPUT_LOST
+    )
+
+
+async def test_the_captures_per_second_are_measured_again_after_a_retry() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(3)
+    await lose_stream(h)
+    retried = len(h.statuses)
+    await h.clock.advance(5.2)  # retried after 5 s
+    first = h.statuses[retried]
+    assert first == PipelineStatus(Phase.STREAMING, channels=1)  # not measured yet
+    await h.clock.advance(2)
+    assert h.statuses[-1].phase is Phase.STREAMING
+    assert h.statuses[-1].captures_per_second == pytest.approx(3, abs=0.3)
     assert await h.stop() == StopReason.USER
 
 

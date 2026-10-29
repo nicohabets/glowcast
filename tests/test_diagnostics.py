@@ -206,7 +206,7 @@ async def test_the_download_after_a_stop_shows_the_last_status(
     status = diagnostics["status"]
     assert status["phase"] == "stopped"
     assert status["stop_reason"] == "tv_off"
-    assert status["channels"] == 1
+    assert status["channels"] == 0  # the lights are released
     assert status["captures_per_second"] > 0  # the last measurement
 
 
