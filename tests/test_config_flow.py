@@ -1122,3 +1122,44 @@ def test_every_step_and_error_has_a_text() -> None:
         "screen_unsupported",
     ):
         assert reason in config["abort"]
+
+
+async def test_a_helper_found_at_a_new_address_during_its_reauth(
+    hass: HomeAssistant, screen_helper: FakeHelperHTTP
+) -> None:
+    """The open reauth flow has the helper's unique id too; the new address
+    is still stored, so the reauth pairs at the new address."""
+    entry = screen_entry(hass, host="192.0.2.99")
+    result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
+    flow_id = result["flow_id"]
+
+    result = await discover(hass, discovery())
+    assert result["type"] is FlowResultType.ABORT
+    assert entry.data["source"]["host"] == PC_HOST
+
+    result = await code(hass, flow_id, CODE)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "screen_reauth_successful"
+    assert entry.data["source"] == SCREEN_SOURCE
+
+
+async def test_screen_reauth_of_a_loaded_entry_does_not_reload_it(
+    hass: HomeAssistant,
+    screen_helper: FakeHelperHTTP,
+    adapters: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The new token is read at the next start; the entry is not reloaded."""
+    entry = screen_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
+    result = await code(hass, result["flow_id"], CODE)
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "screen_reauth_successful"
+    assert entry.data["source"]["token"] == PC_TOKEN
+    assert entry.state is ConfigEntryState.LOADED
+    assert "should use it for scheduling a reload" not in caplog.text
+    assert await hass.config_entries.async_unload(entry.entry_id)

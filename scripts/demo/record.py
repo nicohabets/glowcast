@@ -319,8 +319,13 @@ def fill(rec: Recorder, index: int, text: str) -> None:
 
 
 def screen_setup(rec: Recorder) -> None:
-    """Set up a computer screen by hand: address, pairing code, then the
-    output's steps as for a TV (#109)."""
+    """Set up a computer screen by hand: the address, the pairing code, up to
+    the output's first step (#109).
+
+    The output's steps are the same as for a TV (the `setup` and
+    `screen-discovery` flows show them), so the GIF stays short; the flow is
+    left open and aborted when the recording ends.
+    """
     page = rec.page
     with screen_helper() as helper:
         open_setup(rec)
@@ -328,10 +333,12 @@ def screen_setup(rec: Recorder) -> None:
         page.locator(f"{DIALOG} ha-form input").first.wait_for()
         rec.step("address")
         fill(rec, 0, "127.0.0.1")
-        fill(rec, 1, str(helper["port"]))
+        if helper["port"] != HELPER_PORT:  # the form's default
+            fill(rec, 1, str(helper["port"]))
         rec.step("address-filled")
         rec.submit()
-        pairing_code(rec)
+        pairing_code(rec, through_output=False)
+        rec.step("bridge")
 
 
 def screen_discovery(rec: Recorder) -> None:
@@ -365,8 +372,10 @@ def screen_discovery(rec: Recorder) -> None:
         pairing_code(rec, wrong_first=True)
 
 
-def pairing_code(rec: Recorder, wrong_first: bool = False) -> None:
-    """The pairing code step, then the output's steps."""
+def pairing_code(
+    rec: Recorder, wrong_first: bool = False, through_output: bool = True
+) -> None:
+    """The pairing code step, then (or up to) the output's steps."""
     page = rec.page
     page.locator(f"{DIALOG} ha-form input").first.wait_for()
     rec.step("code")
@@ -379,7 +388,8 @@ def pairing_code(rec: Recorder, wrong_first: bool = False) -> None:
     rec.step("code-filled")
     rec.submit()
     page.locator(f"{DIALOG} ha-picker-field").wait_for(timeout=15000)
-    hue_steps(rec)
+    if through_output:
+        hue_steps(rec)
 
 
 def settings(rec: Recorder) -> None:
