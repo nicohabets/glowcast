@@ -20,7 +20,12 @@ from aiohttp import web
 from glowcast_screen import PROTOCOL, __version__
 from glowcast_screen.capture import Grabber, MssGrabber, NoScreenAccess, ScreenCapture
 from glowcast_screen.events import Events
-from glowcast_screen.mdns import SERVICE_TYPE, Announcer, lan_addresses, service_info
+from glowcast_screen.mdns import (
+    SERVICE_TYPE,
+    Announcer,
+    announce_addresses,
+    service_info,
+)
 from glowcast_screen.patterns import DEFAULT_INTERVAL, NAMES, PatternSource
 from glowcast_screen.server import HelperServer, PatternPicture, Picture, ScreenPicture
 from glowcast_screen.store import Store, default_directory
@@ -38,6 +43,13 @@ def _pairing_code(value: str) -> str:
     if not re.fullmatch(r"\d{6}", value):
         raise argparse.ArgumentTypeError("the pairing code is 6 digits")
     return value
+
+
+def _port(value: str) -> int:
+    number = int(value)
+    if not 0 <= number <= 65535:
+        raise argparse.ArgumentTypeError("a port is 0-65535")
+    return number
 
 
 def _positive(value: str) -> float:
@@ -70,7 +82,7 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--port",
-        type=int,
+        type=_port,
         default=DEFAULT_PORT,
         help=f"HTTP port (default {DEFAULT_PORT})",
     )
@@ -118,6 +130,41 @@ def _is_loopback(host: str) -> bool:
     return host == "localhost"
 
 
+def _load_store(args: argparse.Namespace, events: Events) -> Store | int:
+    store = Store(args.config_dir or default_directory())
+    try:
+        store.load()
+    except (OSError, ValueError) as err:
+        return _fail(
+            events, EXIT_ERROR, "config", f"cannot read or write {store.path}: {err}"
+        )
+    return store
+
+
+def unpair(args: argparse.Namespace, events: Events) -> int:
+    """--unpair, without an event loop: Ctrl+C at the question simply stops it."""
+    store = _load_store(args, events)
+    if isinstance(store, int):
+        return store
+    if not args.non_interactive and store.paired:
+        try:
+            answer = input(
+                f"Remove {store.paired} pairing(s)? Glowcast then asks for a new code."
+                " [y/N] "
+            )
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            events.say("Nothing removed.")
+            return EXIT_OK
+    try:
+        removed = store.unpair()
+    except OSError as err:
+        return _fail(events, EXIT_ERROR, "config", f"cannot write {store.path}: {err}")
+    events.emit("unpaired", f"Removed {removed} pairing(s)", removed=removed)
+    return EXIT_OK
+
+
 async def run(
     args: argparse.Namespace,
     events: Events,
@@ -128,27 +175,9 @@ async def run(
     interactive = not args.non_interactive
     # Before anything else, so a signal during the start also stops cleanly.
     stop = stop or _stop_on_signals()
-    store = Store(args.config_dir or default_directory())
-    try:
-        store.load()
-    except (OSError, ValueError) as err:
-        return _fail(
-            events, EXIT_ERROR, "config", f"cannot read or write {store.path}: {err}"
-        )
-
-    if args.unpair:
-        if interactive and store.paired:
-            answer = await asyncio.to_thread(
-                _ask,
-                f"Remove {store.paired} pairing(s)? Glowcast then asks for a new code."
-                " [y/N] ",
-            )
-            if answer.strip().lower() not in ("y", "yes"):
-                events.say("Nothing removed.")
-                return EXIT_OK
-        removed = store.unpair()
-        events.emit("unpaired", f"Removed {removed} pairing(s)", removed=removed)
-        return EXIT_OK
+    store = _load_store(args, events)
+    if isinstance(store, int):
+        return store
 
     name = args.name or socket.gethostname().split(".")[0] or "Glowcast screen"
     picture: Picture
@@ -181,6 +210,10 @@ async def run(
         site = web.TCPSite(runner, args.host, args.port)
         try:
             await site.start()
+        except socket.gaierror as err:
+            return _fail(
+                events, EXIT_PORT, "bad_host", f"cannot use {args.host!r}: {err}"
+            )
         except OSError as err:
             return _fail(
                 events,
@@ -192,7 +225,7 @@ async def run(
 
         announced = False
         if not _is_loopback(args.host):
-            addresses = [args.host] if args.host != "0.0.0.0" else lan_addresses()
+            addresses = [args.host] if args.host != "0.0.0.0" else announce_addresses()
             try:
                 await announcer.start(
                     service_info(store.helper_id, name, port, addresses)
@@ -239,13 +272,6 @@ async def run(
     return EXIT_OK
 
 
-def _ask(prompt: str) -> str:
-    try:
-        return input(prompt)
-    except EOFError:
-        return ""
-
-
 def _banner(args: argparse.Namespace, info: dict, port: int, announced: bool) -> str:
     if args.pattern:
         what = f"test pattern {args.pattern}"
@@ -289,6 +315,8 @@ def _stop_on_signals() -> asyncio.Event:
 def main(argv: list[str] | None = None) -> None:
     args = parser().parse_args(argv)
     events = Events(json_mode=args.json)
+    if args.unpair:
+        sys.exit(unpair(args, events))
     try:
         code = asyncio.run(run(args, events))
     except KeyboardInterrupt:

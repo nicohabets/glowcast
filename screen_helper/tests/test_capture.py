@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import threading
 
 import pytest
 from fakes import FakeClock, FakeGrabber, left_red_right_blue
 from glowcast_screen.capture import (
+    SCREEN_RECHECK,
     CaptureError,
     NoScreenAccess,
     ScreenCapture,
@@ -87,8 +89,97 @@ async def test_a_screen_that_does_not_exist_is_no_screen_access() -> None:
 async def test_no_access_stops_the_start() -> None:
     grabber = FakeGrabber()
     grabber.no_access = "no permission"
+    capture = ScreenCapture(grabber, None)
     with pytest.raises(NoScreenAccess, match="no permission"):
-        await ScreenCapture(grabber, None).start()
+        await capture.start()
+    await capture.close()
+
+
+async def test_listing_screens_that_hangs_stops_the_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("glowcast_screen.capture.START_TIMEOUT", 0.05)
+    grabber = FakeGrabber()
+    grabber.open_block = threading.Event()
+    capture = ScreenCapture(grabber, None)
+    with pytest.raises(NoScreenAccess, match="did not finish"):
+        await capture.start()
+    grabber.open_block.set()
+    await capture.close()
+
+
+async def test_a_first_grab_that_hangs_is_no_picture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("glowcast_screen.capture.GRAB_TIMEOUT", 0.05)
+    grabber = FakeGrabber()
+    grabber.block = threading.Event()
+    capture = ScreenCapture(grabber, None)
+    await capture.start()
+    assert capture.no_picture_reason == "capture_timeout"
+    grabber.block.set()
+    await capture.close()
+
+
+async def test_shutdown_does_not_wait_for_a_grab_that_never_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("glowcast_screen.capture.GRAB_TIMEOUT", 0.05)
+    monkeypatch.setattr("glowcast_screen.capture.CLOSE_TIMEOUT", 0.1)
+    clock = FakeClock()
+    grabber = FakeGrabber()
+    capture = ScreenCapture(grabber, None, clock=clock)
+    await capture.start()
+    grabber.block = threading.Event()
+    clock.now += 1
+    assert await capture.frame() is None
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    await capture.close()
+    assert loop.time() - started < 1
+    grabber.block.set()
+
+
+async def test_any_error_in_a_grab_is_no_picture() -> None:
+    clock = FakeClock()
+    grabber = FakeGrabber()
+    capture = ScreenCapture(grabber, None, clock=clock)
+    await capture.start()
+    grabber.fail = ValueError("not enough image data")
+    clock.now += 1
+    assert await capture.frame() is None
+    assert capture.no_picture_reason == "capture_failed"
+    await capture.close()
+
+
+async def test_screens_are_listed_again_and_a_missing_one_is_no_picture() -> None:
+    clock = FakeClock()
+    grabber = FakeGrabber()
+    capture = ScreenCapture(grabber, 2, clock=clock)
+    await capture.start()
+    assert grabber.opened == 1
+
+    # The second monitor gets another resolution: the next check sees it.
+    a, b = grabber.screens
+    grabber.screens = [a, dataclasses.replace(b, width=128, height=72)]
+    clock.now += 1
+    await capture.frame()
+    assert grabber.opened == 1
+    clock.now += SCREEN_RECHECK
+    assert await capture.frame() == FRAMES["left-red-right-blue"]
+    assert grabber.opened == 2
+    assert capture.screen is not None and capture.screen.width == 128
+
+    # Unplugged: no picture, and back when it is there again.
+    grabber.screens = [a]
+    clock.now += SCREEN_RECHECK
+    assert await capture.frame() is None
+    assert capture.no_picture_reason == "screen_missing"
+    assert [s.index for s in capture.screens] == [1]
+    grabber.screens = [a, b]
+    clock.now += SCREEN_RECHECK
+    assert await capture.frame() == FRAMES["left-red-right-blue"]
+    await capture.close()
 
 
 async def test_a_screen_locked_at_start_is_no_picture() -> None:

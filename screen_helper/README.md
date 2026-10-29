@@ -18,7 +18,7 @@ That serves the main screen on port 8488 and shows a 6-digit pairing code. For a
 uv run --project screen_helper glowcast-screen --pattern red
 ```
 
-Stop it with Ctrl+C. It then withdraws its network announcement and exits.
+Stop it with Ctrl+C. It then withdraws its network announcement and exits, within about a second also when a screen grab hangs.
 
 ## Flags
 
@@ -27,9 +27,9 @@ Stop it with Ctrl+C. It then withdraws its network announcement and exits.
 | `--pattern NAME` | Serve a test pattern instead of the screen (see below). It needs no screen access and no display, so it also works headless, in a cloud session and in CI. |
 | `--pattern-interval SECONDS` | Seconds per pattern for `--pattern cycle` (default 5). |
 | `--screen N` | The screen to capture, numbered as `/v1/info` and the start output list them (default: the main screen). |
-| `--port PORT` | HTTP port (default 8488; `0` picks a free one, which the `started` event reports). |
+| `--port PORT` | HTTP port, 0-65535 (default 8488; `0` picks a free one, which the `started` event reports). |
 | `--host ADDRESS` | Address to listen on (default `0.0.0.0`, all). On a loopback address such as `127.0.0.1`, the helper is not announced on the network. |
-| `--name NAME` | The name Home Assistant will show (default: the computer's name). |
+| `--name NAME` | The name Home Assistant will show (default: the computer's name). Agents and tests pass a generic one, so the computer's name never ends up in output they share. |
 | `--pairing-code CODE` | A fixed 6-digit pairing code instead of a new random one on every start. |
 | `--non-interactive` | Never ask anything. Without `--pairing-code`, no code is made and only existing pairings work. |
 | `--json` | Print one JSON line per event on standard output (see below). |
@@ -40,7 +40,7 @@ Stop it with Ctrl+C. It then withdraws its network announcement and exits.
 For an agent or a test, for example:
 
 ```bash
-uv run --project screen_helper glowcast-screen --pattern cycle --pattern-interval 2 --host 127.0.0.1 --port 0 --non-interactive --pairing-code 123456 --json
+uv run --project screen_helper glowcast-screen --pattern cycle --pattern-interval 2 --name "Test PC" --host 127.0.0.1 --port 0 --non-interactive --pairing-code 123456 --json
 ```
 
 ## Screens
@@ -53,7 +53,7 @@ Screens are numbered 1, 2, ... in the order the operating system lists them. The
     2: 1920x1080 at 3440,0
 ```
 
-Pick the second monitor with `--screen 2`. A number that does not exist stops the helper with exit code 4 and the list of screens. The whole screen is shrunk to 64x36 and stretched, not cropped, so the left and right edges of an ultrawide screen stay at the left and right.
+Pick the second monitor with `--screen 2`. A number that does not exist stops the helper with exit code 4 and the list of screens. While frames are pulled, the helper lists the screens again every 5 seconds, so a monitor that changes resolution or is plugged in again is captured as it is now. When the chosen screen is gone (unplugged, or asleep and removed by the operating system), the answer is "no picture" (`screen_missing`) until it is back. The whole screen is shrunk to 64x36 and stretched, not cropped, so the left and right edges of an ultrawide screen stay at the left and right.
 
 Capture happens only when a picture is asked for: one grab per request, shared by requests that arrive within 50 ms of each other. With nobody asking, the helper is idle. A picture is never encoded as a JPEG.
 
@@ -101,9 +101,9 @@ Protocol version 1, as in [architecture 8.3](../docs/ARCHITECTURE.md#83-a-comput
 }
 ```
 
-`no_picture` is `null` while there is a picture, else the reason of the last "no picture" answer: `capture_failed` or `capture_timeout`. With `--pattern`, `screens` is empty, `screen` is `null`, and `pattern` is `{"name": "cycle", "showing": "green", "since": "2026-10-29T12:00:05.000Z", "interval": 5.0}` (`interval` only for `cycle`; times are UTC).
+`no_picture` is `null` while there is a picture, else the reason of the last "no picture" answer: `capture_failed` (the grab failed, for example a locked screen), `capture_timeout` (it took longer than 1 s) or `screen_missing` (the chosen screen is gone). With `--pattern`, `screens` is empty, `screen` is `null`, and `pattern` is `{"name": "cycle", "showing": "green", "since": "2026-10-29T12:00:05.000Z", "interval": 5.0}` (`interval` only for `cycle`; times are UTC).
 
-The helper announces itself with mDNS as `_glowcast._tcp.local.`, with the instance name `<name> (<first 6 characters of the id>)` and a TXT record `id=<id>`, `name=<name>`, `protocol=1`.
+The helper announces itself with mDNS as `_glowcast._tcp.local.`, with the instance name `<name> (<first 6 characters of the id>)` and a TXT record `id=<id>`, `name=<name>`, `protocol=1`. It announces one address: the one the computer reaches the network with (its default route), so addresses of virtual adapters (Hyper-V, WSL, Docker, a VPN) that Home Assistant cannot reach are left out. Only without a default route does it announce all its addresses.
 
 Try it with `curl`:
 
@@ -158,8 +158,8 @@ Without `--json`, the same events are printed as plain text.
 | 0 | stopped normally (Ctrl+C, SIGINT, SIGTERM) or `--unpair` done |
 | 1 | the config directory cannot be read or written |
 | 2 | a wrong flag |
-| 3 | the port is in use, or the address cannot be used (`reason: port_in_use`) |
-| 4 | no screen access: no display, no Screen Recording permission, or a screen number that does not exist (`reason: no_screen_access`). A screen that is locked at start-up is not an error: the helper starts and answers "no picture" until it is unlocked. |
+| 3 | the port is in use or the address cannot be used (`reason: port_in_use`), or `--host` does not resolve (`reason: bad_host`) |
+| 4 | no screen access: no display, no Screen Recording permission, a screen number that does not exist, or listing the screens took longer than 5 s (`reason: no_screen_access`). A screen that is locked at start-up is not an error: the helper starts and answers "no picture" until it is unlocked. |
 
 ## Prompts on the first start
 

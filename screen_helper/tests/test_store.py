@@ -55,9 +55,20 @@ def test_a_running_helper_sees_an_unpair_from_another_process(config_dir: Path) 
     other = Store(config_dir)
     other.load()
     other.unpair()
-    # The file may keep the same mtime on coarse file systems; move it on.
-    stat = running.path.stat()
-    os.utime(running.path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    # Seen at once, also when the clock has not ticked since the last write.
+    assert not running.is_valid(token)
+
+
+def test_an_unpair_within_the_same_mtime_tick_is_seen(config_dir: Path) -> None:
+    running = Store(config_dir)
+    running.load()
+    token = running.add_token()
+    before = running.path.stat().st_mtime_ns
+    other = Store(config_dir)
+    other.load()
+    other.unpair()
+    # A coarse file-system clock: the rewrite keeps the old mtime.
+    os.utime(other.path, ns=(before, before))
     assert not running.is_valid(token)
 
 

@@ -72,6 +72,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
       - run: uv run --project screen_helper --locked --group dev pytest screen_helper/tests
+      # The documented command itself (the console script, not python -m).
+      - run: uv run --project screen_helper --locked glowcast-screen --version
       # zeroconf has no wheel for Windows on ARM; this shows whether it was
       # compiled (.pyd/.so) or runs as pure Python (.py).
       - run: uv run --project screen_helper --locked python -c "import zeroconf._dns as m; print(m.__file__)"

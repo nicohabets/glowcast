@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from collections.abc import Callable
 from typing import Any
 
@@ -28,6 +29,36 @@ def lan_addresses() -> list[str]:
             if not (address.is_loopback or address.is_link_local):
                 found.append(str(address))
     return sorted(set(found))
+
+
+def default_route_address() -> str | None:
+    """The address the computer reaches the network with, or None without a route.
+
+    Connecting a UDP socket sends nothing; it only asks the OS which address it
+    would use. 192.0.2.1 is a documentation address, routed like any other.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            address = probe.getsockname()[0]
+    except OSError:
+        return None
+    ip = ipaddress.IPv4Address(address)
+    return None if ip.is_loopback or ip.is_link_local or ip.is_unspecified else address
+
+
+def announce_addresses(
+    route: Callable[[], str | None] = default_route_address,
+    lan: Callable[[], list[str]] = lan_addresses,
+) -> list[str]:
+    """The address(es) to announce: only the default-route one when there is one.
+
+    Home Assistant uses the first announced address. Virtual adapters (Hyper-V,
+    WSL, Docker, VPN) have addresses Home Assistant cannot reach, so they are
+    left out when the OS says which address faces the network.
+    """
+    address = route()
+    return [address] if address else lan()
 
 
 def service_info(

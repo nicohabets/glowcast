@@ -233,16 +233,20 @@ class HelperServer:
             self.events.emit("frames", text, fps=fps, capture_ms=capture_ms)
 
     async def _report_patterns(self, source: PatternSource) -> None:
-        # The wall clock (time.time) drives the cycle, so sleeping in real time works.
+        # The wall clock (time.time) drives the cycle; the loop sleeps on its own
+        # clock, which may run a little faster, so a wake-up just before the change
+        # sleeps again instead of reporting the same pattern twice.
+        reported: float | None = None
         while True:
-            info = pattern_info(source)
-            self.events.emit(
-                "pattern",
-                f"Showing {info['showing']}",
-                showing=info["showing"],
-                since=info["since"],
-            )
+            showing = source.showing()
+            if showing.since != reported:
+                reported = showing.since
+                self.events.emit(
+                    "pattern",
+                    f"Showing {showing.name}",
+                    showing=showing.name,
+                    since=timestamp(showing.since),
+                )
             next_change = source.next_change()
             assert next_change is not None
-            # A little past the change, so showing() is already the next pattern.
             await asyncio.sleep(max(0.0, next_change - time.time()) + 0.001)

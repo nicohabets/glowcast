@@ -34,7 +34,8 @@ class Store:
         self.path = directory / STATE_FILE
         self.helper_id = ""
         self._hashes: list[str] = []
-        self._mtime: int | None = None
+        # What the file looked like when we last read or wrote it.
+        self._seen: tuple[int, int, int] | None = None
 
     def load(self) -> None:
         """Read the state, creating an id on the first run."""
@@ -44,8 +45,14 @@ class Store:
             self.helper_id = uuid.uuid4().hex
             self._write()
 
+    def _stamp(self) -> tuple[int, int, int]:
+        # Every write replaces the file with a new one, so the inode (the file id on
+        # Windows) changes even when the mtime does not move on a coarse clock.
+        stat = self.path.stat()
+        return stat.st_ino, stat.st_mtime_ns, stat.st_size
+
     def _read(self) -> None:
-        self._mtime = self.path.stat().st_mtime_ns
+        self._seen = self._stamp()
         data = json.loads(self.path.read_text(encoding="utf-8"))
         self.helper_id = str(data.get("id", ""))
         self._hashes = [str(h) for h in data.get("tokens", [])]
@@ -59,16 +66,16 @@ class Store:
         with os.fdopen(fd, "w", encoding="utf-8") as file:
             json.dump(data, file)
         os.replace(tmp, self.path)
-        self._mtime = self.path.stat().st_mtime_ns
+        self._seen = self._stamp()
 
     def _reload_if_changed(self) -> None:
         # Another process (`--unpair`) may have changed the file while we run.
         try:
-            mtime = self.path.stat().st_mtime_ns
+            stamp = self._stamp()
         except FileNotFoundError:
             self._hashes = []
             return
-        if mtime != self._mtime:
+        if stamp != self._seen:
             with contextlib.suppress(OSError, ValueError):
                 self._read()
 

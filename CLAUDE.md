@@ -43,11 +43,11 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 The screen helper (`screen_helper/README.md`, architecture 8.3) serves 64x36 frames to Glowcast. In tests, use its **pattern mode**: known pixels, no screen access, no display, so it also runs headless, in a cloud session and in CI:
 
 ```bash
-uv run --project screen_helper glowcast-screen --pattern cycle --host 127.0.0.1 --port 0 --non-interactive --pairing-code 123456 --json
+uv run --project screen_helper glowcast-screen --pattern cycle --name "Test PC" --host 127.0.0.1 --port 0 --non-interactive --pairing-code 123456 --json
 ```
 
 - Read the `started` event (one JSON line) for the port; `pattern` events say which pattern shows since when. The exact pixels of every pattern are in its README.
-- Listen on `127.0.0.1` (not announced on the network), use your own `--config-dir` in the scratchpad so you never touch the product owner's pairings, and stop it with SIGINT or SIGTERM.
+- Always pass a generic `--name`: the default is the computer's name, which then shows in the JSON output you might attach. Listen on `127.0.0.1` (not announced on the network), use your own `--config-dir` in the scratchpad so you never touch the product owner's pairings, and stop it with SIGINT or SIGTERM.
 - Never capture a real screen (no run without `--pattern`) unless your task allows it and the session runs on the product owner's computer with his go; then print numbers only, never save or show frames.
 - Run it against the product owner's lights (a Glowcast on his Home Assistant or the test bench) only when your task explicitly allows it ("Working in parallel", rule 3).
 

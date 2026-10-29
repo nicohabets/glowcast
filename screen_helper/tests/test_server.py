@@ -43,6 +43,9 @@ class Helper:
         return (await resp.json())["token"]
 
 
+MakeHelper = Callable[..., Awaitable[Helper]]
+
+
 @pytest.fixture
 def make_helper(
     aiohttp_client: ClientFactory, config_dir: Path
@@ -70,7 +73,9 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_pairing_with_the_right_code_returns_a_token(make_helper) -> None:
+async def test_pairing_with_the_right_code_returns_a_token(
+    make_helper: MakeHelper,
+) -> None:
     helper = await make_helper()
     resp = await helper.client.post("/v1/pair", json={"code": CODE})
     assert resp.status == 200
@@ -84,7 +89,7 @@ async def test_pairing_with_the_right_code_returns_a_token(make_helper) -> None:
     assert body["token"] not in helper.out.getvalue()
 
 
-async def test_a_wrong_code_is_refused_slowly(make_helper) -> None:
+async def test_a_wrong_code_is_refused_slowly(make_helper: MakeHelper) -> None:
     helper = await make_helper(pair_delay=0.2)
     loop = asyncio.get_running_loop()
     started = loop.time()
@@ -98,13 +103,13 @@ async def test_a_wrong_code_is_refused_slowly(make_helper) -> None:
 
 
 @pytest.mark.parametrize("body", [b"not json", b"{}", b'{"code": 123456}'])
-async def test_a_bad_pairing_request(make_helper, body: bytes) -> None:
+async def test_a_bad_pairing_request(make_helper: MakeHelper, body: bytes) -> None:
     helper = await make_helper()
     resp = await helper.client.post("/v1/pair", data=body)
     assert resp.status == 400
 
 
-async def test_without_a_pairing_code_nobody_can_pair(make_helper) -> None:
+async def test_without_a_pairing_code_nobody_can_pair(make_helper: MakeHelper) -> None:
     helper = await make_helper(code=None)
     resp = await helper.client.post("/v1/pair", json={"code": CODE})
     assert resp.status == 403
@@ -116,7 +121,7 @@ async def test_without_a_pairing_code_nobody_can_pair(make_helper) -> None:
     "headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic abc"}]
 )
 async def test_everything_but_pairing_needs_a_valid_token(
-    make_helper, path: str, headers: dict[str, str]
+    make_helper: MakeHelper, path: str, headers: dict[str, str]
 ) -> None:
     helper = await make_helper()
     await helper.pair()
@@ -125,7 +130,7 @@ async def test_everything_but_pairing_needs_a_valid_token(
     assert resp.headers["WWW-Authenticate"] == "Bearer"
 
 
-async def test_an_unpaired_token_gets_401(make_helper) -> None:
+async def test_an_unpaired_token_gets_401(make_helper: MakeHelper) -> None:
     helper = await make_helper()
     token = await helper.pair()
     helper.server.store.unpair()
@@ -133,7 +138,7 @@ async def test_an_unpaired_token_gets_401(make_helper) -> None:
     assert resp.status == 401
 
 
-async def test_frame_is_6912_bytes_of_rgb(make_helper) -> None:
+async def test_frame_is_6912_bytes_of_rgb(make_helper: MakeHelper) -> None:
     source = PatternSource("left-red-right-blue", FakeClock())
     helper = await make_helper(PatternPicture(source))
     token = await helper.pair()
@@ -148,7 +153,7 @@ async def test_frame_is_6912_bytes_of_rgb(make_helper) -> None:
     assert body[-3:] == bytes((0, 0, 255))  # bottom right
 
 
-async def test_info_in_pattern_mode_follows_the_cycle(make_helper) -> None:
+async def test_info_in_pattern_mode_follows_the_cycle(make_helper: MakeHelper) -> None:
     clock = FakeClock()
     source = PatternSource("cycle", clock, interval=5)
     helper = await make_helper(PatternPicture(source))
@@ -181,7 +186,7 @@ async def test_info_in_pattern_mode_follows_the_cycle(make_helper) -> None:
     assert frame == FRAMES["blue"]
 
 
-async def test_info_in_screen_mode_lists_the_screens(make_helper) -> None:
+async def test_info_in_screen_mode_lists_the_screens(make_helper: MakeHelper) -> None:
     capture = ScreenCapture(FakeGrabber(), 2)
     await capture.start()
     helper = await make_helper(ScreenPicture(capture))
@@ -203,7 +208,9 @@ async def test_info_in_screen_mode_lists_the_screens(make_helper) -> None:
     await capture.close()
 
 
-async def test_no_picture_is_204_reported_once_and_recovers(make_helper) -> None:
+async def test_no_picture_is_204_reported_once_and_recovers(
+    make_helper: MakeHelper,
+) -> None:
     clock = FakeClock()
     grabber = FakeGrabber()
     capture = ScreenCapture(grabber, None, clock=clock)
@@ -237,7 +244,7 @@ async def test_no_picture_is_204_reported_once_and_recovers(make_helper) -> None
     await capture.close()
 
 
-async def test_frames_per_second_with_capture_times(make_helper) -> None:
+async def test_frames_per_second_with_capture_times(make_helper: MakeHelper) -> None:
     clock = FakeClock()
     capture = ScreenCapture(FakeGrabber(), None, clock=clock)
     await capture.start()
@@ -259,7 +266,7 @@ async def test_frames_per_second_with_capture_times(make_helper) -> None:
     await capture.close()
 
 
-async def test_cycle_reports_each_pattern_change(make_helper) -> None:
+async def test_cycle_reports_each_pattern_change(make_helper: MakeHelper) -> None:
     import time
 
     source = PatternSource("cycle", time.time, interval=0.1)
@@ -270,3 +277,18 @@ async def test_cycle_reports_each_pattern_change(make_helper) -> None:
     patterns = [e for e in helper.events() if e["event"] == "pattern"]
     assert [p["showing"] for p in patterns[:3]] == ["red", "green", "blue"]
     assert all(p["since"].endswith("Z") for p in patterns)
+
+
+async def test_cycle_never_reports_a_pattern_twice(make_helper: MakeHelper) -> None:
+    import time
+
+    # The cycle's clock runs 5 ms behind the loop's: the reporter wakes just
+    # before each change and must not report the old pattern again.
+    source = PatternSource("cycle", lambda: time.time() - 0.005, interval=0.1)
+    helper = await make_helper(PatternPicture(source))
+    helper.server.start_reporting()
+    await asyncio.sleep(0.35)
+    await helper.server.stop_reporting()
+    shown = [e["showing"] for e in helper.events() if e["event"] == "pattern"]
+    assert shown[:3] == ["red", "green", "blue"]
+    assert len(shown) == len(set(shown))

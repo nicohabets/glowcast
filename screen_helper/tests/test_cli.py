@@ -23,9 +23,15 @@ from glowcast_screen.cli import (
     EXIT_USAGE,
     parser,
     run,
+    unpair,
 )
 from glowcast_screen.events import Events
-from glowcast_screen.mdns import SERVICE_TYPE, Announcer, service_info
+from glowcast_screen.mdns import (
+    SERVICE_TYPE,
+    Announcer,
+    announce_addresses,
+    service_info,
+)
 from glowcast_screen.store import Store
 
 BASE = ["--host", "127.0.0.1", "--port", "0", "--name", "Test PC"]
@@ -187,21 +193,79 @@ async def test_a_port_in_use_exits_with_3(config_dir: Path) -> None:
     assert error["reason"] == "port_in_use"
 
 
-async def test_unpair_keeps_the_id(config_dir: Path) -> None:
+def _unpair(argv: list[str], config_dir: Path) -> tuple[int, io.StringIO]:
+    args = parser().parse_args([*argv, "--config-dir", str(config_dir)])
+    out = io.StringIO()
+    return unpair(args, Events(json_mode=True, out=out, err=io.StringIO())), out
+
+
+def test_unpair_keeps_the_id(config_dir: Path) -> None:
     store = Store(config_dir)
     store.load()
     store.add_token()
-    helper = Run(["--unpair", "--json", "--non-interactive"], config_dir)
-    await helper.start()
-    assert helper.task is not None
-    assert await helper.task == EXIT_OK
-    (event,) = helper.events()
+    code, out = _unpair(["--unpair", "--json", "--non-interactive"], config_dir)
+    assert code == EXIT_OK
+    (event,) = [json.loads(line) for line in out.getvalue().splitlines()]
     assert event["event"] == "unpaired"
     assert event["removed"] == 1
     again = Store(config_dir)
     again.load()
     assert again.paired == 0
     assert again.helper_id == store.helper_id
+
+
+@pytest.mark.parametrize("answer", ["n", "", "ctrl-c"])
+def test_interactive_unpair_asks_and_keeps_on_no_or_ctrl_c(
+    config_dir: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+) -> None:
+    store = Store(config_dir)
+    store.load()
+    store.add_token()
+
+    def fake_input(prompt: str) -> str:
+        assert "Remove 1 pairing(s)?" in prompt
+        if answer == "ctrl-c":
+            raise KeyboardInterrupt
+        if not answer:
+            raise EOFError
+        return answer
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    code, out = _unpair(["--unpair", "--json"], config_dir)
+    assert code == EXIT_OK
+    assert out.getvalue() == ""
+    again = Store(config_dir)
+    again.load()
+    assert again.paired == 1
+
+
+def test_interactive_unpair_removes_on_yes(
+    config_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(config_dir)
+    store.load()
+    store.add_token()
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    code, out = _unpair(["--unpair", "--json"], config_dir)
+    assert code == EXIT_OK
+    assert json.loads(out.getvalue())["removed"] == 1
+
+
+async def test_a_host_that_does_not_resolve_exits_with_3(config_dir: Path) -> None:
+    argv = ["--pattern", "red", "--json", "--non-interactive", "--port", "0"]
+    helper = Run([*argv, "--host", "no-such-host.invalid"], config_dir)
+    await helper.start()
+    assert helper.task is not None
+    assert await helper.task == EXIT_PORT
+    (error,) = helper.events()
+    assert error["reason"] == "bad_host"
+
+
+def test_only_the_default_route_address_is_announced() -> None:
+    lan = ["172.20.0.1", "192.0.2.10"]  # a virtual adapter and the real network
+    assert announce_addresses(lambda: "192.0.2.10", lambda: lan) == ["192.0.2.10"]
+    # Without a default route, every address.
+    assert announce_addresses(lambda: None, lambda: lan) == lan
 
 
 async def test_announced_on_the_network_and_withdrawn_on_stop(config_dir: Path) -> None:
@@ -238,6 +302,8 @@ def test_service_info_name_is_unique_and_short() -> None:
         ["--pairing-code", "12345"],
         ["--pairing-code", "abcdef"],
         ["--pattern", "purple"],
+        ["--port", "70000"],
+        ["--port", "-1"],
     ],
 )
 def test_bad_flags_exit_with_2(argv: list[str]) -> None:

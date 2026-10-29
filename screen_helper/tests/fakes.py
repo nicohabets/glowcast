@@ -49,10 +49,15 @@ class FakeGrabber:
         self.fail: Exception | None = None
         self.no_access: str | None = None
         self.block: threading.Event | None = None
+        self.open_block: threading.Event | None = None
+        self.opened = 0
         self.closed = False
 
     def open(self) -> list[Screen]:
         self.threads.add(threading.get_ident())
+        self.opened += 1
+        if self.open_block is not None:
+            self.open_block.wait(5)
         if self.no_access:
             raise NoScreenAccess(self.no_access)
         return self.screens
