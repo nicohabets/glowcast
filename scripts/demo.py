@@ -5,12 +5,20 @@ report their entries as loaded, a fake bridge on 127.0.0.1 answers the setup
 flow, and Home Assistant listens on 127.0.0.1 only, without default_config or
 any discovery integration. See scripts/README.md.
 
+Each working copy runs its own instance, with its own ports, config directory
+and recordings; the virtual environment is shared.
+
 Usage:
     python scripts/demo.py start
     python scripts/demo.py record [FLOW ...] [--lang en|nl] [--theme light|dark]
                                   [--still] [--out DIR]
     python scripts/demo.py stop
     python scripts/demo.py clean
+    python scripts/demo.py clean --all [--yes]
+    python scripts/demo.py status
+
+start, record, stop and clean take --instance NAME to act on another instance
+than this working copy's.
 
 Runs on Linux and macOS (on Windows: in WSL). `start` needs Python 3.14.2 or
 newer, or uv (https://docs.astral.sh/uv/) to fetch it. Everything it makes
@@ -19,8 +27,12 @@ lives in ~/.cache/glowcast-demo, outside the repository.
 
 import argparse
 import contextlib
+import dataclasses
+import fcntl
+import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -30,20 +42,22 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 DEMO = REPO / "scripts" / "demo"
 HOME = Path.home() / ".cache" / "glowcast-demo"
-VENV = HOME / "venv"
-CONFIG = HOME / "config"
-RUN = HOME / "run"
-RECORDINGS = HOME / "recordings"
+VENV = HOME / "venv"  # shared by all instances
+INSTANCES = HOME / "instances"
 
+# The first instance gets these if they are free; the others get free ones.
 HA_PORT = 8199
 BRIDGE_PORT = 8443
-HA_URL = f"http://127.0.0.1:{HA_PORT}"
+# A demo from before instances kept its state in HOME itself.
+LEGACY = "legacy"
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 # Home Assistant and the frontend track the "latest" row in
 # .github/workflows/ci.yml; bump them together with CI.
@@ -93,11 +107,63 @@ logger:
 """
 
 
+@dataclasses.dataclass(frozen=True)
+class Instance:
+    """One demo: its folder, and the working copy and ports it got at `start`."""
+
+    name: str
+    home: Path
+
+    @property
+    def legacy(self) -> bool:
+        return self.name == LEGACY
+
+    @property
+    def config(self) -> Path:
+        return self.home / "config"
+
+    @property
+    def run(self) -> Path:
+        return self.home / "run"
+
+    @property
+    def recordings(self) -> Path:
+        return self.home / "recordings"
+
+    @property
+    def state(self) -> dict[str, Any]:
+        """The working copy and ports; empty before the first `start`."""
+        if self.legacy:
+            # Its code always used the default ports.
+            state: dict[str, Any] = {"ha_port": HA_PORT, "bridge_port": BRIDGE_PORT}
+            glowcast = self.config / "custom_components" / "glowcast"
+            with contextlib.suppress(OSError):
+                state["repo"] = str(Path(os.readlink(glowcast)).parent.parent)
+            return state
+        with contextlib.suppress(OSError):
+            return json.loads((self.home / "state.json").read_text())
+        return {}
+
+    @property
+    def ha_port(self) -> int:
+        return self.state["ha_port"]
+
+    @property
+    def bridge_port(self) -> int:
+        return self.state["bridge_port"]
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.ha_port}"
+
+
 def main() -> None:
     """Run one command."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("start", help="start Home Assistant and the fake bridge")
+    start_ = commands.add_parser(
+        "start", help="start Home Assistant and the fake bridge"
+    )
     record = commands.add_parser("record", help="record GIFs of the flows")
     record.add_argument(
         "flows", nargs="*", metavar="FLOW", help="flows in demo/record.py (all)"
@@ -107,70 +173,128 @@ def main() -> None:
     record.add_argument(
         "--still", action="store_true", help="a PNG of each step instead of a GIF"
     )
-    record.add_argument("--out", type=Path, default=RECORDINGS)
-    commands.add_parser("stop", help="stop Home Assistant and the fake bridge")
-    commands.add_parser("clean", help="stop and remove everything the demo made")
+    record.add_argument(
+        "--out", type=Path, help="where to save them (the instance's recordings)"
+    )
+    stop_ = commands.add_parser("stop", help="stop Home Assistant and the fake bridge")
+    clean = commands.add_parser(
+        "clean", help="stop the instance and remove everything it made"
+    )
+    clean.add_argument(
+        "--all",
+        action="store_true",
+        help="stop all instances and remove everything, the environment too",
+    )
+    clean.add_argument("--yes", action="store_true", help="do not ask to confirm")
+    for command in (start_, record, stop_, clean):
+        command.add_argument(
+            "--instance",
+            metavar="NAME",
+            help=f"another instance than this working copy's ({_default_name()})",
+        )
+    commands.add_parser("status", help="list all instances")
     args = parser.parse_args()
 
+    if args.command == "status":
+        status()
+        return
+    if args.command == "clean" and args.all:
+        clean_all(confirmed=args.yes)
+        return
+    instance = _instance(args.instance)
+    print(f"Instance {instance.name} ({instance.home})", flush=True)
     if args.command == "start":
-        start()
+        start(instance)
     elif args.command == "record":
-        record_flows(args)
+        record_flows(instance, args)
     elif args.command == "stop":
-        stop()
+        stop(instance)
     else:
-        stop()
-        shutil.rmtree(HOME, ignore_errors=True)
-        print(f"Removed {HOME}")
-
-
-def start() -> None:
-    """Install if needed, write a fresh config and start both processes."""
-    if _running():
-        sys.exit("The demo is already running; run `stop` first.")
-    _install()
-    _write_config()
-    RUN.mkdir(parents=True, exist_ok=True)
-    try:
-        _spawn(
-            "bridge",
-            [str(DEMO / "fake_bridge.py"), str(RUN / "bridge"), str(BRIDGE_PORT)],
+        stop(instance)
+        # The legacy demo's folder also holds the shared environment.
+        folders = (
+            [instance.config, instance.run, instance.recordings]
+            if instance.legacy
+            else [instance.home]
         )
-        _spawn("homeassistant", ["-m", "homeassistant", "--config", str(CONFIG)])
-        print(f"Waiting for Home Assistant on {HA_URL}...", flush=True)
-        _wait_for_ha()
-        token = _onboard()
-        _wait_until_running(token)
-        _check_isolated(token)
+        for folder in folders:
+            shutil.rmtree(folder, ignore_errors=True)
+            print(f"Removed {folder}")
+
+
+def start(instance: Instance) -> None:
+    """Install if needed, write a fresh config and start both processes."""
+    if instance.legacy:
+        sys.exit(
+            "The legacy demo cannot be started any more; `start` without "
+            "--instance starts this working copy's instance."
+        )
+    if _running(instance):
+        sys.exit(f"Instance {instance.name} is already running; run `stop` first.")
+    with _lock("install"):
+        _install()
+    try:
+        # Until both processes run, another `start` could pick the same ports.
+        with _lock("ports"):
+            ha_port, bridge_port = _pick_ports(instance)
+            instance.home.mkdir(parents=True, exist_ok=True)
+            (instance.home / "state.json").write_text(
+                json.dumps(
+                    {"repo": str(REPO), "ha_port": ha_port, "bridge_port": bridge_port}
+                )
+            )
+            _write_config(instance)
+            instance.run.mkdir(parents=True, exist_ok=True)
+            _spawn(
+                instance,
+                "bridge",
+                [
+                    str(DEMO / "fake_bridge.py"),
+                    str(instance.run / "bridge"),
+                    str(bridge_port),
+                ],
+            )
+            _spawn(
+                instance,
+                "homeassistant",
+                # No installs at start-up: the environment is shared.
+                ["-m", "homeassistant", "--config", str(instance.config), "--skip-pip"],
+            )
+        print(f"Waiting for Home Assistant on {instance.url}...", flush=True)
+        _wait_for_ha(instance)
+        token = _onboard(instance)
+        _wait_until_running(instance, token)
+        _check_isolated(instance, token)
     except BaseException:
         # Also on sys.exit() and Ctrl-C: leave nothing running.
-        stop()
+        stop(instance)
         raise
     print(
-        f"Ready: {HA_URL} (user {USERNAME!r}, password {PASSWORD!r}).\n"
+        f"Ready: {instance.url} (user {USERNAME!r}, password {PASSWORD!r}).\n"
         "Glowcast is not set up yet; `record` runs the setup flow."
     )
 
 
-def record_flows(args: argparse.Namespace) -> None:
+def record_flows(instance: Instance, args: argparse.Namespace) -> None:
     """Run the recording script in the demo's environment."""
-    if not _running():
-        sys.exit("The demo is not running; run `start` first.")
-    started_from = (CONFIG / "custom_components" / "glowcast").resolve()
+    if not _running(instance):
+        sys.exit(f"Instance {instance.name} is not running; run `start` first.")
+    started_from = (instance.config / "custom_components" / "glowcast").resolve()
     if started_from != (REPO / "custom_components" / "glowcast").resolve():
         sys.exit(
-            f"The running demo uses Glowcast from {started_from}; "
-            "run `stop`, then `start` from this working copy."
+            f"Instance {instance.name} uses Glowcast from {started_from}; "
+            "run `record` from that working copy."
         )
-    args.out.mkdir(parents=True, exist_ok=True)
+    out = args.out or instance.recordings
+    out.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
         [
             str(_python()),
             str(DEMO / "record.py"),
             "--url",
-            HA_URL,
+            instance.url,
             "--bridge",
-            f"https://127.0.0.1:{BRIDGE_PORT}",
+            f"https://127.0.0.1:{instance.bridge_port}",
             "--user",
             USERNAME,
             "--password",
@@ -180,7 +304,7 @@ def record_flows(args: argparse.Namespace) -> None:
             "--theme",
             args.theme,
             "--out",
-            str(args.out),
+            str(out),
             *(["--still"] if args.still else []),
             *args.flows,
         ],
@@ -188,19 +312,145 @@ def record_flows(args: argparse.Namespace) -> None:
     sys.exit(result.returncode)
 
 
-def stop() -> None:
+def stop(instance: Instance) -> None:
     """Stop both processes, Home Assistant first."""
     for name in ("homeassistant", "bridge"):
-        if (pid := _pid(name)) is not None:
+        if (pid := _pid(instance, name)) is not None:
             os.kill(pid, signal.SIGTERM)
             for _ in range(60):
-                if _pid(name) is None:
+                if _pid(instance, name) is None:
                     break
                 time.sleep(0.5)
             else:
                 os.kill(pid, signal.SIGKILL)
-            print(f"Stopped {name}")
-        (RUN / f"{name}.pid").unlink(missing_ok=True)
+            print(f"Stopped {name} of instance {instance.name}")
+        (instance.run / f"{name}.pid").unlink(missing_ok=True)
+
+
+def status() -> None:
+    """A table of all instances; * marks this working copy's."""
+    instances = _instances()
+    if not instances:
+        print(f"No instances in {HOME}")
+        return
+    rows = [["", "INSTANCE", "WORKING COPY", "HA", "BRIDGE", "RUNNING", "URL"]]
+    for instance in instances:
+        state = instance.state
+        repo = state.get("repo", "-")
+        if repo != "-" and not Path(repo).exists():
+            repo += " (gone)"
+        running = _running(instance)
+        rows.append(
+            [
+                "*" if instance.name == _default_name() else "",
+                instance.name,
+                repo,
+                str(state.get("ha_port", "-")),
+                str(state.get("bridge_port", "-")),
+                "yes" if running else "no",
+                instance.url if running else "-",
+            ]
+        )
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    for row in rows:
+        print(
+            "  ".join(
+                cell.ljust(width) for cell, width in zip(row, widths, strict=True)
+            ).rstrip()
+        )
+
+
+def clean_all(*, confirmed: bool) -> None:
+    """Stop every instance and remove HOME, the shared environment too."""
+    instances = _instances()
+    running = [instance.name for instance in instances if _running(instance)]
+    print(
+        f"This stops {len(running)} running instance(s) {running} and removes "
+        f"{HOME}: {len(instances)} instance(s), the shared environment and all "
+        "recordings."
+    )
+    if not confirmed and input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+        sys.exit("Nothing removed.")
+    for instance in instances:
+        stop(instance)
+    shutil.rmtree(HOME, ignore_errors=True)
+    print(f"Removed {HOME}")
+
+
+def _default_name() -> str:
+    """This working copy's instance: its folder's name and a hash of its path."""
+    folder = re.sub(r"[^A-Za-z0-9._-]", "-", REPO.name).lstrip("._-") or "glowcast"
+    return f"{folder}-{hashlib.sha256(str(REPO).encode()).hexdigest()[:6]}"
+
+
+def _instance(name: str | None) -> Instance:
+    if name is None:
+        name = _default_name()
+    if name == LEGACY:
+        return Instance(LEGACY, HOME)
+    if not NAME.fullmatch(name):
+        sys.exit(f"An instance name is letters, digits, '.', '_' and '-': {name!r}")
+    return Instance(name, INSTANCES / name)
+
+
+def _instances() -> list[Instance]:
+    """Every instance with state, the legacy demo first."""
+    found = []
+    if (HOME / "config").exists() or (HOME / "run").exists():
+        found.append(Instance(LEGACY, HOME))
+    if INSTANCES.exists():
+        found += [
+            Instance(folder.name, folder)
+            for folder in sorted(INSTANCES.iterdir())
+            if folder.is_dir()
+        ]
+    return found
+
+
+@contextlib.contextmanager
+def _lock(name: str) -> Iterator[None]:
+    """Hold HOME/<name>.lock, shared by all instances, waiting if need be."""
+    HOME.mkdir(parents=True, exist_ok=True)
+    with open(HOME / f"{name}.lock", "w") as file:
+        try:
+            fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"Waiting for another instance ({name})...", flush=True)
+            fcntl.flock(file, fcntl.LOCK_EX)
+        yield
+
+
+def _pick_ports(instance: Instance) -> tuple[int, int]:
+    """Home Assistant's and the bridge's port: the defaults if free, else others.
+
+    Not a port of another running instance (Home Assistant binds its port only
+    after a while), nor the defaults while a legacy demo exists: its code
+    always uses them.
+    """
+    taken: set[int] = set()
+    for other in _instances():
+        if other.legacy:
+            taken |= {HA_PORT, BRIDGE_PORT}
+        elif other != instance and _running(other):
+            taken |= {other.ha_port, other.bridge_port}
+    ha_port = _free_port(HA_PORT, taken)
+    return ha_port, _free_port(BRIDGE_PORT, taken | {ha_port})
+
+
+def _free_port(preferred: int, taken: set[int]) -> int:
+    port = preferred
+    while True:
+        if port not in taken:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                try:
+                    probe.bind(("127.0.0.1", port))
+                    return port
+                except OSError:
+                    pass
+        # A port the system has free now.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
 
 
 def _install() -> None:
@@ -208,6 +458,11 @@ def _install() -> None:
     marker = VENV / "glowcast-demo.json"
     if marker.exists() and json.loads(marker.read_text()) == REQUIREMENTS:
         return
+    if running := [i.name for i in _instances() if _running(i)]:
+        sys.exit(
+            f"The shared environment in {VENV} needs other versions, but "
+            f"instances {running} use it; stop them first."
+        )
     print(f"Installing Home Assistant into {VENV}...", flush=True)
     # A changed pin is installed into the existing environment.
     uv = shutil.which("uv")
@@ -234,18 +489,19 @@ def _install() -> None:
     marker.write_text(json.dumps(REQUIREMENTS))
 
 
-def _write_config() -> None:
+def _write_config(instance: Instance) -> None:
     """A fresh config directory: the TV and bridge entries, no Glowcast entry."""
-    shutil.rmtree(CONFIG, ignore_errors=True)
-    (CONFIG / ".storage").mkdir(parents=True)
-    (CONFIG / "configuration.yaml").write_text(CONFIGURATION)
+    config = instance.config
+    shutil.rmtree(config, ignore_errors=True)
+    (config / ".storage").mkdir(parents=True)
+    (config / "configuration.yaml").write_text(CONFIGURATION)
     entries = [
         _entry(
             "hue",
             "Hue Bridge",
             BRIDGE_UNIQUE_ID,
             {
-                "host": f"127.0.0.1:{BRIDGE_PORT}",
+                "host": f"127.0.0.1:{instance.bridge_port}",
                 "api_key": "demo-api-key",
                 "api_version": 2,
             },
@@ -258,16 +514,17 @@ def _write_config() -> None:
             {"host": "127.0.0.1", "client_secret": "demo-client-secret"},
         ),
     ]
-    _write_storage("core.config_entries", {"entries": entries}, minor_version=5)
+    _write_storage(config, "core.config_entries", {"entries": entries}, minor_version=5)
     # Since 2026.10 HTTP settings from YAML start as a trial that reverts to the
     # default (port 8123 on every interface) after a while; stored settings
     # are used as they are.
     _write_storage(
+        config,
         "http",
         {
             "stable": {
                 "server_host": ["127.0.0.1"],
-                "server_port": HA_PORT,
+                "server_port": instance.ha_port,
                 "cors_allowed_origins": [],
                 "login_attempts_threshold": -1,
                 "ip_ban_enabled": True,
@@ -286,9 +543,12 @@ def _write_config() -> None:
     # The other onboarding steps are marked done, so onboarding does not add its
     # default integrations (some of them reach the internet).
     _write_storage(
-        "onboarding", {"done": ["core_config", "analytics", "integration"]}, version=4
+        config,
+        "onboarding",
+        {"done": ["core_config", "analytics", "integration"]},
+        version=4,
     )
-    custom = CONFIG / "custom_components"
+    custom = config / "custom_components"
     custom.mkdir()
     for stub in ("hue", "webostv"):
         shutil.copytree(DEMO / "stubs" / stub, custom / stub)
@@ -296,9 +556,14 @@ def _write_config() -> None:
 
 
 def _write_storage(
-    key: str, data: dict[str, Any], *, version: int = 1, minor_version: int = 1
+    config: Path,
+    key: str,
+    data: dict[str, Any],
+    *,
+    version: int = 1,
+    minor_version: int = 1,
 ) -> None:
-    (CONFIG / ".storage" / key).write_text(
+    (config / ".storage" / key).write_text(
         json.dumps(
             {
                 "version": version,
@@ -334,32 +599,35 @@ def _entry(
     }
 
 
-def _wait_for_ha() -> None:
+def _wait_for_ha(instance: Instance) -> None:
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
-        if _pid("homeassistant") is None:
-            sys.exit(f"Home Assistant stopped; see {RUN / 'homeassistant.log'}")
+        if _pid(instance, "homeassistant") is None:
+            sys.exit(
+                f"Home Assistant stopped; see {instance.run / 'homeassistant.log'}"
+            )
         try:
-            _request("GET", "/api/onboarding")
+            _request(instance, "GET", "/api/onboarding")
             return
         except (urllib.error.URLError, ConnectionError, TimeoutError):
             time.sleep(2)
     sys.exit("Home Assistant did not start in time")
 
 
-def _wait_until_running(token: str) -> None:
+def _wait_until_running(instance: Instance, token: str) -> None:
     """The API answers before start-up is done; wait for the rest."""
     deadline = time.monotonic() + 300
-    while _request("GET", "/api/config", token=token)["state"] != "RUNNING":
+    while _request(instance, "GET", "/api/config", token=token)["state"] != "RUNNING":
         if time.monotonic() > deadline:
             sys.exit("Home Assistant did not finish starting in time")
         time.sleep(1)
 
 
-def _onboard() -> str:
+def _onboard(instance: Instance) -> str:
     """Create the test user, the last onboarding step; return an access token."""
-    client_id = f"{HA_URL}/"
+    client_id = f"{instance.url}/"
     user = _request(
+        instance,
         "POST",
         "/api/onboarding/users",
         {
@@ -371,6 +639,7 @@ def _onboard() -> str:
         },
     )
     return _request(
+        instance,
         "POST",
         "/auth/token",
         form={
@@ -381,21 +650,23 @@ def _onboard() -> str:
     )["access_token"]
 
 
-def _check_isolated(token: str) -> None:
+def _check_isolated(instance: Instance, token: str) -> None:
     """Exit (start() then stops the demo) if it could reach or be reached."""
     # A pending HTTP config would be tried at the next start, then reverted.
-    http = json.loads((CONFIG / ".storage" / "http").read_text())["data"]
+    http = json.loads((instance.config / ".storage" / "http").read_text())["data"]
     if http["pending"] is not None:
         sys.exit("Stopped: Home Assistant has pending HTTP settings.")
-    if address := _reachable_from_network():
+    if address := _reachable_from_network(instance):
         sys.exit(f"Stopped: the demo answers on {address}, not only on 127.0.0.1.")
-    log = (CONFIG / "home-assistant.log").read_text()
+    log = (instance.config / "home-assistant.log").read_text()
     for stub in ("hue", "webostv"):
         if f"custom integration {stub} " not in log:
             sys.exit(f"Stopped: the {stub} stub was not loaded.")
     loaded = {
         component.split(".")[0]
-        for component in _request("GET", "/api/config", token=token)["components"]
+        for component in _request(instance, "GET", "/api/config", token=token)[
+            "components"
+        ]
     }
     if found := loaded & DISCOVERY:
         sys.exit(f"Stopped: discovery integrations were loaded: {sorted(found)}")
@@ -405,7 +676,7 @@ def _check_isolated(token: str) -> None:
     )
 
 
-def _reachable_from_network() -> str | None:
+def _reachable_from_network(instance: Instance) -> str | None:
     """Where the demo answers on this computer's network address, if anywhere."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         try:
@@ -414,7 +685,7 @@ def _reachable_from_network() -> str | None:
         except OSError:
             return None  # no network
         address = probe.getsockname()[0]
-    for port in (HA_PORT, BRIDGE_PORT):
+    for port in (instance.ha_port, instance.bridge_port):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
             client.settimeout(1)
             if client.connect_ex((address, port)) == 0:
@@ -423,6 +694,7 @@ def _reachable_from_network() -> str | None:
 
 
 def _request(
+    instance: Instance,
     method: str,
     path: str,
     body: dict[str, Any] | None = None,
@@ -439,34 +711,34 @@ def _request(
         data = json.dumps(body).encode()
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(
-        HA_URL + path, data=data, headers=headers, method=method
+        instance.url + path, data=data, headers=headers, method=method
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read() or b"null")
 
 
-def _spawn(name: str, args: list[str]) -> None:
+def _spawn(instance: Instance, name: str, args: list[str]) -> None:
     """Start a process in the background, with its output in run/<name>.log."""
-    with open(RUN / f"{name}.log", "wb") as log:
+    with open(instance.run / f"{name}.log", "wb") as log:
         process = subprocess.Popen(
             [str(_python()), *args],
             stdout=log,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             # Not the repository: its custom_components would hide the stubs.
-            cwd=CONFIG,
+            cwd=instance.config,
             start_new_session=True,
         )
-    (RUN / f"{name}.pid").write_text(str(process.pid))
+    (instance.run / f"{name}.pid").write_text(str(process.pid))
 
 
-def _running() -> bool:
-    return any(_pid(name) is not None for name in ("homeassistant", "bridge"))
+def _running(instance: Instance) -> bool:
+    return any(_pid(instance, name) is not None for name in ("homeassistant", "bridge"))
 
 
-def _pid(name: str) -> int | None:
-    """The pid of the demo's process `name` if it runs, else None."""
-    pid_file = RUN / f"{name}.pid"
+def _pid(instance: Instance, name: str) -> int | None:
+    """The pid of the instance's process `name` if it runs, else None."""
+    pid_file = instance.run / f"{name}.pid"
     if not pid_file.exists():
         return None
     pid = int(pid_file.read_text())
@@ -474,11 +746,16 @@ def _pid(name: str) -> int | None:
     with contextlib.suppress(ChildProcessError):
         if os.waitpid(pid, os.WNOHANG)[0] == pid:
             return None
-    # After a reboot the pid can belong to another program.
+    # After a reboot the pid can belong to another program, and every instance
+    # runs the shared environment's Python: only the instance's own folder in
+    # the command line tells its processes apart.
     command = subprocess.run(
-        ["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True
+        ["ps", "-ww", "-o", "command=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
     ).stdout
-    return pid if str(VENV) in command else None
+    own = instance.config if name == "homeassistant" else instance.run / "bridge"
+    return pid if str(VENV) in command and f"{own} " in f"{command.strip()} " else None
 
 
 def _python() -> Path:

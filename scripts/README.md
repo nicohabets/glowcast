@@ -13,12 +13,14 @@ See the docstring at the top of each script for usage. Credentials come from env
 
 ## The local demo
 
-`demo.py` runs Home Assistant 2026.10.4 (the "latest" version in `.github/workflows/ci.yml`; bump both together) on `127.0.0.1:8199` with Glowcast from the working copy, a TV called "Living room TV" and a Hue bridge with the entertainment areas "TV area" and "Whole room". It does not need the test requirements; it installs its own.
+`demo.py` runs Home Assistant 2026.10.4 (the "latest" version in `.github/workflows/ci.yml`; bump both together) on `127.0.0.1` with Glowcast from the working copy, a TV called "Living room TV" and a Hue bridge with the entertainment areas "TV area" and "Whole room". It does not need the test requirements; it installs its own.
 
-- Nothing reaches a real TV or bridge: stub `hue` and `webostv` integrations (`demo/stubs/`) only report their entries as loaded, the bridge is a fake one on `127.0.0.1:8443` (`demo/fake_bridge.py`, including Hue's pairing reply), and Home Assistant loads no `default_config` and no discovery integration. `start` checks this and stops if it is not so. The stubs replace Home Assistant's own integrations: never copy them to a real Home Assistant.
+- Nothing reaches a real TV or bridge: stub `hue` and `webostv` integrations (`demo/stubs/`) only report their entries as loaded, the bridge is a fake one on `127.0.0.1` (`demo/fake_bridge.py`, including Hue's pairing reply), and Home Assistant loads no `default_config` and no discovery integration. `start` checks this for every instance and stops if it is not so. The stubs replace Home Assistant's own integrations: never copy them to a real Home Assistant.
 - Switching Glowcast on works, but no TV answers on `127.0.0.1`: after the start-up grace (about 10 s) it stops with "the TV is off or not reachable" in the log.
-- One demo runs per computer, with Glowcast from the working copy that started it; `record` refuses to run from another working copy. Other sessions may use it too, so check with them before `stop` or `clean`.
-- Everything it makes (virtual environment, config directory, logs, GIFs and screenshots) lives in `~/.cache/glowcast-demo`, outside the repository. Playwright keeps its Chromium in `~/.cache/ms-playwright`.
+- Each working copy (each worktree) runs its own instance, so several sessions can use the demo at the same time. The instance is named after the working copy's folder and a short hash of its path (for example `glowcast-1a2b3c`); `--instance NAME` acts on another one. `start`, `record`, `stop` and `clean` act on their own instance only, and print its name. `record` refuses to run from another working copy than the one that started the instance.
+- Ports: `start` picks them and stores them in the instance's `state.json`; `record` and `status` read them from there. The first instance gets `8199` (Home Assistant) and `8443` (the fake bridge) when they are free, the others get free ones: look up the URL with `status` or in `start`'s output.
+- Everything it makes lives in `~/.cache/glowcast-demo`, outside the repository: per instance the config directory, pid files, logs, GIFs and screenshots in `instances/<instance>/`, and one virtual environment for all of them in `venv/`. Playwright keeps its Chromium in `~/.cache/ms-playwright`. The first install takes a lock, so two `start`s never install at once; the environment is only changed (a pin bumped here) while no instance runs, and Home Assistant runs with `--skip-pip`, so a running instance never installs into it. A requirement added to Glowcast's manifest must be added to `REQUIREMENTS` in `demo.py` too.
+- A demo from before instances (state directly in `~/.cache/glowcast-demo/config` and `run/`) shows as the `legacy` instance in `status`; `stop --instance legacy` stops it and `clean --instance legacy` removes its config, logs and recordings. While it exists, new instances leave `8199` and `8443` to it. A session still on the old `demo.py` removes all of `~/.cache/glowcast-demo` with its `clean`, other instances included.
 - `ffmpeg` for the GIFs comes with the `imageio-ffmpeg` package in the demo's environment; no system install needed.
 - It runs with Python alone on Linux and macOS (on Windows in WSL). Home Assistant needs Python 3.14.2 or newer; if the Python you run `demo.py` with is older, it uses [uv](https://docs.astral.sh/uv/) to fetch one.
 
@@ -28,12 +30,15 @@ python3 scripts/demo.py record                         # every flow; or name som
 python3 scripts/demo.py record --lang nl --theme dark  # en|nl, light|dark; --out DIR
 python3 scripts/demo.py record settings --still        # a PNG of each step instead of a GIF
 python3 scripts/demo.py stop
-python3 scripts/demo.py clean                          # stop and remove ~/.cache/glowcast-demo
+python3 scripts/demo.py clean                          # stop and remove this instance
+python3 scripts/demo.py status                         # all instances: working copy, ports, running, URL
+python3 scripts/demo.py stop --instance legacy         # --instance NAME: another instance
+python3 scripts/demo.py clean --all                    # stop all and remove ~/.cache/glowcast-demo (asks first; --yes)
 ```
 
-`start` always begins with a fresh config directory without a Glowcast entry. Log in at http://127.0.0.1:8199 as `demo` / `demo-password` to look around.
+`start` always begins with a fresh config directory without a Glowcast entry. Log in at the URL `start` prints (http://127.0.0.1:8199 for the first instance) as `demo` / `demo-password` to look around.
 
-`record` sets Home Assistant's own language to `--lang` too (entity names come from the server in its language, not from the profile), and records in Home Assistant's mobile view (400 px wide at device scale factor 2, so 800 px wide with sharp text), with a ring where each click lands and a short pause on each step, and saves one GIF per flow as `<lang>-<theme>-<flow>.gif` in `~/.cache/glowcast-demo/recordings` (it warns when one is over GitHub's 10 MB). The flows:
+`record` sets Home Assistant's own language to `--lang` too (entity names come from the server in its language, not from the profile), and records in Home Assistant's mobile view (400 px wide at device scale factor 2, so 800 px wide with sharp text), with a ring where each click lands and a short pause on each step, and saves one GIF per flow as `<lang>-<theme>-<flow>.gif` in the instance's `recordings` folder (it warns when one is over GitHub's 10 MB). The flows:
 - `setup`: the setup flow from "Do you want to set up Glowcast?": TV, bridge, link button, pairing (the fake bridge answers), area, done. It first removes a Glowcast entry from an earlier run.
 - `settings`: from the integration page to the settings screen, choosing another update rate, saving.
 - `device`: from the integration page to Glowcast's device page.
