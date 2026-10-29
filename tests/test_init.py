@@ -615,8 +615,8 @@ async def test_the_real_pipeline_behind_the_switch(
     [output] = adapters.outputs
     await wait_for(lambda: output.sent)
     assert state(hass) == STATE_ON
-    # A red picture at brightness 60 %, with the glow floor.
-    assert output.rgb_at(-1) == pytest.approx((0.60, 0.078, 0.050), abs=0.005)
+    # A red picture at brightness 60 %.
+    assert output.rgb_at(-1) == pytest.approx((0.60, 0.0, 0.0), abs=0.005)
 
     await switch(hass, SERVICE_TURN_OFF)
     assert adapters.log == ["source.start", "output.start", *CLEANUP]

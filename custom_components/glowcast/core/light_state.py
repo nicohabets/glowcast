@@ -79,9 +79,13 @@ class LightState:
                 sb + (tb - sb) * progress,
             )
             self._current[channel_id] = rgb
-            r, g, b = (
-                max(c * brightness, floor) for c, floor in zip(rgb, glow, strict=True)
-            )
+            lit = [c * brightness for c in rgb]
+            # The glow is for dark channels: all of it on black, less the
+            # closer the brightest component gets to the glow level, none at or
+            # above it. So bright colours stay pure, and no component goes
+            # above the glow level or the brightness setting (#43).
+            share = max(0.0, 1 - max(lit) / level) if level > 0 else 0.0
+            r, g, b = (c + share * w for c, w in zip(lit, glow, strict=True))
             colors.append(ChannelColor(channel_id, (r, g, b)))
         return colors
 

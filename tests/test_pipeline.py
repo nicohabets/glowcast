@@ -154,7 +154,7 @@ async def test_first_frame_is_shown_straight_away() -> None:
     h = Harness()
     await h.start()
     await h.clock.advance(0.3)
-    assert h.output.rgb_at(0) == approx_rgb((1.0, 0.078, 0.050))
+    assert h.output.rgb_at(0) == approx_rgb((1.0, 0.0, 0.0))
     assert await h.stop() == StopReason.USER
 
 
@@ -171,12 +171,13 @@ async def test_fades_linearly_over_the_measured_capture_interval() -> None:
     sends = [(t, c[0].rgb) for t, c in h.output.sent if blue_at <= t]
     for t, rgb in sends:
         p = min(1.0, (t - blue_at) / interval)
-        assert rgb[0] == pytest.approx(max(1.0 - p, 0.10), abs=0.01)
-        assert rgb[2] == pytest.approx(max(p, 0.050), abs=0.01)
+        assert rgb[0] == pytest.approx(1.0 - p, abs=0.01)
+        assert rgb[1] == 0.0  # a bright fade gets no glow (#43)
+        assert rgb[2] == pytest.approx(p, abs=0.01)
     await h.clock.advance(1.0)
     # The next capture arrives one tick before a fade ends, so the colour
     # trails the target by a fraction and converges.
-    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.10, 0.078, 1.0), abs=0.01)
+    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
     steps = [t for t, _ in h.output.sent if blue_at <= t <= blue_at + interval]
     assert all(b - a == pytest.approx(TICK) for a, b in itertools.pairwise(steps))
     assert await h.stop() == StopReason.USER
@@ -238,12 +239,13 @@ async def test_update_rate(rate: UpdateRate, per_second: int) -> None:
     ("brightness", "frame", "expected"),
     [
         (80, solid(BLACK), (0.10, 0.078, 0.050)),
-        (40, solid(RED), (0.40, 0.078, 0.050)),
+        (40, solid(RED), (0.40, 0.0, 0.0)),
+        (20, solid(BLUE), (0.0, 0.0, 0.20)),
         (40, solid(BLACK), (0.10, 0.078, 0.050)),
         (8, solid(BLACK), (0.08, 0.0624, 0.0400)),
         (3, solid(BLACK), (0.03, 0.0234, 0.0150)),
-        (3, solid(RED), (0.03, 0.0234, 0.0150)),
-        (100, solid(RED), (1.0, 0.078, 0.050)),
+        (3, solid(RED), (0.03, 0.0, 0.0)),
+        (100, solid(RED), (1.0, 0.0, 0.0)),
     ],
 )
 async def test_brightness_and_minimal_glow(
@@ -269,7 +271,7 @@ async def test_intensity_is_passed_as_a_factor() -> None:
 
 # Holding the last colours when the picture suddenly turns black (#39)
 
-WARM_RED = (1.0, 0.078, 0.050)  # red with the glow floor
+RED_SENT = (1.0, 0.0, 0.0)  # red at brightness 100 %: no glow mixed in (#43)
 GLOW_ONLY = (0.10, 0.078, 0.050)  # black at brightness 100 %
 
 
@@ -284,7 +286,7 @@ async def test_tv_switched_off_during_the_hold_never_shows_the_glow() -> None:
     assert await h.finish() == StopReason.TV_OFF
     after_black = [c[0].rgb for t, c in h.output.sent if t >= 2]
     assert after_black
-    assert all(rgb == approx_rgb(WARM_RED) for rgb in after_black)
+    assert all(rgb == approx_rgb(RED_SENT) for rgb in after_black)
     assert h.output.sent[-1][0] <= off_at + TICK  # TV_OFF is not delayed
     assert h.log[-3:] == CLEANUP
 
@@ -295,7 +297,7 @@ async def test_a_black_scene_longer_than_the_hold_fades_to_the_glow() -> None:
     await h.clock.advance(2)
     h.source.default = solid(BLACK)
     await h.clock.advance(3.6)  # black arrives at about 2.25 s, held for 3.5 s
-    assert h.output.rgb_at(-1) == approx_rgb(WARM_RED)
+    assert h.output.rgb_at(-1) == approx_rgb(RED_SENT)
     await h.clock.advance(1.5)
     assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)
     assert await h.stop() == StopReason.USER
@@ -318,7 +320,7 @@ async def test_a_switch_off_animation_counts_as_black() -> None:
     h.source.on = False
     assert await h.finish() == StopReason.TV_OFF
     after = [c[0].rgb for t, c in h.output.sent if t >= 2]
-    assert all(rgb == approx_rgb(WARM_RED) for rgb in after)
+    assert all(rgb == approx_rgb(RED_SENT) for rgb in after)
 
 
 async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() -> None:
@@ -330,7 +332,7 @@ async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() ->
     await h.clock.advance(3)
     sent = [c[0].rgb for t, c in h.output.sent if t >= 2]
     assert not any(rgb == approx_rgb(GLOW_ONLY) for rgb in sent)
-    assert sent[-1] == approx_rgb((0.10, 0.078, 1.0))
+    assert sent[-1] == approx_rgb((0.0, 0.0, 1.0))
     assert await h.stop() == StopReason.USER
 
 
@@ -504,7 +506,7 @@ async def test_colours_continue_after_a_retry() -> None:
     await h.clock.advance(5.05)  # just after the retry, before the next capture
     after = [c for t, c in h.output.sent if t > 6]
     assert after
-    assert all(colors[0].rgb == approx_rgb((1.0, 0.078, 0.050)) for colors in after)
+    assert all(colors[0].rgb == approx_rgb((1.0, 0.0, 0.0)) for colors in after)
     assert await h.stop() == StopReason.USER
 
 
@@ -516,7 +518,7 @@ async def test_first_fade_after_a_retry_is_not_stretched_over_the_gap() -> None:
     h.source.default = solid(BLUE)  # the first capture after the retry
     await h.clock.advance(5.1)  # retried
     await h.clock.advance(1.3)  # blue fades in over about 1 s, not over the 5 s gap
-    assert h.output.rgb_at(-1) == pytest.approx((0.10, 0.078, 1.0), abs=0.01)
+    assert h.output.rgb_at(-1) == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
     assert await h.stop() == StopReason.USER
 
 

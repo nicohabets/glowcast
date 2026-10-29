@@ -91,7 +91,7 @@ Glowcast waits up to 10 seconds for the TV to show a picture, so it can start th
 
 When Home Assistant shuts down or restarts while syncing, Glowcast releases the lights first.
 
-On a black picture the lights keep a faint warm glow instead of going dark.
+On a black picture the lights keep a faint warm glow instead of going dark. Dark colours blend into that glow; brighter colours are shown pure, without the glow mixed in.
 
 ## Known limits
 
