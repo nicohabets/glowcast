@@ -3,6 +3,7 @@
 The only place that reads `Settings` from `options` or writes them back.
 """
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -16,6 +17,8 @@ from .const import (
 )
 from .core.pipeline import Settings, UpdateRate
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def read_settings(options: Mapping[str, Any]) -> Settings:
     """Read the settings; a missing key (an older entry) gets its default."""
@@ -23,7 +26,7 @@ def read_settings(options: Mapping[str, Any]) -> Settings:
         # Number selectors return floats.
         brightness=int(options.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS)),
         intensity=int(options.get(CONF_INTENSITY, DEFAULT_INTENSITY)),
-        update_rate=UpdateRate(options.get(CONF_UPDATE_RATE, DEFAULT_UPDATE_RATE)),
+        update_rate=_update_rate(options.get(CONF_UPDATE_RATE, DEFAULT_UPDATE_RATE)),
     )
 
 
@@ -34,3 +37,16 @@ def write_settings(settings: Settings) -> dict[str, Any]:
         CONF_INTENSITY: settings.intensity,
         CONF_UPDATE_RATE: settings.update_rate.value,
     }
+
+
+def _update_rate(value: Any) -> UpdateRate:
+    """The stored rate; an unknown one (renamed or removed later) gets the default."""
+    try:
+        return UpdateRate(value)
+    except ValueError:
+        _LOGGER.warning(
+            "Unknown update rate %r in Glowcast's settings; using %s",
+            value,
+            DEFAULT_UPDATE_RATE,
+        )
+        return UpdateRate(DEFAULT_UPDATE_RATE)

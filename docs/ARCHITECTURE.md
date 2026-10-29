@@ -285,7 +285,7 @@ Each adapter module provides these functions itself, so the runtime and the enti
 
 Config entry `VERSION = 1`. The versioning rule:
 - **New types need no migration.** A new source or output type is a new value of `type` in its block (D5, D16).
-- **New keys get defaults on read.** A key added by a later version is missing in older entries; `settings.py` reads every setting with its default from `const.py`, so an older entry keeps working.
+- **New keys get defaults on read.** A key added by a later version is missing in older entries; `settings.py` reads every setting with its default from `const.py`, so an older entry keeps working. A stored update rate that no longer exists also gets the default, with a warning in the log.
 - **`MINOR_VERSION` with `async_migrate_entry` only for a change to the shape of stored data** (a key moved or renamed, a block split). A version bump without a migration function stops existing entries from loading.
 
 ## 6. Repository layout

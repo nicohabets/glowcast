@@ -1,5 +1,9 @@
 """Reading the settings from the options and writing them back."""
 
+import logging
+
+import pytest
+
 from custom_components.glowcast.const import (
     DEFAULT_BRIGHTNESS,
     DEFAULT_INTENSITY,
@@ -29,6 +33,16 @@ def test_missing_keys_get_their_defaults() -> None:
     assert read_settings({}) == Settings(
         DEFAULT_BRIGHTNESS, DEFAULT_INTENSITY, UpdateRate(DEFAULT_UPDATE_RATE)
     )
+
+
+def test_an_unknown_update_rate_gets_the_default(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """For example a rate renamed or removed by a later version."""
+    with caplog.at_level(logging.WARNING):
+        settings = read_settings({**STORED, "update_rate": "turbo"})
+    assert settings == Settings(60, 120, UpdateRate(DEFAULT_UPDATE_RATE))
+    assert "turbo" in caplog.text
 
 
 def test_the_form_s_floats_are_stored_as_whole_numbers() -> None:
