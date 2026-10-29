@@ -363,6 +363,10 @@ Planned as new **source adapters** behind `FrameSource`. Candidates, each still 
 
 Rule: **no code outside `sources/` may know about webOS**, and that includes the UI: the webOS source type provides its own setup step (pick a TV) and its texts. Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
 
+### 8.3 Running without Home Assistant
+
+Spike #99: `core/` already runs without Home Assistant, and the adapters use it only for the config-entry lookup, the HTTP session, a background task and the executor. Planned in two steps (D18): the adapters take those as plain values, with the Home Assistant lookups staying in `sources/` and `outputs/` (#101); then a runner in `scripts/` that developers and agents start from the repository with one `uv` command, with its own pairing and a settings file outside the repository (#102). An installable version for people without Home Assistant follows only after that works on real hardware (#104). Rule: the runner reuses `core/` and the adapters as they are; it never gets behaviour the integration does not have, except what Home Assistant otherwise provides (pairing, settings, starting when the TV turns on).
+
 ## 9. Decisions
 
 | # | Decision | Why |
@@ -384,3 +388,4 @@ Rule: **no code outside `sources/` may know about webOS**, and that includes the
 | D15 | Recovery = stop cleanly, next start works | Predictable; no long waits or fights with the bridge |
 | D16 | Selectable output lives in `options` | Output types can be switched in the settings screen without migrations |
 | D17 | Minimum Home Assistant 2025.7.2 | First release with aiowebostv 0.7.4, which current LG firmware needs (0.7 API features are included) |
+| D18 | A standalone runner as a developer tool first, an installable version later (#99) | Home Assistant itself is the heavy part on a laptop (no Docker Desktop support, Core unsupported); the runner reuses `core/`, lets agents test a branch on real hardware without installing it, and proves the path before users rely on it |
