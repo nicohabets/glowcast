@@ -124,13 +124,17 @@ class HueAreaSelect(GlowcastEntity, SelectEntity, RestoreEntity):
         self._async_read()
 
     @property
-    def _area_id(self) -> str:
-        return self._entry.options[CONF_OUTPUT][CONF_AREA_ID]
+    def _area_id(self) -> str | None:
+        return self._entry.options[CONF_OUTPUT].get(CONF_AREA_ID)
 
     @callback
     def _async_changed(self) -> None:
-        """The options or the switch changed: read the list if it may be stale."""
-        if not self._read or self._area_id not in self._areas:
+        """The options or the switch changed: read the list if it may be stale.
+
+        Also after every stop, for example because the area was removed in
+        the Hue app; not while syncing, unless the stored area is unknown.
+        """
+        if not self._data.is_on or not self._read or self._area_id not in self._areas:
             self._async_read()
 
     @callback

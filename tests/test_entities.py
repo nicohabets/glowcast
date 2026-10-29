@@ -497,6 +497,22 @@ async def test_a_removed_area_shows_unknown_and_choosing_another_clears_the_issu
     assert FakePipeline.instances == []  # off: nothing starts
 
 
+async def test_an_area_removed_while_running_shows_unknown_after_the_stop(
+    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+) -> None:
+    entry = await setup(hass)
+    assert state(hass, AREA) == "TV area"
+    bridge.areas = [area("area-other", "Other area")]  # removed in the Hue app
+    FakePipeline.start_error = runtime.StopReason.OUTPUT_NOT_FOUND
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass, SWITCH) == STATE_OFF
+    assert has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+    assert state(hass, AREA) == STATE_UNKNOWN
+
+    await select(hass, AREA, "Other area")
+    assert not has_issue(hass, entry, runtime.ISSUE_AREA_NOT_FOUND)
+
+
 async def test_another_setting_leaves_the_area_issue_standing(
     hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
 ) -> None:
