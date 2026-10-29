@@ -442,6 +442,9 @@ def _free_port(preferred: int, taken: set[int]) -> int:
     while True:
         if port not in taken:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                # Like Home Assistant: a port that a stopped demo left in
+                # TIME_WAIT is free, one that something listens on is not.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     probe.bind(("127.0.0.1", port))
                     return port
