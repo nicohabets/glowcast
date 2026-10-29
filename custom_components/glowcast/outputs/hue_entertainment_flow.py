@@ -45,8 +45,10 @@ FIELD_AREA = "area"
 class HueEntertainmentSteps(ConfigEntryBaseFlow):
     """Pair with a Hue bridge and pick an entertainment area.
 
-    Uses only what the setup flow and the options flow both have, so the
-    options flow can run these steps too, to pair from the settings (#9).
+    Uses only what the setup flow and the options flow both have, plus the
+    hooks in flow.py (`entry_title`, `async_output_chosen`). The setup flow
+    provides those; the options flow must add them before it runs these steps
+    to pair from the settings (#9).
     """
 
     _hue_bridge_unique_id = ""

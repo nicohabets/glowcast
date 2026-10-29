@@ -170,15 +170,16 @@ class GlowcastData:
         data, options = self._entry.data, self._entry.options
         for part in (source_type, output_type):
             if part.is_missing(self._hass, data, options):
-                _LOGGER.warning(
-                    "Glowcast %s cannot sync: %s",
-                    self._entry.title,
-                    "an integration it uses is not set up (or not loaded)"
-                    if part.missing is None
-                    else part.missing.message,
-                )
-                if part.missing is not None:
-                    self._raise_issue(part.missing.key)
+                if (issue := part.missing) is None:
+                    _LOGGER.warning(
+                        "Glowcast %s cannot sync: an integration it uses is not set up",
+                        self._entry.title,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Glowcast %s cannot sync: %s", self._entry.title, issue.message
+                    )
+                    self._raise_issue(issue.key)
                 return True
         return False
 
