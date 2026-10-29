@@ -36,7 +36,7 @@ So the README, the brand images and `hacs.json` that the reviewers see are the o
    The neighbours were checked on 2026-10-29; if they changed, keep the order of `sorted(..., key=str.casefold)`. The name must match GitHub's spelling exactly: `nicohabets/glowcast`. Keep the 2-space indentation and the newline at the end of the file.
 7. **Open the PR** to `hacs/default` `master` with the template below, every box ticked and all three links filled in (from steps 3 and 4). Leave "Allow edits by maintainers" on. **Do not request reviews**; the template says that gets the PR closed.
 8. **Wait.** A bot adds the label `New default repository` and runs the checks. If it does not add the label, the checks do not run; closing and reopening the PR started them in other submissions. A reviewer then approves, asks for changes, or drafts the PR. After changes: push a new release, then re-request the review.
-9. **After the merge**, Glowcast is in the next scheduled scan (the catalog is rebuilt every few hours). Then search for "Glowcast" in HACS and in the Marketplace and check that it installs like the custom repository (scenario "listed" of #48). Reviewers often ask for the README's install section to start with searching in HACS; that change is then a small follow-up.
+9. **After the merge**, Glowcast is in the next scheduled scan (the catalog is rebuilt every few hours). Then search for "Glowcast" in HACS and in the Marketplace and check that it installs like the custom repository (scenario "listed" of #48). Reviewers often ask for the README's install section to start with searching in HACS; that change is #89.
 
 ## The PR to hacs/default
 
