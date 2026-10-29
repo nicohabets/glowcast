@@ -19,6 +19,9 @@ from .core.pipeline import Settings, UpdateRate
 
 _LOGGER = logging.getLogger(__name__)
 
+# Unknown update rates already logged; the settings are read at every start.
+_warned: set[str] = set()
+
 
 def read_settings(options: Mapping[str, Any]) -> Settings:
     """Read the settings; a missing key (an older entry) gets its default."""
@@ -44,9 +47,11 @@ def _update_rate(value: Any) -> UpdateRate:
     try:
         return UpdateRate(value)
     except ValueError:
-        _LOGGER.warning(
-            "Unknown update rate %r in Glowcast's settings; using %s",
-            value,
-            DEFAULT_UPDATE_RATE,
-        )
+        if str(value) not in _warned:
+            _warned.add(str(value))
+            _LOGGER.warning(
+                "Unknown update rate %r in Glowcast's settings; using %s",
+                value,
+                DEFAULT_UPDATE_RATE,
+            )
         return UpdateRate(DEFAULT_UPDATE_RATE)

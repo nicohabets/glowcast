@@ -32,5 +32,9 @@ class GlowcastEntity(Entity):
             self._attr_device_info["via_device"] = source.device_identifier(entry.data)
 
     async def async_added_to_hass(self) -> None:
-        """Follow the runtime's state, including stops it makes by itself."""
+        """Follow the runtime's state, including stops it makes by itself.
+
+        An entity that overrides this must call super(), or it stops following.
+        """
+        await super().async_added_to_hass()
         self.async_on_remove(self._data.async_add_listener(self.async_write_ha_state))

@@ -159,8 +159,10 @@ def other_integrations(hass: HomeAssistant) -> Generator[None]:
         entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
 
 
-def glowcast_entry(hass: HomeAssistant) -> MockConfigEntry:
-    """An existing Glowcast entry with changed settings."""
+def glowcast_entry(
+    hass: HomeAssistant, settings: dict[str, Any] | None = None
+) -> MockConfigEntry:
+    """An existing Glowcast entry with changed settings (or the given ones)."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Living room TV",
@@ -176,9 +178,11 @@ def glowcast_entry(hass: HomeAssistant) -> MockConfigEntry:
         },
         options={
             "output": {"type": "hue_entertainment", "area_id": "area-tv"},
-            "brightness": 50,
-            "intensity": 150,
-            "update_rate": "low",
+            **(
+                {"brightness": 50, "intensity": 150, "update_rate": "low"}
+                if settings is None
+                else settings
+            ),
         },
     )
     entry.add_to_hass(hass)
@@ -535,6 +539,26 @@ async def test_options_flow(
         "update_rate": "maximum",
     }
     assert isinstance(entry.options["brightness"], int)
+
+
+async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
+    """Missing settings and an unknown update rate show their defaults."""
+    entry = glowcast_entry(hass, {"brightness": 50, "update_rate": "turbo"})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    schema = {str(key): key for key in result["data_schema"].schema}
+    assert schema["brightness"].default() == 50
+    assert schema["intensity"].default() == 100
+    assert schema["update_rate"].default() == "high"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"area": "area-tv", "brightness": 50, "intensity": 100, "update_rate": "high"},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["intensity"] == 100
+    assert entry.options["update_rate"] == "high"
 
 
 async def test_options_flow_rejects_out_of_range(hass: HomeAssistant) -> None:
