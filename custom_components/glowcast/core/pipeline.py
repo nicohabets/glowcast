@@ -83,6 +83,10 @@ class PipelineStatus:
     # stop. None until the first measurement, and again once the lights are
     # released for a retry or for no picture.
     captures_per_second: float | None = None
+    # While streaming: the whole frame is black by the colour engine's rule (a
+    # dark scene; the lights hold the last colours or show the glow). False
+    # otherwise; reported when it changes, never per frame.
+    black_picture: bool = False
 
 
 class UpdateRate(StrEnum):
@@ -166,8 +170,9 @@ class Pipeline:
         """Initialize; nothing happens until run().
 
         `on_status` is called on the event loop on every change of phase, and
-        while streaming about once per second with new captures per second
-        (the same phase); the last call is always the stop, with its reason.
+        while streaming about once per second with new captures per second and
+        when the picture turns black or back (the same phase); the last call
+        is always the stop, with its reason.
         """
         self._source = source
         self._output = output
@@ -182,6 +187,7 @@ class Pipeline:
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
         self._no_picture_since: float | None = None
+        self._black_picture = False
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the stop once.
@@ -206,6 +212,7 @@ class Pipeline:
             except asyncio.CancelledError:
                 cancelled = True
         self._channels = []
+        self._black_picture = False
         _LOGGER.info("Glowcast stopped: %s", reason)
         self._report(Phase.STOPPED, reason)
         if cancelled:
@@ -387,6 +394,7 @@ class Pipeline:
         # Released for a retry or for no picture: measured again on the next stream.
         self._channels = []
         self._captures_per_second = None
+        self._black_picture = False
 
     async def _async_stream(self) -> None:
         """Run the capture and send loops until one of them ends the run."""
@@ -481,7 +489,7 @@ class Pipeline:
     async def _async_set_target(self, frame: Frame) -> None:
         """Give the lights the frame's colours; raise _NoPicture after all-zero
         frames for NO_PICTURE_WAIT. Until then an all-zero frame is a black
-        frame, with the hold on black and the glow."""
+        frame, with the hold on black and the glow, and the status says so."""
         colors, frame_black, no_picture = await self._async_run_job(
             _compute, frame, self._channels, self._settings.intensity / 100
         )
@@ -493,6 +501,9 @@ class Pipeline:
         elif now - self._no_picture_since >= NO_PICTURE_WAIT:
             raise _NoPicture
         self._lights.set_target(colors, frame_black, now)
+        if frame_black != self._black_picture:
+            self._black_picture = frame_black
+            self._report(Phase.STREAMING)
 
     async def _async_run_job(self, func: Callable[..., Any], *args: Any) -> Any:
         """Run the colour engine's work in the executor."""
@@ -512,7 +523,11 @@ class Pipeline:
 
     def _report(self, phase: Phase, reason: StopReason | None = None) -> None:
         status = PipelineStatus(
-            phase, len(self._channels), reason, self._captures_per_second
+            phase,
+            len(self._channels),
+            reason,
+            self._captures_per_second,
+            self._black_picture,
         )
         try:
             self._on_status(status)
