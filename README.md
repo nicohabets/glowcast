@@ -78,7 +78,7 @@ From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketpla
 
 During setup you pick:
 
-1. **TV** - one of your LG webOS TVs in Home Assistant
+1. **What the lights follow** - **LG webOS TV**, then one of your LG webOS TVs in Home Assistant (or **Computer screen**, see below)
 2. **Hue Bridge** - and press its link button when asked, then click Submit within 30 seconds. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself. It shows up in the Hue app as an app called "glowcast".
 3. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand
 
@@ -89,6 +89,16 @@ Under **Configure**, or on Glowcast's device page (see [Settings on the device p
 <img width="400" alt="Glowcast's settings screen in Home Assistant: entertainment area TV area, brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
 
 *The settings screen under Configure, with the default settings.*
+
+### A computer screen (in development)
+
+Glowcast can also follow the screen of a PC or Mac, through a small screen helper on that computer. For now the helper is a developer tool that you start from a clone of this repository; see [the screen helper](https://github.com/nicohabets/glowcast/blob/main/screen_helper/README.md).
+
+1. Start the helper on the computer. It shows a 6-digit pairing code.
+2. Home Assistant finds it on your network by itself: **Settings → Devices & services** shows **Discovered: Glowcast - *computer name***. Click **Add**.
+3. Enter the pairing code, then pick the Hue bridge and the entertainment area, as for a TV.
+
+If the helper is not discovered (for example when Home Assistant and the computer are on different networks), add it by hand: **Add integration → Glowcast → Computer screen**, enter the computer's IP address or host name and the helper's port (8488 unless you started it with another one), then the pairing code. Each computer can have one Glowcast entry; when it gets a new address, Home Assistant finds it again and updates the address. If the helper no longer accepts Glowcast's key (for example after `--unpair`), Home Assistant asks for a new pairing code; your settings are kept. A screen is followed at up to 4 pictures per second.
 
 ## Starting and stopping
 
@@ -165,7 +175,7 @@ The **Status** sensor on Glowcast's device (for example `sensor.glowcast_living_
 | TV off | Stopped because the TV turned off or could not be reached. |
 | Error | Stopped for another reason; Home Assistant shows a repair or asks to pair again where you can fix it, and the log says why. |
 
-For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key), `source_unavailable` (the TV source failed) or `source_auth_failed` (the picture source rejected Glowcast's key; for the computer screen source that is still being built). Use it in automations, for example to get a notification when Glowcast stops with an error.
+For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key), `source_unavailable` (the TV source failed) or `source_auth_failed` (the computer's screen helper rejected Glowcast's key; Home Assistant asks for a new pairing code). Use it in automations, for example to get a notification when Glowcast stops with an error.
 
 The **Capture rate** sensor shows how many pictures per second Glowcast gets from the TV while it streams (about 3-4 on a 2023 LG G3 at Maximum). It is a diagnostic sensor and off by default: on the device page, under **Diagnostic**, open **+1 disabled entity**, then **Capture rate**, its settings (the gear), and turn on **Enabled**. Home Assistant adds it after about 30 seconds. It is unknown when Glowcast is not streaming or has not measured yet. In automations and templates the unit is always `captures/s`; the screens show it in your language.
 
