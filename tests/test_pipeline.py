@@ -652,6 +652,8 @@ async def test_no_picture_for_3_s_releases_the_lights() -> None:
     assert h.output.sent[-1][0] == released_at  # nothing is sent while released
     assert h.statuses[-1].phase is Phase.NO_PICTURE
     assert h.statuses[-1].channels == 0
+    # Kept while there is no picture; only a retry clears it (#105).
+    assert h.statuses[-1].captures_per_second == pytest.approx(3, abs=0.3)
     assert not h.task.done()  # the switch stays on
     assert await h.stop() == StopReason.USER
 
