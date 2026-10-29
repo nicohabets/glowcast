@@ -1,12 +1,11 @@
 """The settings as configuration entities on Glowcast's device (#13).
 
-The pipeline is the fake one from test_init, except in the end-to-end test.
+The pipeline is the fake one from fakes.py, except in the end-to-end test.
 The bridge is faked at the HTTP level, as in the config flow tests, so the
 entertainment-area entity is the real one the Hue output type provides.
 """
 
 import asyncio
-import dataclasses
 from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
@@ -39,7 +38,6 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from custom_components.glowcast import runtime
 from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.core.pipeline import (
-    MonotonicClock,
     Settings,
     UpdateRate,
 )
@@ -49,11 +47,9 @@ from custom_components.glowcast.outputs import (
     hue_area_select,
     hue_entertainment,
 )
-from custom_components.glowcast.sources import SOURCES
 
-from .fakes import FakeOutput, FakeSource
+from .fakes import FakeAdapters, FakePipeline
 from .test_config_flow import AREAS_URL, HOST, FakeBridge, area
-from .test_init import FakePipeline
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -70,56 +66,6 @@ OPTIONS = {
     "intensity": 120,
     "update_rate": "medium",
 }
-
-
-class Lights:
-    """What the registries build instead of the real TV and lights."""
-
-    def __init__(self) -> None:
-        self.log: list[str] = []
-        self.outputs: list[FakeOutput] = []
-
-    def source(self) -> FakeSource:
-        return FakeSource(MonotonicClock(), self.log, capture_time=0)
-
-    def output(self) -> FakeOutput:
-        output = FakeOutput(MonotonicClock(), self.log)
-        self.outputs.append(output)
-        return output
-
-
-@pytest.fixture
-def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
-    """Fake TV and lights; the Hue output type keeps its own entities."""
-    fakes = Lights()
-    monkeypatch.setitem(
-        SOURCES,
-        "webos",
-        dataclasses.replace(
-            SOURCES["webos"],
-            create=lambda hass, data, options: fakes.source(),
-            is_missing=lambda hass, data, options: False,
-        ),
-    )
-    monkeypatch.setitem(
-        OUTPUTS,
-        "hue_entertainment",
-        dataclasses.replace(
-            OUTPUTS["hue_entertainment"],
-            create=lambda hass, data, options: fakes.output(),
-            is_missing=lambda hass, data, options: False,
-        ),
-    )
-    return fakes
-
-
-@pytest.fixture
-def pipeline(lights: Lights, monkeypatch: pytest.MonkeyPatch) -> Lights:
-    """The fake lights behind the fake pipeline."""
-    FakePipeline.instances = []
-    FakePipeline.start_error = None
-    monkeypatch.setattr(runtime, "Pipeline", FakePipeline)
-    return lights
 
 
 @pytest.fixture(autouse=True)
@@ -255,7 +201,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
     ],
 )
 async def test_the_entities(
-    hass: HomeAssistant, pipeline: Lights, language: str, names: dict[str, str]
+    hass: HomeAssistant, fakes: FakeAdapters, language: str, names: dict[str, str]
 ) -> None:
     """Four configuration entities next to the switch, with translated names."""
     hass.config.language = language
@@ -284,7 +230,7 @@ async def test_the_entities(
     assert len({entity.device_id for entity in entities}) == 1
 
 
-async def test_the_values_and_ranges(hass: HomeAssistant, pipeline: Lights) -> None:
+async def test_the_values_and_ranges(hass: HomeAssistant, fakes: FakeAdapters) -> None:
     await setup(hass)
     brightness = hass.states.get(BRIGHTNESS)
     assert brightness.state == "60"
@@ -307,7 +253,7 @@ async def test_the_values_and_ranges(hass: HomeAssistant, pipeline: Lights) -> N
 
 
 async def test_an_older_entry_gets_the_entities_and_keeps_its_switch(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     """A v0.1.x entry without the settings keys: defaults, no migration."""
     entry = await setup(
@@ -343,7 +289,7 @@ async def test_an_older_entry_gets_the_entities_and_keeps_its_switch(
 )
 async def test_a_setting_while_syncing_reaches_the_pipeline_without_a_restart(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     entity_id: str,
     key: str,
     value: Any,
@@ -367,7 +313,7 @@ async def test_a_setting_while_syncing_reaches_the_pipeline_without_a_restart(
 
     [running] = FakePipeline.instances
     assert running.updates == [expected]
-    assert pipeline.log == ["source.start", "output.start"]  # no new claim
+    assert fakes.log == ["source.start", "output.start"]  # no new claim
     assert state(hass, SWITCH) == STATE_ON
     assert STATE_OFF not in switch_states
     assert state(hass, entity_id) == str(value)
@@ -376,7 +322,7 @@ async def test_a_setting_while_syncing_reaches_the_pipeline_without_a_restart(
 
 
 async def test_a_new_area_while_syncing_restarts_the_pipeline(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
@@ -388,15 +334,15 @@ async def test_a_new_area_while_syncing_restarts_the_pipeline(
     }
     first, second = FakePipeline.instances
     assert first.updates == []
-    assert pipeline.log.count("output.stop") == 1
-    assert pipeline.log[-1] == "output.start"
+    assert fakes.log.count("output.stop") == 1
+    assert fakes.log[-1] == "output.start"
     assert state(hass, SWITCH) == STATE_ON
     assert state(hass, AREA) == "Other area"
     await switch(hass, SERVICE_TURN_OFF)
 
 
 async def test_a_value_while_off_is_stored_and_used_at_the_next_start(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     entry = await setup(hass)
     await set_number(hass, BRIGHTNESS, 24.6)  # rounded to whole percents
@@ -413,7 +359,7 @@ async def test_a_value_while_off_is_stored_and_used_at_the_next_start(
 
 
 async def test_a_value_survives_a_restart(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     entry = await setup(hass)
     await set_number(hass, INTENSITY, 150)
@@ -423,22 +369,22 @@ async def test_a_value_survives_a_restart(
 
 
 async def test_the_whole_chain_with_the_real_pipeline(
-    hass: HomeAssistant, lights: Lights
+    hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
     """Entity, options, listener, pipeline: the lights dim, the stream stays."""
     await setup(hass, {**OPTIONS, "brightness": 100})
     await switch(hass, SERVICE_TURN_ON)
     await asyncio.sleep(0.2)
-    [output] = lights.outputs
+    [output] = adapters.outputs
     assert output.rgb_at(-1) == pytest.approx((1.0, 0.0, 0.0), abs=0.005)
 
     await set_number(hass, BRIGHTNESS, 40)
     await asyncio.sleep(0.2)  # a few send ticks
     assert output.rgb_at(-1) == pytest.approx((0.40, 0.0, 0.0), abs=0.005)
-    assert lights.log == ["source.start", "output.start"]
+    assert adapters.log == ["source.start", "output.start"]
     assert state(hass, SWITCH) == STATE_ON
     await switch(hass, SERVICE_TURN_OFF)
-    assert lights.log[-3:] == ["output.stop", "output.close", "source.close"]
+    assert adapters.log[-3:] == ["output.stop", "output.close", "source.close"]
 
 
 # One source of truth
@@ -450,7 +396,7 @@ def form_default(result: dict[str, Any], field: str) -> Any:
 
 
 async def test_the_options_screen_shows_what_an_entity_set(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     entry = await setup(hass)
     await set_number(hass, BRIGHTNESS, 33)
@@ -463,7 +409,7 @@ async def test_the_options_screen_shows_what_an_entity_set(
 
 
 async def test_the_entities_show_what_the_options_screen_saved(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
@@ -487,7 +433,7 @@ async def test_the_entities_show_what_the_options_screen_saved(
 
 
 async def test_a_removed_area_shows_unknown_and_choosing_another_clears_the_issue(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     bridge.areas = [area("area-other", "Other area")]
     entry = await setup(hass)
@@ -503,7 +449,7 @@ async def test_a_removed_area_shows_unknown_and_choosing_another_clears_the_issu
 
 
 async def test_an_area_removed_while_running_shows_unknown_after_the_stop(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     entry = await setup(hass)
     assert state(hass, AREA) == "TV area"
@@ -519,7 +465,7 @@ async def test_an_area_removed_while_running_shows_unknown_after_the_stop(
 
 
 async def test_another_setting_leaves_the_area_issue_standing(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     bridge.areas = [area("area-other", "Other area")]
     entry = await setup(hass)
@@ -529,7 +475,7 @@ async def test_another_setting_leaves_the_area_issue_standing(
 
 
 async def test_two_areas_with_the_same_name(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     bridge.areas = [
         area("area-b", "Living room"),
@@ -549,7 +495,7 @@ async def test_two_areas_with_the_same_name(
 
 
 async def test_areas_with_too_many_channels_are_listed(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     """The too_many_channels repair issue handles them at switch-on."""
     big = {**area("area-big", "Big area"), "channels": [{}] * 25}
@@ -560,7 +506,7 @@ async def test_areas_with_too_many_channels_are_listed(
 
 async def test_bridge_unreachable_at_start_shows_the_restored_area(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     bridge: FakeBridge,
     hue_entry: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,
@@ -589,7 +535,7 @@ async def test_bridge_unreachable_at_start_shows_the_restored_area(
 
 
 async def test_bridge_unreachable_without_a_restored_list(
-    hass: HomeAssistant, pipeline: Lights, hue_entry: MockConfigEntry
+    hass: HomeAssistant, fakes: FakeAdapters, hue_entry: MockConfigEntry
 ) -> None:
     """The first start after the update, with the bridge down: no name known."""
     hue_entry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
@@ -600,7 +546,7 @@ async def test_bridge_unreachable_without_a_restored_list(
 
 async def test_a_failed_read_is_retried_with_a_backoff(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     bridge: FakeBridge,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
@@ -651,7 +597,7 @@ def timers(monkeypatch: pytest.MonkeyPatch) -> Timers:
 
 async def test_the_backoff_doubles_up_to_ten_minutes_and_resets(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     bridge: FakeBridge,
     hue_entry: MockConfigEntry,
     timers: Timers,
@@ -670,7 +616,7 @@ async def test_the_backoff_doubles_up_to_ten_minutes_and_resets(
 
 
 async def test_a_list_from_the_options_screen_cancels_a_pending_retry(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge, timers: Timers
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge, timers: Timers
 ) -> None:
     bridge.reachable = False
     entry = await setup(hass)
@@ -684,7 +630,7 @@ async def test_a_list_from_the_options_screen_cancels_a_pending_retry(
 
 async def test_no_read_when_the_entry_unloads_or_home_assistant_stops(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
     entry = await setup(hass)
@@ -707,7 +653,7 @@ async def test_no_read_when_the_entry_unloads_or_home_assistant_stops(
 
 async def test_a_rejected_key_keeps_the_area_and_starts_no_reauth(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     bridge: FakeBridge,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -724,7 +670,7 @@ async def test_a_rejected_key_keeps_the_area_and_starts_no_reauth(
 
 
 async def test_opening_the_options_screen_refreshes_the_list(
-    hass: HomeAssistant, pipeline: Lights, bridge: FakeBridge
+    hass: HomeAssistant, fakes: FakeAdapters, bridge: FakeBridge
 ) -> None:
     entry = await setup(hass)
     bridge.areas = [*bridge.areas, area("area-new", "New area")]
@@ -756,7 +702,7 @@ class FakeFollow(NumberEntity):
 )
 async def test_the_output_type_provides_what_follows_the_tv(
     hass: HomeAssistant,
-    pipeline: Lights,
+    fakes: FakeAdapters,
     monkeypatch: pytest.MonkeyPatch,
     provided: dict[Platform, Any],
     expected: set[str],
@@ -766,7 +712,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
         OUTPUTS,
         "loose_lights",
         OutputType(
-            create=lambda hass, data, options: pipeline.output(),
+            create=lambda hass, data, options: fakes.output(),
             is_missing=lambda hass, data, options: False,
             device_id=lambda hass, data: None,
             entities=provided,
@@ -789,7 +735,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
 
 
 async def test_an_unknown_output_type_still_gets_the_common_settings(
-    hass: HomeAssistant, pipeline: Lights
+    hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
     """For example an entry written by a later version, after a downgrade."""
     entry = await setup(hass, {**OPTIONS, "output": {"type": "from_the_future"}})

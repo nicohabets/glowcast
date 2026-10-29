@@ -4,11 +4,9 @@ Runs the real pipeline with the shared fakes as TV and lights; the TV's and
 the bridge's devices are registered as their integrations do.
 """
 
-import asyncio
 import dataclasses
 import json
 import re
-from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -26,11 +24,10 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.glowcast.const import DOMAIN
-from custom_components.glowcast.core.pipeline import MonotonicClock
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
-from .fakes import FakeOutput, FakeSource
+from .fakes import FakeAdapters, wait_for
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -65,47 +62,9 @@ SECRETS = [
 ]
 
 
-class Lights:
-    """The fake TV and lights the registries build, on the real clock."""
-
-    def __init__(self) -> None:
-        self.log: list[str] = []
-        self.sources: list[FakeSource] = []
-
-    def source(self) -> FakeSource:
-        source = FakeSource(MonotonicClock(), self.log, capture_time=0)
-        self.sources.append(source)
-        return source
-
-
-@pytest.fixture
-def lights(monkeypatch: pytest.MonkeyPatch) -> Lights:
-    """Fake source and output; the device lookups stay real."""
-    lights = Lights()
-    monkeypatch.setitem(
-        SOURCES,
-        "webos",
-        dataclasses.replace(
-            SOURCES["webos"],
-            create=lambda hass, data, options: lights.source(),
-            is_missing=lambda hass, data, options: False,
-        ),
-    )
-    monkeypatch.setitem(
-        OUTPUTS,
-        "hue_entertainment",
-        dataclasses.replace(
-            OUTPUTS["hue_entertainment"],
-            create=lambda hass, data, options: FakeOutput(MonotonicClock(), lights.log),
-            is_missing=lambda hass, data, options: False,
-        ),
-    )
-    return lights
-
-
 @pytest.fixture
 async def entry(
-    hass: HomeAssistant, lights: Lights, aioclient_mock: AiohttpClientMocker
+    hass: HomeAssistant, adapters: FakeAdapters, aioclient_mock: AiohttpClientMocker
 ) -> Any:
     """Glowcast set up for a TV and a bridge, with their devices in HA."""
     hass.config.components.update({"webostv", "hue"})
@@ -184,20 +143,12 @@ async def entry(
         other.mock_state(hass, ConfigEntryState.NOT_LOADED)
 
 
-async def wait_for(condition: Callable[[], Any], limit: float = 3.0) -> None:
-    """Wait until `condition()` holds; the real pipeline runs on the real clock."""
-    for _ in range(round(limit / 0.01)):
-        if condition():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"not reached within {limit} s")
-
-
 async def sync_until_measured(entry: Any) -> None:
     """Switch on and wait until the captures per second are measured."""
     data = entry.runtime_data
     await data.async_start()
-    await wait_for(lambda: data.status and data.status.captures_per_second)
+    # The first measurement takes a second.
+    await wait_for(lambda: data.status and data.status.captures_per_second, limit=3)
 
 
 async def test_the_download_while_syncing(
@@ -241,10 +192,10 @@ async def test_the_download_after_a_stop_shows_the_last_status(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,
     entry: Any,
-    lights: Lights,
+    adapters: FakeAdapters,
 ) -> None:
     await sync_until_measured(entry)
-    lights.sources[-1].on = False  # the TV reports that it is off
+    adapters.sources[-1].on = False  # the TV reports that it is off
     await wait_for(lambda: not entry.runtime_data.is_on)
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
 
@@ -357,11 +308,11 @@ async def test_a_refused_start_does_not_show_the_previous_stop(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,
     entry: Any,
-    lights: Lights,
+    adapters: FakeAdapters,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await sync_until_measured(entry)
-    lights.sources[-1].on = False
+    adapters.sources[-1].on = False
     await wait_for(lambda: not entry.runtime_data.is_on)
     monkeypatch.setitem(
         OUTPUTS,
