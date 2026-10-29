@@ -32,8 +32,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import imageio_ffmpeg
-import resvg_py
 from PIL import Image, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parents[2]
@@ -349,19 +347,22 @@ class Painter:
     def __init__(self, recording: dict[str, Any]) -> None:
         self._recording = recording
         self._screens: dict[int, str] = {}
-        self._rooms: dict[tuple[Any, ...], Image.Image] = {}
+        # As PNG: a decoded room takes about 2 MB, and a fade has hundreds.
+        self._rooms: dict[tuple[Any, ...], bytes] = {}
 
     def room(self, index: int) -> Image.Image:
         sample = self._recording["samples"][index]
         lights = {id_: light(rgb) for id_, rgb in sample["lights"].items()}
         key = (sample["frame"], tuple(sorted(lights.items())))
         if key not in self._rooms:
+            import resvg_py  # only the drawing needs it, not the tests
+
             svg = room_svg(lights, self._screen(sample["frame"]))
             png = resvg_py.svg_to_bytes(
                 svg_string=svg, width=ROOM_WIDTH, skip_system_fonts=True
             )
-            self._rooms[key] = Image.open(io.BytesIO(bytes(png))).convert("RGBA")
-        return self._rooms[key]
+            self._rooms[key] = bytes(png)
+        return Image.open(io.BytesIO(self._rooms[key])).convert("RGBA")
 
     def _screen(self, frame: int | None) -> str | None:
         if frame is None:
@@ -466,6 +467,8 @@ def _gif(frames: Path, fps: float, gif: Path) -> None:
         "split[a][b];[a]palettegen=stats_mode=full[p];"
         "[b][p]paletteuse=dither=bayer:bayer_scale=2:diff_mode=rectangle"
     )
+    import imageio_ffmpeg  # in the demo's environment, not the tests'
+
     subprocess.run(
         [
             imageio_ffmpeg.get_ffmpeg_exe(),
@@ -519,8 +522,13 @@ def _git(*args: str) -> str:
 def record_main(tmp: Path) -> dict[str, Any] | None:
     """The recording on the merge base with main, or None if its core cannot
     run the scenarios. The temporary worktree is always removed."""
-    _git("fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")
-    base = _git("merge-base", "HEAD", "origin/main")
+    try:
+        _git("fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main")
+        base = _git("merge-base", "HEAD", "origin/main")
+    except subprocess.CalledProcessError as err:
+        reason = (err.stderr.strip().splitlines() or ["no output"])[-1]
+        print(f"Cannot find main's merge base ({reason}); drawing this side only.")
+        return None
     worktree = Path(tempfile.mkdtemp(prefix="glowcast-room-main-"))
     try:
         _git("worktree", "add", "--quiet", "--detach", str(worktree), base)

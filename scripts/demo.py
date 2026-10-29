@@ -385,7 +385,7 @@ def draw_room(args: argparse.Namespace) -> None:
     """Run the room script in the demo's environment; no instance needed."""
     with _lock():
         _install()
-    result = subprocess.run(
+    process = subprocess.Popen(
         [
             str(_python()),
             str(DEMO / "room.py"),
@@ -394,7 +394,12 @@ def draw_room(args: argparse.Namespace) -> None:
             *(["--compare"] if args.compare else []),
         ]
     )
-    sys.exit(result.returncode)
+    try:
+        sys.exit(process.wait())
+    except KeyboardInterrupt:
+        # Ctrl+C reaches room.py too: let it remove its temporary worktree
+        # (subprocess.run would kill it after a moment).
+        sys.exit(process.wait())
 
 
 def stop(instance: Instance) -> None:

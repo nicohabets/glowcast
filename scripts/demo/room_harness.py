@@ -341,6 +341,15 @@ def record(
     run: list[Scenario] | None = None,
     timing_folder: Path | None = None,
 ) -> dict[str, Any]:
+    """record_async() in an event loop of its own."""
+    return asyncio.run(record_async(core_folder, run, timing_folder))
+
+
+async def record_async(
+    core_folder: Path,
+    run: list[Scenario] | None = None,
+    timing_folder: Path | None = None,
+) -> dict[str, Any]:
     """Run the scenarios through the `core/` in `core_folder`, sampling the
     lights and the TV picture on every send tick. The timings come from
     `timing_folder`'s `core/` (by default the same), so both sides of a
@@ -351,7 +360,7 @@ def record(
         if timing_folder is not None:
             timing = load_core(timing_folder, f"glowcast_core_{next(_LOADED)}")
         run = scenarios(timing.light_state.BLACK_HOLD, timing.pipeline.NO_PICTURE_WAIT)
-    return asyncio.run(_record(core, run))
+    return await _record(core, run)
 
 
 def main() -> None:
