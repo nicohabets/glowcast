@@ -1,5 +1,7 @@
 """Constants for Glowcast."""
 
+from .core.pipeline import UpdateRate
+
 DOMAIN = "glowcast"
 
 # Config entry data and options (architecture section 5).
@@ -18,8 +20,8 @@ CONF_UPDATE_RATE = "update_rate"
 SOURCE_WEBOS = "webos"
 OUTPUT_HUE_ENTERTAINMENT = "hue_entertainment"
 
-UPDATE_RATES = ["low", "medium", "high", "maximum"]
+UPDATE_RATES = [rate.value for rate in UpdateRate]
 
 DEFAULT_BRIGHTNESS = 80
 DEFAULT_INTENSITY = 100
-DEFAULT_UPDATE_RATE = "high"
+DEFAULT_UPDATE_RATE = UpdateRate.HIGH.value

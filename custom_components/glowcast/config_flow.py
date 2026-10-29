@@ -35,14 +35,12 @@ from .const import (
     CONF_TYPE,
     CONF_UNIQUE_ID,
     CONF_UPDATE_RATE,
-    DEFAULT_BRIGHTNESS,
-    DEFAULT_INTENSITY,
-    DEFAULT_UPDATE_RATE,
     DOMAIN,
     OUTPUT_HUE_ENTERTAINMENT,
     SOURCE_WEBOS,
     UPDATE_RATES,
 )
+from .core.pipeline import Settings
 from .core.ports import OutputAuthFailed, OutputUnavailable
 from .outputs.hue_entertainment import (
     PairingFailed,
@@ -52,6 +50,7 @@ from .outputs.hue_entertainment import (
     bridge_host,
     bridges,
 )
+from .settings import read_settings, write_settings
 from .sources.webos import tvs
 
 # Form field names; the stored data uses the keys from const.
@@ -201,12 +200,8 @@ class GlowcastConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_CLIENT_KEY: client_key,
                     },
                 },
-                options=_options(
-                    user_input[FIELD_AREA],
-                    DEFAULT_BRIGHTNESS,
-                    DEFAULT_INTENSITY,
-                    DEFAULT_UPDATE_RATE,
-                ),
+                # No settings stored yet, so every one is its default.
+                options=_options(user_input[FIELD_AREA], read_settings({})),
             )
         try:
             areas = await async_areas(self.hass, self._host, self._keys[0])
@@ -289,12 +284,7 @@ class GlowcastOptionsFlow(OptionsFlow):
         """Show the settings screen."""
         if user_input is not None:
             return self.async_create_entry(
-                data=_options(
-                    user_input[FIELD_AREA],
-                    user_input[CONF_BRIGHTNESS],
-                    user_input[CONF_INTENSITY],
-                    user_input[CONF_UPDATE_RATE],
-                )
+                data=_options(user_input[FIELD_AREA], read_settings(user_input))
             )
 
         bridge = self.config_entry.data[CONF_BRIDGE]
@@ -313,23 +303,21 @@ class GlowcastOptionsFlow(OptionsFlow):
 
         options = self.config_entry.options
         area_id = options[CONF_OUTPUT][CONF_AREA_ID]
+        settings = read_settings(options)
         schema = vol.Schema(
             {
                 # A removed area is not offered, so the user must pick another.
                 vol.Required(
                     FIELD_AREA, default=area_id if area_id in areas else vol.UNDEFINED
                 ): _select(areas),
+                vol.Required(CONF_BRIGHTNESS, default=settings.brightness): (
+                    _percentage(1, 100)
+                ),
+                vol.Required(CONF_INTENSITY, default=settings.intensity): (
+                    _percentage(0, 200)
+                ),
                 vol.Required(
-                    CONF_BRIGHTNESS,
-                    default=options.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS),
-                ): _percentage(1, 100),
-                vol.Required(
-                    CONF_INTENSITY,
-                    default=options.get(CONF_INTENSITY, DEFAULT_INTENSITY),
-                ): _percentage(0, 200),
-                vol.Required(
-                    CONF_UPDATE_RATE,
-                    default=options.get(CONF_UPDATE_RATE, DEFAULT_UPDATE_RATE),
+                    CONF_UPDATE_RATE, default=settings.update_rate.value
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=UPDATE_RATES,
@@ -342,16 +330,11 @@ class GlowcastOptionsFlow(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema)
 
 
-def _options(
-    area_id: str, brightness: float, intensity: float, update_rate: str
-) -> dict[str, Any]:
+def _options(area_id: str, settings: Settings) -> dict[str, Any]:
     """Build the options as in architecture section 5."""
     return {
         CONF_OUTPUT: {CONF_TYPE: OUTPUT_HUE_ENTERTAINMENT, CONF_AREA_ID: area_id},
-        # Number selectors return floats.
-        CONF_BRIGHTNESS: int(brightness),
-        CONF_INTENSITY: int(intensity),
-        CONF_UPDATE_RATE: update_rate,
+        **write_settings(settings),
     }
 
 

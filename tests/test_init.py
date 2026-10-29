@@ -29,7 +29,7 @@ from pytest_homeassistant_custom_component.common import (
     async_get_persistent_notifications,
 )
 
-import custom_components.glowcast as glowcast
+from custom_components.glowcast import runtime
 from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.core.pipeline import (
     MonotonicClock,
@@ -157,7 +157,7 @@ def fakes(adapters: Fakes, monkeypatch: pytest.MonkeyPatch) -> Fakes:
     """Fake source and output, and a fake pipeline."""
     FakePipeline.instances = []
     FakePipeline.start_error = None
-    monkeypatch.setattr(glowcast, "Pipeline", FakePipeline)
+    monkeypatch.setattr(runtime, "Pipeline", FakePipeline)
     return adapters
 
 
