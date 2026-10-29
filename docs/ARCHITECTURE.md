@@ -17,7 +17,7 @@ Glowcast only translates picture into colour into light. Everything Home Assista
 
 ### Not in v0.1
 
-Loose lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2, v0.3 and v99 Later. Do not build them, and do not build placeholders for them. Section 8 shows where they will plug in.
+Loose lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2, v0.3 and v99 Later. Build one only when its issue is in Todo, and never build placeholders for them. Section 8 shows where they will plug in.
 
 ## 2. Verified facts (tested 2026-10-28 on an LG OLED65G36LA, 2023)
 

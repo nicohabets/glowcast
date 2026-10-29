@@ -6,8 +6,8 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 
 ## Scope rules
 
-- Build **v0.1 only**: webOS source, Hue entertainment-area output, one switch, and the options screen (area, brightness, intensity, update rate).
-- Only work on issues in the **Todo** column of the project board (see "How we work"). Everything in milestones **v0.2**, **v0.3** and **v99 Later** stays out.
+- v0.1 (webOS source, Hue entertainment-area output, one switch, the options screen) is built. The milestone in progress is **v0.2**.
+- Only work on issues in the **Todo** column of the project board (see "How we work"). An issue in any milestone, v0.2 included, is out of scope until the product owner moves it to Todo; never build ahead for a later issue.
 - Keep the ports (`FrameSource`, `LightOutput`) so later features can be added without rewrites, but do not build placeholders or stub adapters for them.
 - Prefer the simplest thing that works. No speculative options, no config knobs that are not in the architecture.
 
@@ -69,6 +69,14 @@ Work is tracked as GitHub issues on the project board **Glowcast** (https://gith
 8. **Found extra work?** Create a new issue (it lands in Backlog) in the format below and link it. Do not widen the current issue.
 9. Small commits with clear messages. Run `pytest` and `ruff check` before every commit.
 10. Update `README.md` and `docs/ARCHITECTURE.md` when behaviour visible to users changes; record new verified hardware facts in the architecture's "Verified facts" table.
+
+### Working in parallel (Dispatch, desktop sessions, worktrees)
+Several sessions may work at the same time, each on its own issue.
+1. **Work in your own worktree**, never in a checkout another session uses. Inside it, create the issue's branch with `gh issue develop` (rule 3) before your first commit, so the branch has the right name and is linked to the issue; do not keep a generated `worktree-...` branch.
+2. **Stay inside your issue's files.** If you need to change a file that another open pull request also changes, say so in your pull request.
+3. **No changes on the product owner's Home Assistant and no light or TV runs** unless your task explicitly allows it: no installs, no restarts, no service calls, no streaming to the lights. Another session may be testing on the same hardware.
+4. **The hardware check is the product owner's.** When your issue needs real hardware, write the steps under "How to test on real hardware" in the pull request and leave that Definition of Done box unticked "for the product owner".
+5. **Unattended runs:** if you cannot ask the product owner, a product question goes in a comment on the issue with the options; continue with the rest of the issue and say in the pull request what is open. Rule 7 still applies to anything that cannot be undone or that changes the design.
 
 ### Writing new issues
 New issues follow the same format as the existing ones:
