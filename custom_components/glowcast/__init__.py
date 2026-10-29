@@ -1,4 +1,4 @@
-"""Glowcast: Hue lights follow the picture on an LG webOS TV."""
+"""Glowcast: lights follow the picture on a TV."""
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
@@ -37,7 +37,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) ->
 async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
     """Remove the entry's repair issues; the output says what the user cleans up."""
     async_remove_issues(hass, entry.entry_id)
-    # For example Glowcast's app that stays on the Hue bridge.
+    # For example an app that stays on the device the lights are paired with.
     output_type = OUTPUTS.get(entry.options[CONF_OUTPUT][CONF_TYPE])
     if output_type is not None and output_type.async_removed is not None:
         await output_type.async_removed(hass, entry)

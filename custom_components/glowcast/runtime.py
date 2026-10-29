@@ -77,7 +77,7 @@ class GlowcastData:
         return lambda: self._listeners.remove(update)
 
     async def async_start(self) -> None:
-        """Start syncing, unless the TV or the bridge is not set up in HA."""
+        """Start syncing, unless an integration the TV or lights use is not set up."""
         if self._pipeline is not None:
             return
         data, options = self._entry.data, self._entry.options

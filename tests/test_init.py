@@ -273,6 +273,28 @@ async def test_entity_and_device(
     assert state(hass) == STATE_OFF
 
 
+async def test_a_source_without_a_device(
+    hass: HomeAssistant, fakes: Fakes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source type may have no device to link Glowcast's device to (#66)."""
+    monkeypatch.setitem(
+        SOURCES,
+        "webos",
+        dataclasses.replace(
+            SOURCES["webos"],
+            device_identifier=lambda data: None,
+            device_id=lambda hass, data: None,
+        ),
+    )
+    entry = await setup(hass)
+    [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.name == "Glowcast Living room TV"
+    assert device.via_device_id is None
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
 async def test_the_switch_keeps_its_ids_and_device(
     hass: HomeAssistant, fakes: Fakes, tv_device: dr.DeviceEntry
 ) -> None:
@@ -702,6 +724,37 @@ async def test_removing_the_entry_tells_how_to_remove_the_bridge_app(
     )
     assert "Settings → Apps → Network-based" in notice["message"]
     assert "**glowcast**" in notice["message"]
+
+
+async def test_the_removal_notice_comes_from_the_output_type(
+    hass: HomeAssistant, fakes: Fakes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removed: list[str] = []
+
+    async def async_removed(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+        removed.append(entry.entry_id)
+
+    monkeypatch.setitem(
+        OUTPUTS,
+        "hue_entertainment",
+        dataclasses.replace(OUTPUTS["hue_entertainment"], async_removed=async_removed),
+    )
+    entry = await setup(hass)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle(hass)
+    assert removed == [entry.entry_id]
+    assert notices(hass) == {}
+
+
+async def test_no_removal_notice_without_a_paired_bridge(
+    hass: HomeAssistant, fakes: Fakes
+) -> None:
+    """Only an entry that paired with a bridge left an app on it."""
+    entry = await setup(hass)
+    hass.config_entries.async_update_entry(entry, data={"source": entry.data["source"]})
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle(hass)
+    assert notices(hass) == {}
 
 
 async def test_the_removal_notice_in_dutch(hass: HomeAssistant, fakes: Fakes) -> None:

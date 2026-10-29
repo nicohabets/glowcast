@@ -1,7 +1,7 @@
 """Diagnostics for bug reports: the setup and the last status, without secrets.
 
 Architecture 4.4. Bug reports are public, so the download never contains a
-stored value of the entry (keys, ids, the area): it shows their shape, the
+stored value of the entry (keys, ids, choices): it shows their shape, the
 settings and the types instead, so a key that a later type adds cannot leak.
 Devices come through the source and output types and show only hardware and
 software, never a name or serial number.

@@ -59,7 +59,10 @@ class LightOutput(Protocol):
     max_rate_hz: float  # how often send() may be called
 
     async def start(self) -> list[Channel]:
-        """Claim the lights (at most 20 channels) and return the channels to drive.
+        """Claim the lights and return the channels to drive.
+
+        The output has its own channel limit (Hue: 20). May be called again
+        after stop() and close(), for the retry after OutputLost.
 
         Raises OutputBusy, OutputAuthFailed, OutputNotFound, OutputTooManyChannels
         or OutputUnavailable.
@@ -69,7 +72,11 @@ class LightOutput(Protocol):
         """Send colours; non-blocking."""
 
     async def check(self) -> None:
-        """Raise OutputLost (gone or taken over) or OutputAuthFailed."""
+        """Raise OutputLost (gone or taken over) or OutputAuthFailed.
+
+        Called again on every send tick when no check is running, so the
+        output throttles its own status requests.
+        """
 
     async def stop(self) -> None:
         """Release the lights; safe to call twice."""
