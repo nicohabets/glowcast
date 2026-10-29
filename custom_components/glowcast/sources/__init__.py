@@ -20,7 +20,8 @@ class SourceType:
     # Whether the integration entry the source uses is removed or not loaded.
     is_missing: Callable[[HomeAssistant, Mapping[str, Any]], bool]
     # The TV's device in Home Assistant, to link Glowcast's device to: its
-    # identifier (older HA) and its device registry id (newer HA).
+    # identifier (older HA) and its device registry id (newer HA, and
+    # diagnostics).
     device_identifier: Callable[[Mapping[str, Any]], tuple[str, str]]
     device_id: Callable[[HomeAssistant, Mapping[str, Any]], str | None]
 

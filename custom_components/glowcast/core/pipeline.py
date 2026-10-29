@@ -37,6 +37,7 @@ LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
+CAPTURE_RATE_WINDOW = 1.0  # seconds; the captures per second are reported this often
 
 Runner = Callable[..., Awaitable[Any]]
 
@@ -71,6 +72,9 @@ class PipelineStatus:
     phase: Phase
     channels: int = 0  # the number of channels, once the lights are claimed
     stop_reason: StopReason | None = None  # only when stopped
+    # Frames delivered per second, measured while streaming; kept after a
+    # stop. None until the first measurement.
+    captures_per_second: float | None = None
 
 
 class UpdateRate(StrEnum):
@@ -162,6 +166,7 @@ class Pipeline:
         self._channels: list[Channel] = []
         self._lights = LightState()
         self._retried_at: float | None = None
+        self._captures_per_second: float | None = None
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the stop once.
@@ -340,6 +345,10 @@ class Pipeline:
     async def _async_capture_loop(self) -> None:
         interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
         failures = 0
+        # Captures per second, from the end of the first capture to the end of
+        # each later one, over at least CAPTURE_RATE_WINDOW.
+        captures = 0
+        window_start: float | None = None
         while True:
             begin = self._clock.now()
             try:
@@ -354,7 +363,15 @@ class Pipeline:
                 raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
             else:
                 failures = 0
+                captures += 1
                 await self._async_set_target(frame)
+            now = self._clock.now()
+            if window_start is None:
+                captures, window_start = 0, now
+            elif (elapsed := now - window_start) >= CAPTURE_RATE_WINDOW:
+                self._captures_per_second = round(captures / elapsed, 2)
+                self._report(Phase.STREAMING)
+                captures, window_start = 0, now
             await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
 
     async def _async_send_loop(self) -> None:
@@ -407,7 +424,9 @@ class Pipeline:
                 _LOGGER.exception("Error while stopping Glowcast")
 
     def _report(self, phase: Phase, reason: StopReason | None = None) -> None:
-        status = PipelineStatus(phase, len(self._channels), reason)
+        status = PipelineStatus(
+            phase, len(self._channels), reason, self._captures_per_second
+        )
         try:
             self._on_status(status)
         except Exception:

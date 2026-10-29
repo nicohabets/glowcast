@@ -113,6 +113,10 @@ On a black picture the lights keep a faint warm glow instead of going dark. Dark
 - **Glowcast's icon** in Settings → Devices & services only shows on Home Assistant 2026.3 or newer; older versions show no icon for Glowcast.
 - Tested on a 2023 LG G3 so far. Reports from other models are welcome. Please open an issue with your model and webOS version.
 
+## Reporting a problem
+
+Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and attach Glowcast's diagnostics: **Settings → Devices & services → Glowcast → ⋮ → Download diagnostics**. The download shows the versions, your settings, the TV's and bridge's model and software version, and what Glowcast was doing last (also after it stopped, with the reason). Keys, addresses, ids, serial numbers and the TV's name are left out, but have a look before you post it: issues on GitHub are public.
+
 ## Privacy
 
 Glowcast pairs with your Hue Bridge once and stores that key in Home Assistant. The key gives full access to the bridge, like any app you connect to it. Removing Glowcast from Home Assistant does not remove its app from the bridge (the bridge does not allow that), so Home Assistant shows a notification with these steps when you remove Glowcast. To remove it from the bridge: in the Hue app, go to **Settings → Apps → Network-based** (Dutch: Instellingen → Toepassingen → Netwerk-gebaseerd), tap the info button next to **glowcast** and remove it.

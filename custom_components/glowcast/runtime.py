@@ -175,10 +175,12 @@ class GlowcastData:
         """Keep the pipeline's status and react to it (architecture 4.4)."""
         if pipeline is not self._pipeline:
             return  # an old pipeline, for example after a restart
-        self._status = status
+        previous, self._status = self._status, status
         if status.phase is Phase.STREAMING:
-            # The lights were claimed: earlier problems are solved.
-            self.async_remove_issues()
+            # The lights were claimed: earlier problems are solved. Later
+            # streaming reports only update the captures per second.
+            if previous is None or previous.phase is not Phase.STREAMING:
+                self.async_remove_issues()
         elif status.phase is Phase.STOPPED and status.stop_reason is not None:
             self._async_stopped(status.stop_reason)
 

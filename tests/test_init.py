@@ -167,6 +167,7 @@ def adapters(monkeypatch: pytest.MonkeyPatch) -> Fakes:
         OutputType(
             create=lambda hass, data, options: fakes.output(),
             is_missing=lambda hass, data: fakes.output_missing,
+            device_id=lambda hass, data: None,
         ),
     )
     return fakes
@@ -535,6 +536,26 @@ async def test_a_successful_retry_clears_the_repair_issues(
     pipeline.on_status(PipelineStatus(Phase.STREAMING, channels=1))
     await settle(hass)
     assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_new_capture_rate_is_not_a_new_claim(
+    hass: HomeAssistant, fakes: Fakes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The captures per second arrive once a second; issues are cleared once."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    cleared: list[None] = []
+    monkeypatch.setattr(
+        entry.runtime_data, "async_remove_issues", lambda: cleared.append(None)
+    )
+    pipeline = FakePipeline.instances[-1]
+    for rate in (3.9, 4.0, 4.1):
+        pipeline.on_status(
+            PipelineStatus(Phase.STREAMING, channels=1, captures_per_second=rate)
+        )
+    assert cleared == []
+    assert entry.runtime_data.status.captures_per_second == 4.1
     await switch(hass, SERVICE_TURN_OFF)
 
 
