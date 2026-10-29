@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+import math
 from collections.abc import Mapping
 from contextlib import suppress
 from typing import Any
@@ -49,6 +50,9 @@ CAPTURE_PAYLOAD = {"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "J
 
 class WebOsFrameSource:
     """Captures the TV picture through webOS's local screenshot call."""
+
+    # No limit of its own: Maximum is as fast as the TV answers.
+    max_rate_hz = math.inf
 
     def __init__(self, hass: HomeAssistant, unique_id: str) -> None:
         """Initialize for the webostv config entry with this unique id."""

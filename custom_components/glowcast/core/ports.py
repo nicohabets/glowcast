@@ -9,6 +9,10 @@ class SourceUnavailable(Exception):
     """The source cannot deliver a frame (TV off, unreachable or not set up)."""
 
 
+class SourceAuthFailed(Exception):
+    """The source rejected Glowcast's credentials; pair again."""
+
+
 class OutputBusy(Exception):
     """Another app is streaming on the bridge; nothing was started."""
 
@@ -36,8 +40,16 @@ class OutputLost(Exception):
 class FrameSource(Protocol):
     """Delivers frames from a TV."""
 
+    # How often capture() may be called. The pipeline never captures faster,
+    # whatever the update rate.
+    max_rate_hz: float
+
     async def start(self) -> None:
-        """Connect; may take a few seconds. Raises SourceUnavailable."""
+        """Connect; may take a few seconds.
+
+        Raises SourceUnavailable, or SourceAuthFailed when the source rejects
+        Glowcast's credentials.
+        """
 
     def is_on(self) -> bool:
         """Return whether the TV is on and showing a picture.
@@ -47,7 +59,10 @@ class FrameSource(Protocol):
         """
 
     async def capture(self) -> Frame:
-        """Return the current picture. Raises SourceUnavailable within 5 s."""
+        """Return the current picture.
+
+        Raises SourceUnavailable within 5 s, or SourceAuthFailed.
+        """
 
     async def close(self) -> None:
         """Disconnect and release resources; safe to call twice."""

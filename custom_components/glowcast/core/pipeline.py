@@ -25,6 +25,7 @@ from .ports import (
     OutputNotFound,
     OutputTooManyChannels,
     OutputUnavailable,
+    SourceAuthFailed,
     SourceUnavailable,
 )
 
@@ -58,6 +59,7 @@ class StopReason(StrEnum):
     OUTPUT_UNAVAILABLE = "output_unavailable"
     AUTH_FAILED = "auth_failed"
     SOURCE_UNAVAILABLE = "source_unavailable"
+    SOURCE_AUTH_FAILED = "source_auth_failed"
 
 
 class Phase(StrEnum):
@@ -99,7 +101,7 @@ class UpdateRate(StrEnum):
 
     @property
     def interval(self) -> float:
-        """Seconds between captures; 0 means as fast as the TV allows."""
+        """Seconds between captures; 0 means as fast as the source allows."""
         return {"low": 1.0, "medium": 0.5, "high": 1 / 3, "maximum": 0.0}[self.value]
 
 
@@ -305,6 +307,9 @@ class Pipeline:
             return started, await self._source.capture()
         except SourceUnavailable:
             return started, None
+        except SourceAuthFailed as err:
+            _LOGGER.warning("%s", err)
+            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the TV source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -443,6 +448,9 @@ class Pipeline:
                 _LOGGER.info("%d captures in a row failed", self._failures)
                 raise _Stop(StopReason.TV_OFF) from None
             return None
+        except SourceAuthFailed as err:
+            _LOGGER.warning("%s", err)
+            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the TV source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -452,7 +460,12 @@ class Pipeline:
     async def _async_pace(self, begin: float) -> None:
         """Wait until the next capture is due after one that began at `begin`."""
         # Read on every capture: the update rate can change while streaming.
-        interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
+        # The source's own limit caps Maximum (and any faster level).
+        interval = max(
+            self._settings.update_rate.interval,
+            1 / self._source.max_rate_hz,
+            MIN_CAPTURE_INTERVAL,
+        )
         await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
 
     async def _async_send_loop(self) -> None:

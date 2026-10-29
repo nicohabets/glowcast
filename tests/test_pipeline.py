@@ -27,6 +27,7 @@ from custom_components.glowcast.core.ports import (
     OutputNotFound,
     OutputTooManyChannels,
     OutputUnavailable,
+    SourceAuthFailed,
     SourceUnavailable,
 )
 
@@ -254,6 +255,41 @@ async def test_update_rate(rate: UpdateRate, per_second: int) -> None:
     before = h.source.captures
     await h.clock.advance(10)
     assert h.source.captures - before == pytest.approx(10 * per_second, abs=1)
+    assert await h.stop() == StopReason.USER
+
+
+@pytest.mark.parametrize(
+    ("rate", "per_second"),
+    [
+        (UpdateRate.LOW, 1),
+        (UpdateRate.MEDIUM, 2),
+        (UpdateRate.HIGH, 3),
+        (UpdateRate.MAXIMUM, 4),  # capped by the source, not by the capture time
+    ],
+)
+async def test_the_source_caps_the_update_rate(
+    rate: UpdateRate, per_second: int
+) -> None:
+    """A source that allows 4 per second (the screen, #110) caps only Maximum."""
+    h = Harness(rate=rate)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    before = h.source.captures
+    await h.clock.advance(10)
+    assert h.source.captures - before == pytest.approx(10 * per_second, abs=1)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_maximum_without_a_cap_goes_as_fast_as_the_source() -> None:
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.capture_time = 0.1
+    await h.start()
+    await h.clock.advance(1)
+    before = h.source.captures
+    await h.clock.advance(10)
+    assert h.source.captures - before == pytest.approx(100, abs=2)
     assert await h.stop() == StopReason.USER
 
 
@@ -620,6 +656,27 @@ async def test_key_revoked_while_streaming() -> None:
     await h.clock.advance(1)
     h.output.check_error = OutputAuthFailed("revoked")
     assert await h.finish() == StopReason.AUTH_FAILED
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_source_rejects_the_key_at_start() -> None:
+    """No retrying for the startup grace: pair again (#110)."""
+    h = Harness()
+    h.source.start_error = SourceAuthFailed("rejected")
+    await h.start()
+    await h.clock.advance(0.5)
+    assert h.task is not None and h.task.done()
+    assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
+    assert "output.start" not in h.log
+    assert h.log[-1] == "source.close"
+
+
+async def test_source_rejects_the_key_while_streaming() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = [SourceAuthFailed("rejected")]
+    assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
     assert h.log[-3:] == CLEANUP
 
 
