@@ -46,6 +46,10 @@ Everything stays on your local network.
 3. Restart Home Assistant (Settings → System → the restart button in the top right, or the repair HACS shows).
 4. Go to **Settings → Devices & services → Add integration → Glowcast**.
 
+<img width="400" alt="The Glowcast setup flow in Home Assistant: choose the TV, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/setup-flow.gif">
+
+*Setting up Glowcast: the TV, the Hue bridge and its link button, then the entertainment area.*
+
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
 Updates show up in HACS and under Settings → System → Updates.
