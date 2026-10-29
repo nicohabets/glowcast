@@ -6,7 +6,7 @@ It answers only what Glowcast's setup flow and settings screen ask for:
 - POST /api: Hue's pairing reply, error 101 ("link button not pressed") until
   the link button is pressed, then a generic app key and client key;
 - GET  /clip/v2/resource/entertainment_configuration: two entertainment areas;
-- POST /demo/press-link-button: presses the link button (for the screenshot
+- POST /demo/press-link-button: presses the link button (for the recording
   script); the next pairing request succeeds.
 
 Usage: python fake_bridge.py <directory for the key> <port>
@@ -18,6 +18,7 @@ import ipaddress
 import json
 import ssl
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -41,11 +42,19 @@ class Bridge:
 
     def __init__(self) -> None:
         """Start with the link button not pressed."""
-        self.button_pressed = False
+        self._lock = threading.Lock()  # requests come in on several threads
+        self._button_pressed = False
+
+    def press_link_button(self) -> None:
+        """Let the next pairing request succeed."""
+        with self._lock:
+            self._button_pressed = True
 
     def pair(self) -> list[dict[str, Any]]:
         """Hue's reply to POST /api; a pressed button pairs one app."""
-        if not self.button_pressed:
+        with self._lock:
+            pressed, self._button_pressed = self._button_pressed, False
+        if not pressed:
             return [
                 {
                     "error": {
@@ -55,7 +64,6 @@ class Bridge:
                     }
                 }
             ]
-        self.button_pressed = False
         return [{"success": {"username": APP_KEY, "clientkey": CLIENT_KEY}}]
 
 
@@ -87,6 +95,9 @@ def make_handler(bridge: Bridge) -> type[http.server.BaseHTTPRequestHandler]:
     """A request handler bound to the bridge's state."""
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        # A client that stalls (also in the TLS handshake) gives up its thread.
+        timeout = 10
+
         def do_GET(self) -> None:
             if self.path == "/api/config":
                 self._reply({"name": "Demo bridge", "apiversion": "1.70.0"})
@@ -103,7 +114,7 @@ def make_handler(bridge: Bridge) -> type[http.server.BaseHTTPRequestHandler]:
             if self.path == "/api":
                 self._reply(bridge.pair())
             elif self.path == "/demo/press-link-button":
-                bridge.button_pressed = True
+                bridge.press_link_button()
                 self._reply({"pressed": True})
             else:
                 self._reply({"errors": [{"description": "not found"}]}, 404)
@@ -161,7 +172,11 @@ def main() -> None:
     server = http.server.ThreadingHTTPServer((HOST, port), make_handler(Bridge()))
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    # The handshake runs in each request's own thread, not in accept(), so a
+    # stalled client cannot block the others.
+    server.socket = context.wrap_socket(
+        server.socket, server_side=True, do_handshake_on_connect=False
+    )
     print(f"fake bridge: listening on https://{HOST}:{port}", flush=True)
     server.serve_forever()
 

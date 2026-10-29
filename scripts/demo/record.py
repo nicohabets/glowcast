@@ -14,6 +14,7 @@ Files: <lang>-<theme>-<flow>.gif, or <lang>-<theme>-<flow>-<nn>-<name>.png.
 """
 
 import argparse
+import contextlib
 import json
 import ssl
 import subprocess
@@ -27,7 +28,15 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import imageio_ffmpeg
-from playwright.sync_api import Browser, BrowserContext, Locator, Page, sync_playwright
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    Locator,
+    Page,
+    Response,
+    sync_playwright,
+)
+from playwright.sync_api import Error as PlaywrightError
 
 # Home Assistant's mobile view, recorded at scale factor 2: GIFs 800 px wide.
 VIEWPORT = {"width": 400, "height": 860}
@@ -36,9 +45,11 @@ FPS = 10  # the GIF's frame rate; screenshots come at about 5 to 8 per second
 PAUSE = 900  # ms on each step of a GIF, after it settles
 LOAD_TIMEOUT = 120000  # ms; right after `start` the frontend can take a minute
 MAX_GIF_BYTES = 10_000_000  # GitHub's limit for an attached image
-# Where the frontend draws its dialogs and their primary button.
-DIALOG = "ha-dialog"
+# The dialog of setup and options flows, and its primary button. Scoped to
+# the flow dialog: a closing confirm dialog would match a bare ha-dialog too.
+DIALOG = "dialog-data-entry-flow ha-dialog"
 PRIMARY = f"{DIALOG} ha-button[slot=primaryAction]"
+CONFIRM = "dialog-box ha-dialog ha-button[slot=primaryAction]"
 HASS = "document.querySelector('home-assistant').hass"
 # A ring where the next click lands, removed with the click so it never shows
 # on the next screen. A popover sits in the top layer, so it shows above Home
@@ -124,7 +135,9 @@ class Recorder:
                 self.wait(600)
         locator.click()
         if self.mode == "gif":
-            self.page.evaluate(UNRING)
+            # A click that loads another page has removed the ring already.
+            with contextlib.suppress(PlaywrightError):
+                self.page.evaluate(UNRING)
 
     def goto(self, path: str) -> None:
         """Open a page of the frontend and wait until it has drawn."""
@@ -142,10 +155,15 @@ class Recorder:
 
     def option(self, value: str) -> Locator:
         """The item with this value in the open dropdown."""
+        # Closed menus elsewhere on the page have items too, but hidden ones.
         items = self.page.locator("ha-dropdown-item")
         index = items.evaluate_all(
-            "(items, value) => items.findIndex(i => i.value === value)", value
+            "(items, value) => items.findIndex("
+            "i => i.value === value && i.checkVisibility())",
+            value,
         )
+        if index < 0:  # nth(-1) would be the last item
+            raise LookupError(f"No option {value!r} in an open dropdown")
         return items.nth(index)
 
     def submit(self) -> None:
@@ -170,9 +188,9 @@ def setup(rec: Recorder) -> None:
     page = rec.page
     rec.goto("/config/integrations/dashboard/add?domain=glowcast")
     # "Do you want to set up Glowcast?" over the integrations page.
-    page.locator(f"dialog-box {PRIMARY}").wait_for()
+    page.locator(CONFIRM).wait_for()
     rec.begin()
-    rec.click(page.locator(f"dialog-box {PRIMARY}"))
+    rec.click(page.locator(CONFIRM))
     page.locator(PRIMARY).wait_for()
     rec.step("tv")
     rec.submit()
@@ -262,6 +280,37 @@ def prepare(rec: Recorder, flow: str) -> None:
             )
 
 
+def abort_flows_on_exit(page: Page) -> Callable[[], None]:
+    """Remember the flows the page starts; return a function that aborts them.
+
+    A run that fails halfway would leave its setup flow open, and Home
+    Assistant then refuses a new one for the same TV ("already being
+    configured"). Its API does not list flows a user started, so they are
+    remembered here.
+    """
+    started: list[str] = []
+
+    def remember(response: Response) -> None:
+        if response.request.method == "POST" and response.url.endswith(
+            "/config_entries/flow"
+        ):
+            with contextlib.suppress(PlaywrightError, KeyError, ValueError):
+                started.append(response.json()["flow_id"])
+
+    def abort() -> None:
+        for flow_id in started:
+            # A finished flow is gone already (404).
+            with contextlib.suppress(PlaywrightError):
+                page.evaluate(
+                    f"id => {HASS}.callApi('DELETE', "
+                    "`config/config_entries/flow/${id}`)",
+                    flow_id,
+                )
+
+    page.on("response", remember)
+    return abort
+
+
 def new_context(browser: Browser, args: argparse.Namespace) -> BrowserContext:
     """A browser in the mobile view, language and theme."""
     dark = args.theme == "dark"
@@ -299,6 +348,9 @@ def record(page: Page, args: argparse.Namespace, flow: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         rec = Recorder(page, args, "gif", flow, Path(tmp))
         FLOWS[flow](rec)
+        if not rec.recording:
+            raise RuntimeError(f"The flow {flow!r} never called rec.begin()")
+        rec.capture()  # the end state, also if the flow ends on an action
         # Each screenshot shows until the next one; the last one for a pause.
         times = [t for t, _ in rec.frames] + [rec.frames[-1][0] + PAUSE / 1000]
         lines = [
@@ -354,11 +406,14 @@ def main() -> None:
     parser.add_argument("--still", action="store_true")
     parser.add_argument("flows", nargs="*")
     args = parser.parse_args()
+    if unknown := [flow for flow in args.flows if flow not in FLOWS]:
+        parser.error(f"unknown flow {unknown}; the flows are {list(FLOWS)}")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         context = new_context(browser, args)
         page = context.new_page()
+        abort_flows = abort_flows_on_exit(page)
         try:
             log_in(page, args)
             for flow in args.flows or FLOWS:
@@ -370,6 +425,7 @@ def main() -> None:
         except Exception:
             fail(page, args)
         finally:
+            abort_flows()
             browser.close()
 
 

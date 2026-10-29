@@ -18,10 +18,12 @@ lives in ~/.cache/glowcast-demo, outside the repository.
 """
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -38,7 +40,6 @@ VENV = HOME / "venv"
 CONFIG = HOME / "config"
 RUN = HOME / "run"
 RECORDINGS = HOME / "recordings"
-FLOWS = ["setup", "settings", "device"]  # the flows in demo/record.py
 
 HA_PORT = 8199
 BRIDGE_PORT = 8443
@@ -98,7 +99,9 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("start", help="start Home Assistant and the fake bridge")
     record = commands.add_parser("record", help="record GIFs of the flows")
-    record.add_argument("flows", nargs="*", choices=FLOWS, metavar="FLOW")
+    record.add_argument(
+        "flows", nargs="*", metavar="FLOW", help="flows in demo/record.py (all)"
+    )
     record.add_argument("--lang", choices=["en", "nl"], default="en")
     record.add_argument("--theme", choices=["light", "dark"], default="light")
     record.add_argument(
@@ -128,16 +131,21 @@ def start() -> None:
     _install()
     _write_config()
     RUN.mkdir(parents=True, exist_ok=True)
-    _spawn(
-        "bridge",
-        [str(DEMO / "fake_bridge.py"), str(RUN / "bridge"), str(BRIDGE_PORT)],
-    )
-    _spawn("homeassistant", ["-m", "homeassistant", "--config", str(CONFIG)])
-    print(f"Waiting for Home Assistant on {HA_URL}...", flush=True)
-    _wait_for_ha()
-    token = _onboard()
-    _wait_until_running(token)
-    _check_isolated(token)
+    try:
+        _spawn(
+            "bridge",
+            [str(DEMO / "fake_bridge.py"), str(RUN / "bridge"), str(BRIDGE_PORT)],
+        )
+        _spawn("homeassistant", ["-m", "homeassistant", "--config", str(CONFIG)])
+        print(f"Waiting for Home Assistant on {HA_URL}...", flush=True)
+        _wait_for_ha()
+        token = _onboard()
+        _wait_until_running(token)
+        _check_isolated(token)
+    except BaseException:
+        # Also on sys.exit() and Ctrl-C: leave nothing running.
+        stop()
+        raise
     print(
         f"Ready: {HA_URL} (user {USERNAME!r}, password {PASSWORD!r}).\n"
         "Glowcast is not set up yet; `record` runs the setup flow."
@@ -183,42 +191,42 @@ def record_flows(args: argparse.Namespace) -> None:
 def stop() -> None:
     """Stop both processes, Home Assistant first."""
     for name in ("homeassistant", "bridge"):
-        pid_file = RUN / f"{name}.pid"
-        if not pid_file.exists():
-            continue
-        pid = int(pid_file.read_text())
-        if _alive(pid):
+        if (pid := _pid(name)) is not None:
             os.kill(pid, signal.SIGTERM)
             for _ in range(60):
-                if not _alive(pid):
+                if _pid(name) is None:
                     break
                 time.sleep(0.5)
             else:
                 os.kill(pid, signal.SIGKILL)
             print(f"Stopped {name}")
-        pid_file.unlink()
+        (RUN / f"{name}.pid").unlink(missing_ok=True)
 
 
 def _install() -> None:
-    """Create the virtual environment with the pinned requirements, once."""
+    """Install the pinned requirements; again only when a pin changed."""
     marker = VENV / "glowcast-demo.json"
     if marker.exists() and json.loads(marker.read_text()) == REQUIREMENTS:
         return
-    shutil.rmtree(VENV, ignore_errors=True)
     print(f"Installing Home Assistant into {VENV}...", flush=True)
-    if sys.version_info >= PYTHON:
-        subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
-        install = [str(_python()), "-m", "pip", "install"]
-    elif uv := shutil.which("uv"):
-        python = ".".join(str(part) for part in PYTHON[:2])
-        subprocess.run([uv, "venv", "--python", python, str(VENV)], check=True)
+    # A changed pin is installed into the existing environment.
+    uv = shutil.which("uv")
+    if not _python().exists():
+        if sys.version_info >= PYTHON:
+            subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+        elif uv:
+            python = ".".join(str(part) for part in PYTHON[:2])
+            subprocess.run([uv, "venv", "--python", python, str(VENV)], check=True)
+        else:
+            sys.exit(
+                "The demo needs Python {}.{}.{} or newer, or uv to fetch it.".format(
+                    *PYTHON
+                )
+            )
+    if uv:
         install = [uv, "pip", "install", "--python", str(_python())]
     else:
-        sys.exit(
-            "The demo needs Python {}.{}.{} or newer, or uv to fetch it.".format(
-                *PYTHON
-            )
-        )
+        install = [str(_python()), "-m", "pip", "install"]
     subprocess.run([*install, *REQUIREMENTS], check=True)
     subprocess.run(
         [str(_python()), "-m", "playwright", "install", "chromium"], check=True
@@ -329,12 +337,12 @@ def _entry(
 def _wait_for_ha() -> None:
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
-        if not _alive(int((RUN / "homeassistant.pid").read_text())):
+        if _pid("homeassistant") is None:
             sys.exit(f"Home Assistant stopped; see {RUN / 'homeassistant.log'}")
         try:
             _request("GET", "/api/onboarding")
             return
-        except (urllib.error.URLError, ConnectionError):
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
             time.sleep(2)
     sys.exit("Home Assistant did not start in time")
 
@@ -362,7 +370,7 @@ def _onboard() -> str:
             "language": "en",
         },
     )
-    token = _request(
+    return _request(
         "POST",
         "/auth/token",
         form={
@@ -371,31 +379,47 @@ def _onboard() -> str:
             "client_id": client_id,
         },
     )["access_token"]
-    return token
 
 
 def _check_isolated(token: str) -> None:
-    """Stop the demo if it could reach or be reached from the network."""
+    """Exit (start() then stops the demo) if it could reach or be reached."""
+    # A pending HTTP config would be tried at the next start, then reverted.
     http = json.loads((CONFIG / ".storage" / "http").read_text())["data"]
-    if http["pending"] is not None or http["stable"]["server_host"] != ["127.0.0.1"]:
-        stop()
-        sys.exit("Stopped: Home Assistant does not listen on 127.0.0.1 only.")
+    if http["pending"] is not None:
+        sys.exit("Stopped: Home Assistant has pending HTTP settings.")
+    if address := _reachable_from_network():
+        sys.exit(f"Stopped: the demo answers on {address}, not only on 127.0.0.1.")
     log = (CONFIG / "home-assistant.log").read_text()
     for stub in ("hue", "webostv"):
         if f"custom integration {stub} " not in log:
-            stop()
             sys.exit(f"Stopped: the {stub} stub was not loaded.")
     loaded = {
         component.split(".")[0]
         for component in _request("GET", "/api/config", token=token)["components"]
     }
     if found := loaded & DISCOVERY:
-        stop()
         sys.exit(f"Stopped: discovery integrations were loaded: {sorted(found)}")
     print(
         "Isolated: listening on 127.0.0.1 only, the hue and webostv stubs loaded,"
         f" none of {sorted(DISCOVERY)} loaded."
     )
+
+
+def _reachable_from_network() -> str | None:
+    """Where the demo answers on this computer's network address, if anywhere."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            # Picks the outgoing interface; a UDP connect sends nothing.
+            probe.connect(("192.0.2.1", 9))
+        except OSError:
+            return None  # no network
+        address = probe.getsockname()[0]
+    for port in (HA_PORT, BRIDGE_PORT):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.settimeout(1)
+            if client.connect_ex((address, port)) == 0:
+                return f"{address}:{port}"
+    return None
 
 
 def _request(
@@ -437,18 +461,24 @@ def _spawn(name: str, args: list[str]) -> None:
 
 
 def _running() -> bool:
-    return any(
-        (pid_file := RUN / f"{name}.pid").exists() and _alive(int(pid_file.read_text()))
-        for name in ("homeassistant", "bridge")
-    )
+    return any(_pid(name) is not None for name in ("homeassistant", "bridge"))
 
 
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+def _pid(name: str) -> int | None:
+    """The pid of the demo's process `name` if it runs, else None."""
+    pid_file = RUN / f"{name}.pid"
+    if not pid_file.exists():
+        return None
+    pid = int(pid_file.read_text())
+    # A child of this process that has exited stays a zombie until reaped.
+    with contextlib.suppress(ChildProcessError):
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return None
+    # After a reboot the pid can belong to another program.
+    command = subprocess.run(
+        ["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True
+    ).stdout
+    return pid if str(VENV) in command else None
 
 
 def _python() -> Path:
