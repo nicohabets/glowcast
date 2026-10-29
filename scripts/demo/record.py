@@ -1,0 +1,433 @@
+"""GIFs of Glowcast's flows in the local demo; run through `scripts/demo.py record`.
+
+Each flow is one function in FLOWS. It starts on a recognisable screen, calls
+rec.begin() when that screen is ready (the GIF starts there), clicks with
+rec.click() (a ring shows where) and calls rec.step("name") on every screen
+worth a pause. With --still, every rec.step() saves a PNG instead. To add a
+flow, write such a function and add it to FLOWS.
+
+Playwright's video and Chrome's screencast record at 1x, whatever the device
+scale factor, so a GIF is made of screenshots: while a flow waits, the
+recorder takes them one after another, each with its time.
+
+Files: <lang>-<theme>-<flow>.gif, or <lang>-<theme>-<flow>-<nn>-<name>.png.
+"""
+
+import argparse
+import contextlib
+import json
+import ssl
+import subprocess
+import sys
+import tempfile
+import time
+import traceback
+import urllib.request
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, NoReturn
+
+import imageio_ffmpeg
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    Locator,
+    Page,
+    Response,
+    sync_playwright,
+)
+from playwright.sync_api import Error as PlaywrightError
+
+# Home Assistant's mobile view, recorded at scale factor 2: GIFs 800 px wide.
+VIEWPORT = {"width": 400, "height": 860}
+SCALE = 2
+FPS = 10  # the GIF's frame rate; screenshots come at about 5 to 8 per second
+PAUSE = 900  # ms on each step of a GIF, after it settles
+LOAD_TIMEOUT = 120000  # ms; right after `start` the frontend can take a minute
+MAX_GIF_BYTES = 10_000_000  # GitHub's limit for an attached image
+# The dialog of setup and options flows, and its primary button. Scoped to
+# the flow dialog: a closing confirm dialog would match a bare ha-dialog too.
+DIALOG = "dialog-data-entry-flow ha-dialog"
+PRIMARY = f"{DIALOG} ha-button[slot=primaryAction]"
+CONFIRM = "dialog-box ha-dialog ha-button[slot=primaryAction]"
+HASS = "document.querySelector('home-assistant').hass"
+# A ring where the next click lands, removed with the click so it never shows
+# on the next screen. A popover sits in the top layer, so it shows above Home
+# Assistant's modal dialogs too.
+RING = """([x, y]) => {
+  const ring = document.createElement('div');
+  ring.id = 'glowcast-demo-ring';
+  ring.popover = 'manual';
+  ring.style.cssText = `position: fixed; inset: auto; margin: 0; padding: 0;
+    left: ${x - 20}px; top: ${y - 20}px; width: 40px; height: 40px;
+    border-radius: 50%; border: 3px solid #ff4081;
+    background: rgba(255, 64, 129, 0.3); pointer-events: none;`;
+  document.body.appendChild(ring);
+  ring.showPopover();
+}"""
+UNRING = "() => document.getElementById('glowcast-demo-ring')?.remove()"
+
+
+class Recorder:
+    """The browser page and what the flows need."""
+
+    def __init__(
+        self,
+        page: Page,
+        args: argparse.Namespace,
+        mode: str,
+        flow: str = "",
+        frames_dir: Path | None = None,
+    ) -> None:
+        """Mode "gif" records frames in frames_dir and shows clicks, "still"
+        saves a PNG of each step, "quiet" neither."""
+        self.page = page
+        self.args = args
+        self.mode = mode
+        self.flow = flow
+        self.frames_dir = frames_dir
+        self.frames: list[tuple[float, Path]] = []
+        self.recording = False
+        self.count = 0
+
+    def begin(self) -> None:
+        """The flow's first screen is ready: the GIF starts here."""
+        self.recording = self.mode == "gif"
+        self.step("start")
+
+    def wait(self, ms: int) -> None:
+        """Wait; while recording, take screenshots all the time."""
+        if not self.recording:
+            self.page.wait_for_timeout(ms)
+            return
+        end = time.monotonic() + ms / 1000
+        while True:
+            self.capture()
+            if time.monotonic() >= end:
+                break
+
+    def capture(self) -> None:
+        """Add a frame to the GIF."""
+        assert self.frames_dir is not None
+        path = self.frames_dir / f"{len(self.frames):05d}.png"
+        self.page.screenshot(path=path)
+        self.frames.append((time.monotonic(), path))
+
+    def step(self, name: str) -> None:
+        """Pause on this screen in a GIF, or save it as a PNG."""
+        self.wait(400)
+        if self.mode == "gif":
+            self.wait(PAUSE)
+        elif self.mode == "still":
+            self.count += 1
+            prefix = f"{self.args.lang}-{self.args.theme}-{self.flow}"
+            path = self.args.out / f"{prefix}-{self.count:02d}-{name}.png"
+            self.page.screenshot(path=path, animations="disabled")
+            print(f"saved {path}")
+
+    def click(self, locator: Locator) -> None:
+        """Click, showing first where (in a GIF)."""
+        if self.mode == "gif":
+            locator.scroll_into_view_if_needed()
+            if box := locator.bounding_box():
+                center = [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2]
+                self.page.evaluate(RING, center)
+                self.wait(600)
+        locator.click()
+        if self.mode == "gif":
+            # A click that loads another page has removed the ring already.
+            with contextlib.suppress(PlaywrightError):
+                self.page.evaluate(UNRING)
+
+    def goto(self, path: str) -> None:
+        """Open a page of the frontend and wait until it has drawn."""
+        self.page.goto(self.args.url + path)
+        self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_timeout(1500)
+
+    def ws(self, message: dict[str, Any]) -> Any:
+        """Send a websocket command as the logged-in user."""
+        return self.page.evaluate(f"m => {HASS}.callWS(m)", message)
+
+    def localize(self, key: str) -> str:
+        """A text of the frontend in the chosen language, to find a button by."""
+        return self.page.evaluate(f"k => {HASS}.localize(k)", key)
+
+    def option(self, value: str) -> Locator:
+        """The item with this value in the open dropdown."""
+        # Closed menus elsewhere on the page have items too, but hidden ones.
+        items = self.page.locator("ha-dropdown-item")
+        index = items.evaluate_all(
+            "(items, value) => items.findIndex("
+            "i => i.value === value && i.checkVisibility())",
+            value,
+        )
+        if index < 0:  # nth(-1) would be the last item
+            raise LookupError(f"No option {value!r} in an open dropdown")
+        return items.nth(index)
+
+    def submit(self) -> None:
+        """Click the primary button of the open dialog."""
+        self.click(self.page.locator(PRIMARY))
+        self.wait(300)
+
+    def press_link_button(self) -> None:
+        """Press the fake bridge's link button."""
+        request = urllib.request.Request(
+            f"{self.args.bridge}/demo/press-link-button", data=b"", method="POST"
+        )
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(request, context=context, timeout=10):
+            pass
+
+
+def setup(rec: Recorder) -> None:
+    """The setup flow: TV, bridge, link button, pairing, area, done."""
+    page = rec.page
+    rec.goto("/config/integrations/dashboard/add?domain=glowcast")
+    # "Do you want to set up Glowcast?" over the integrations page.
+    page.locator(CONFIRM).wait_for()
+    rec.begin()
+    rec.click(page.locator(CONFIRM))
+    page.locator(PRIMARY).wait_for()
+    rec.step("tv")
+    rec.submit()
+    rec.step("bridge")
+    rec.submit()
+    rec.step("link")
+    rec.submit()
+    rec.step("pairing")
+    rec.press_link_button()
+    page.locator(f"{DIALOG} ha-picker-field").wait_for(timeout=15000)
+    rec.step("area")
+    rec.click(page.locator(f"{DIALOG} ha-picker-field"))
+    rec.step("area-choices")
+    rec.click(rec.option("area-tv"))
+    rec.submit()
+    rec.step("done")
+    rec.submit()
+    rec.step("integration")
+
+
+def settings(rec: Recorder) -> None:
+    """Change the update rate on the settings screen."""
+    page = rec.page
+    rec.goto("/config/integrations/integration/glowcast")
+    rec.begin()
+    configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
+    rec.click(page.get_by_role("button", name=configure).first)
+    page.locator(PRIMARY).wait_for()
+    rec.step("settings")
+    rec.click(page.locator(f"{DIALOG} ha-picker-field").last)
+    rec.step("update-rate")
+    rec.click(rec.option("maximum"))
+    rec.step("update-rate-chosen")
+    rec.submit()
+    rec.step("saved")
+
+
+def device(rec: Recorder) -> None:
+    """From the integration page to Glowcast's device page."""
+    page = rec.page
+    rec.goto("/config/integrations/integration/glowcast")
+    rec.begin()
+    name = page.evaluate(
+        f"() => Object.values({HASS}.devices)"
+        ".find(d => d.identifiers.some(i => i[0] === 'glowcast')).name"
+    )
+    rec.click(page.get_by_text(name, exact=True).first)
+    page.wait_for_url("**/config/devices/device/**")
+    rec.step("device")
+
+
+FLOWS: dict[str, Callable[[Recorder], None]] = {
+    "setup": setup,
+    "settings": settings,
+    "device": device,
+}
+
+
+def prepare(rec: Recorder, flow: str) -> None:
+    """Glowcast unset up before the setup flow, set up before the others.
+
+    Also clears what would show in a frame: the notice left by removing an
+    entry, and the repair issue a Core install raises.
+    """
+    entries = rec.ws({"type": "config_entries/get", "domain": "glowcast"})
+    if flow == "setup":
+        for entry in entries:
+            rec.page.evaluate(
+                f"id => {HASS}.callApi('DELETE', "
+                "`config/config_entries/entry/${id}`)",
+                entry["entry_id"],
+            )
+    elif not entries:
+        setup(rec)
+    rec.page.evaluate(
+        f"() => {HASS}.callService('persistent_notification', 'dismiss_all')"
+    )
+    for issue in rec.ws({"type": "repairs/list_issues"})["issues"]:
+        if not issue["ignored"]:
+            rec.ws(
+                {
+                    "type": "repairs/ignore_issue",
+                    "domain": issue["domain"],
+                    "issue_id": issue["issue_id"],
+                    "ignore": True,
+                }
+            )
+
+
+def abort_flows_on_exit(page: Page) -> Callable[[], None]:
+    """Remember the flows the page starts; return a function that aborts them.
+
+    A run that fails halfway would leave its setup flow open, and Home
+    Assistant then refuses a new one for the same TV ("already being
+    configured"). Its API does not list flows a user started, so they are
+    remembered here.
+    """
+    started: list[str] = []
+
+    def remember(response: Response) -> None:
+        if response.request.method == "POST" and response.url.endswith(
+            "/config_entries/flow"
+        ):
+            with contextlib.suppress(PlaywrightError, KeyError, ValueError):
+                started.append(response.json()["flow_id"])
+
+    def abort() -> None:
+        for flow_id in started:
+            # A finished flow is gone already (404).
+            with contextlib.suppress(PlaywrightError):
+                page.evaluate(
+                    f"id => {HASS}.callApi('DELETE', "
+                    "`config/config_entries/flow/${id}`)",
+                    flow_id,
+                )
+
+    page.on("response", remember)
+    return abort
+
+
+def new_context(browser: Browser, args: argparse.Namespace) -> BrowserContext:
+    """A browser in the mobile view, language and theme."""
+    dark = args.theme == "dark"
+    context = browser.new_context(
+        viewport=VIEWPORT,
+        device_scale_factor=SCALE,
+        is_mobile=True,
+        has_touch=True,
+        locale=args.lang,
+        color_scheme="dark" if dark else "light",
+    )
+    # The frontend reads its language and theme from local storage.
+    context.add_init_script(
+        "localStorage.setItem('selectedLanguage', {});"
+        "localStorage.setItem('selectedTheme', {});".format(
+            json.dumps(json.dumps(args.lang)),
+            json.dumps(json.dumps({"theme": "default", "dark": dark})),
+        )
+    )
+    return context
+
+
+def log_in(page: Page, args: argparse.Namespace) -> None:
+    page.goto(args.url)
+    page.locator("input[name=username]").fill(args.user, timeout=LOAD_TIMEOUT)
+    page.locator("input[name=password]").fill(args.password)
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "document.querySelector('home-assistant')?.hass?.user", timeout=LOAD_TIMEOUT
+    )
+
+
+def record(page: Page, args: argparse.Namespace, flow: str) -> None:
+    """Record one flow as screenshots and turn them into a GIF."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rec = Recorder(page, args, "gif", flow, Path(tmp))
+        FLOWS[flow](rec)
+        if not rec.recording:
+            raise RuntimeError(f"The flow {flow!r} never called rec.begin()")
+        rec.capture()  # the end state, also if the flow ends on an action
+        # Each screenshot shows until the next one; the last one for a pause.
+        times = [t for t, _ in rec.frames] + [rec.frames[-1][0] + PAUSE / 1000]
+        lines = [
+            f"file '{path}'\nduration {times[i + 1] - times[i]:.3f}"
+            for i, (_, path) in enumerate(rec.frames)
+        ]
+        # The concat format ignores the last duration unless the file repeats.
+        lines.append(f"file '{rec.frames[-1][1]}'")
+        frames = Path(tmp) / "frames.txt"
+        frames.write_text("\n".join(lines) + "\n")
+        gif = args.out / f"{args.lang}-{args.theme}-{flow}.gif"
+        palette = (
+            f"fps={FPS},split[a][b];[a]palettegen=stats_mode=diff[p];"
+            "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
+        )
+        subprocess.run(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(),
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(frames),
+                "-filter_complex",
+                palette,
+                str(gif),
+            ],
+            check=True,
+        )
+    size_mb = gif.stat().st_size / 1_000_000
+    print(f"saved {gif} ({size_mb:.1f} MB)")
+    if gif.stat().st_size > MAX_GIF_BYTES:
+        print("  Over 10 MB: too big to attach on GitHub; shorten the flow.")
+
+
+def fail(page: Page, args: argparse.Namespace) -> NoReturn:
+    """Show the error and save the page as it was at that moment."""
+    traceback.print_exc()
+    page.screenshot(path=args.out / "error.png")
+    sys.exit(f"Failed; the page at that moment: {args.out / 'error.png'}")
+
+
+def main() -> None:
+    """Log in once, then record (or photograph) each flow."""
+    parser = argparse.ArgumentParser()
+    for name in ("url", "bridge", "user", "password", "lang", "theme"):
+        parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--still", action="store_true")
+    parser.add_argument("flows", nargs="*")
+    args = parser.parse_args()
+    if unknown := [flow for flow in args.flows if flow not in FLOWS]:
+        parser.error(f"unknown flow {unknown}; the flows are {list(FLOWS)}")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        context = new_context(browser, args)
+        page = context.new_page()
+        abort_flows = abort_flows_on_exit(page)
+        try:
+            log_in(page, args)
+            for flow in args.flows or FLOWS:
+                prepare(Recorder(page, args, "quiet"), flow)
+                if args.still:
+                    FLOWS[flow](Recorder(page, args, "still", flow))
+                else:
+                    record(page, args, flow)
+        except Exception:
+            fail(page, args)
+        finally:
+            abort_flows()
+            browser.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -7,5 +7,37 @@ These scripts are tools for developing Glowcast; they are not part of the integr
 - `try_pipeline.py`: runs the pipeline with the real TV source and Hue output for a while, then stops, and prints the start time, rates and stop reason.
 - `render_brand.py`: builds the icon and logo PNGs in `custom_components/glowcast/brand/` from the sources in `docs/brand/`. It does not need the test requirements: run it with `uv run scripts/render_brand.py`, which installs its own pinned dependencies. See [docs/brand/README.md](../docs/brand/README.md).
 - `render_hacs_readme.cjs`: renders `README.md` the way HACS shows it (the same `marked` and `xss` versions and settings), to check that no HTML shows as text. It needs Node and `npm install marked@15.0.4 xss@1.0.15`, not the test requirements; it is not part of CI.
+- `demo.py`: a local Home Assistant with Glowcast from the working copy, to record GIFs of its flows and check the UI; see below.
 
 See the docstring at the top of each script for usage. Credentials come from environment variables; never put them in files in the repository.
+
+## The local demo
+
+`demo.py` runs Home Assistant 2026.10.4 (the "latest" version in `.github/workflows/ci.yml`; bump both together) on `127.0.0.1:8199` with Glowcast from the working copy, a TV called "Living room TV" and a Hue bridge with the entertainment areas "TV area" and "Whole room". It does not need the test requirements; it installs its own.
+
+- Nothing reaches a real TV or bridge: stub `hue` and `webostv` integrations (`demo/stubs/`) only report their entries as loaded, the bridge is a fake one on `127.0.0.1:8443` (`demo/fake_bridge.py`, including Hue's pairing reply), and Home Assistant loads no `default_config` and no discovery integration. `start` checks this and stops if it is not so. The stubs replace Home Assistant's own integrations: never copy them to a real Home Assistant.
+- Switching Glowcast on works, but no TV answers on `127.0.0.1`: after the start-up grace (about 10 s) it stops with "the TV is off or not reachable" in the log.
+- One demo runs per computer, with Glowcast from the working copy that started it; `record` refuses to run from another working copy. Other sessions may use it too, so check with them before `stop` or `clean`.
+- Everything it makes (virtual environment, config directory, logs, GIFs and screenshots) lives in `~/.cache/glowcast-demo`, outside the repository. Playwright keeps its Chromium in `~/.cache/ms-playwright`.
+- `ffmpeg` for the GIFs comes with the `imageio-ffmpeg` package in the demo's environment; no system install needed.
+- It runs with Python alone on Linux and macOS (on Windows in WSL). Home Assistant needs Python 3.14.2 or newer; if the Python you run `demo.py` with is older, it uses [uv](https://docs.astral.sh/uv/) to fetch one.
+
+```
+python3 scripts/demo.py start                          # first run installs (a few minutes)
+python3 scripts/demo.py record                         # every flow; or name some: setup settings device
+python3 scripts/demo.py record --lang nl --theme dark  # en|nl, light|dark; --out DIR
+python3 scripts/demo.py record settings --still        # a PNG of each step instead of a GIF
+python3 scripts/demo.py stop
+python3 scripts/demo.py clean                          # stop and remove ~/.cache/glowcast-demo
+```
+
+`start` always begins with a fresh config directory without a Glowcast entry. Log in at http://127.0.0.1:8199 as `demo` / `demo-password` to look around.
+
+`record` records in Home Assistant's mobile view (400 px wide at device scale factor 2, so 800 px wide with sharp text), with a ring where each click lands and a short pause on each step, and saves one GIF per flow as `<lang>-<theme>-<flow>.gif` in `~/.cache/glowcast-demo/recordings` (it warns when one is over GitHub's 10 MB). The flows:
+- `setup`: the setup flow from "Do you want to set up Glowcast?": TV, bridge, link button, pairing (the fake bridge answers), area, done. It first removes a Glowcast entry from an earlier run.
+- `settings`: from the integration page to the settings screen, choosing another update rate, saving.
+- `device`: from the integration page to Glowcast's device page.
+
+The other flows set Glowcast up first (unrecorded) if needed. With `--still`, each step is saved as `<lang>-<theme>-<flow>-<nn>-<name>.png` instead, in the same mobile view. If a flow fails, `error.png` shows the page at that moment. GIFs and screenshots for a pull request go up as GitHub attachments (rule 11 in `CLAUDE.md`); do not commit them.
+
+To add a flow (for example new entities or a status), write a function in `demo/record.py` that takes a `Recorder`: open the first screen (`rec.goto(...)`), call `rec.begin()` when it is ready (the GIF starts there), click with `rec.click(...)` and call `rec.step("name")` on each screen worth a pause; then add it to `FLOWS` there (`demo.py` passes flow names on). Find buttons by slot, by option value (`rec.option(...)`) or by the frontend's own texts (`rec.localize(...)`), not by English labels, so the flow works in both languages.
