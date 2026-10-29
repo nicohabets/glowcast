@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 /room-out/
+/scripts/bench/config.local.yaml
