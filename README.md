@@ -39,13 +39,15 @@ Everything stays on your local network.
 
 ## Installation
 
-Glowcast is not in the default HACS list yet; add it as a custom repository:
+Glowcast is not in the default HACS list yet; it is being submitted ([#48](https://github.com/nicohabets/glowcast/issues/48)). Until it is listed, add it as a custom repository:
 
 1. Open **HACS**, then the menu (⋮) in the top right corner → **Custom repositories**.
 2. Enter `https://github.com/nicohabets/glowcast` as the repository, choose type **Integration** and click **Add**. Close the dialog.
 3. Search for **Glowcast**, open it and click **Download** (bottom right), then **Download** again in the dialog. The newest version is selected.
 4. Restart Home Assistant (Settings → System → the restart button in the top right, or the repair HACS shows).
 5. Go to **Settings → Devices & services → Add integration → Glowcast**.
+
+Once Glowcast is in the default list, skip steps 1 and 2: search for **Glowcast** in HACS straight away.
 
 Updates show up in HACS and under Settings → System → Updates.
 
