@@ -61,13 +61,14 @@ Loose lights, other TVs, extra entities, effects and so on are GitHub issues in 
 
 ## 3. Architecture: ports and adapters
 
-A pipeline with three stages. The two stages that touch the outside world sit behind a small interface (port). v0.1 has exactly one adapter per port.
+A pipeline with three stages. The two stages that touch the outside world sit behind a small interface (port). v0.1 had exactly one adapter per port; the screen source (#110) is the second source adapter.
 
 ```
                  ┌──────────────────────── Pipeline (one asyncio task) ─────────────────────────┐
  LG TV  ──►  FrameSource  ──►  Frame  ──►  ColorEngine  ──►  list[ChannelColor]  ──►  LightOutput  ──►  Hue Bridge
              (port)                        (pure logic)                               (port)
-             └ WebOsFrameSource                                                       └ HueEntertainmentOutput
+             ├ WebOsFrameSource                                                       └ HueEntertainmentOutput
+             └ ScreenFrameSource (#110)
 ```
 
 Everything in `core/` (models, ports, colour engine **and the pipeline**) is plain asyncio with no Home Assistant imports. Blocking work and time are injected, so the pipeline is tested with fakes and a fake clock, without Home Assistant's test framework.
@@ -100,10 +101,13 @@ class ChannelColor:
 
 ```python
 class FrameSource(Protocol):
+    max_rate_hz: float                             # how often capture() may be called (caps the update rate)
     async def start(self) -> None: ...             # connect; may take a few seconds; raises SourceUnavailable
+                                                   # or SourceAuthFailed
     def is_on(self) -> bool: ...                   # "TV is on and showing a picture"; false only after the
                                                    # source's own reconnect attempt has failed
-    async def capture(self) -> Frame: ...          # raises SourceUnavailable (off/unreachable) within 5 s
+    async def capture(self) -> Frame: ...          # raises SourceUnavailable (off/unreachable) within 5 s,
+                                                   # or SourceAuthFailed (Glowcast's key rejected)
     async def close(self) -> None: ...
 
 class LightOutput(Protocol):
@@ -117,6 +121,10 @@ class LightOutput(Protocol):
 ```
 
 Brightness and the minimal glow are applied in `core/` (the light state, 3.5), so outputs stay dumb.
+
+What every source must allow (#110):
+- **Its own rate cap.** The capture loop never captures faster than `max_rate_hz`, whatever the update rate (3.6): the webOS source has no cap of its own (`math.inf`, Maximum is as fast as the TV answers), the screen source caps at 4 per second. The generic code only reads the number.
+- **`SourceAuthFailed`** when the source rejects Glowcast's own key (the screen helper's token); the pipeline stops with `SOURCE_AUTH_FAILED` at once, without retrying, and the source type's reauth step pairs again (4.1).
 
 What every output must allow (#66):
 - **`check()` on every send tick.** The send loop starts a new `check()` whenever none is running, so it may be called many times a second. The output throttles its own status requests (the Hue output asks the bridge at most every 5 s and returns at once in between).
@@ -150,6 +158,13 @@ For each channel:
 - `capture()`: `tv/executeOneShot`, then download `imageUri` with HA's session and `ssl=False`; wrapped in `asyncio.timeout(5)` (aiowebostv's own timeout is 20 s).
 - Decodes with Pillow in the executor; use `Image.draft()` for a fast JPEG downscale to about 64x36.
 - **The source owns reconnecting.** aiowebostv clears its state on every websocket drop, so a raw `is_on` would read "off" during a hiccup. The source reconnects once; `is_on()` reports off only when that reconnect fails or the TV's power state says off.
+
+**`ScreenFrameSource`** (`sources/screen.py`, #110)
+- Pulls frames from the screen helper (8.3, protocol 1) over plain HTTP with HA's session (`async_get_clientsession`) and `Authorization: Bearer <token>`. The helper's address (`host`, `port`), its id and the token are Glowcast's own, in the entry's `data` (5); the source reads them at every start, so an address that discovery updates (#109) is used at the next start.
+- `start()`: `GET /v1/info` within 2 s; `401` raises `SourceAuthFailed`, no answer or another status `SourceUnavailable`.
+- `capture()`: `GET /v1/frame`, each request within 2 s and the whole capture within 5 s. `200` with 6,912 bytes is the `Frame` (64x36 RGB, built directly: no JPEG, no executor job). **No picture (`204`), no answer, another status or a body of another size counts as one failure; the source asks once more after 0.1 s (the helper hands out one grab for 50 ms), and only when that fails too does `is_on()` turn false** and `capture()` raise `SourceUnavailable`. That is the source's one reconnect attempt, like the webOS source's; the pipeline then stops with `TV_OFF`. A computer that is off, asleep or locked answers no picture or nothing. `401` raises `SourceAuthFailed` at once.
+- `max_rate_hz = 4`: Maximum is 4 per second for a screen (product owner's decision, #110); Low, Medium and High are unchanged.
+- No device of another integration to link to: `device_identifier` and `device_id` return `None`, and Glowcast's own device is "Glowcast <computer name>" (the entry's title). `is_missing` is always false, since no other integration's entry is used. The token and frame contents are never logged; diagnostics show only the shape of the source block (4.4).
 
 **`HueEntertainmentOutput`** (`outputs/hue_entertainment.py`)
 - Library `hue-entertainment==0.1.2` (Apache-2.0, pure-Python DTLS): `EntertainmentSession(host, app_key, client_key, idle_timeout=0)`.
@@ -193,7 +208,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 - **Hold on sudden black:** when the whole frame turns (almost) black after a picture, keep the last colours for 3.5 s before fading to the glow. "Whole frame black" uses the colour engine's black level and 5 % share over the whole frame (`is_black()` in 3.3's module), so a small bright element such as a TV's switch-off animation does not count as a picture. A TV being switched off shows such an animation for up to 3.0 s before it reports off (see "Verified facts"), so the lights go straight from the picture to their previous state; a genuinely black scene reaches the glow 3.5 s later. Starting on black shows the glow at once. The hold only changes colours, never when the pipeline stops. A constant, not an option (#39).
 - **No picture (#68):** when the frames have been all zero (`is_all_zero()`, 3.3) for 3 s, the pipeline releases the lights (`output.stop()` and `output.close()`, as for the `OutputLost` retry), so they return to how they were before syncing; the switch stays on. During the wait an all-zero frame is a black frame, so the hold on sudden black (3.5 s, longer than the wait) keeps the last colours, and the glow shows if the picture was already black; a frame that is not all zero ends the wait. The wait is a constant, not an option: all-zero moments at a hard cut or an input switch lasted under 2 s (see "Verified facts"), so they do not release and claim the lights again. While released, the pipeline keeps capturing at the update rate, without sends or `check()`, and still watches `source.is_on()` and 5 failed captures (`TV_OFF`). The first frame that is not black by the whole-frame rule claims the lights again (`output.start()`, raced against a stop by the user, start errors handled as at switch-on), with a fresh `LightState`, so the first colour is shown at once; almost black frames (subtitles or player controls over no picture, a switch-off animation) do not, because each claim costs the bridge's handshake. Switched on while the frames are all zero, it starts released without claiming the lights. Releasing and claiming each log one line at info level.
 - **Status:** a frozen `PipelineStatus` with the `phase`, the number of `channels` (while the lights are claimed; 0 before and once they are released, so also in the `STOPPED` status and after a failed retry, #105), the `stop_reason` (only when stopped) and the measured `captures_per_second` (frames delivered per second, counted in the capture loop from the end of one capture to the end of later ones; `None` until measured, cleared when the lights are released for a retry or for no picture until the next measurement (#105), kept after a stop) and `black_picture` (while streaming: the whole frame is black by `is_black()`, a dark scene with the hold on black or the glow; also during the 3 s wait before a release for no picture, since an all-zero frame is black; false in every other phase and cleared when the lights are released, #14). It is reported on every change of phase, when `black_picture` changes, and while streaming about once per second with a new `captures_per_second` (never per frame, so entities do not write their state 25 times per second): `STARTING` (waiting for the TV, then claiming the lights), `STREAMING` (the lights are claimed; also after a successful retry), `RETRYING` (the stream was lost, before the retry), `NO_PICTURE` (the TV shows no picture and the lights are released, #68; `channels` is 0 and `captures_per_second` is `None`) and `STOPPED` (the lights are released; always the last report, exactly once, with the reason). A stop is only reported this way; there is no separate stop callback. The phases are an enum that can grow; `STREAMING` says what the pipeline does, not what the switch shows. A callback that raises is logged and does not stop the pipeline.
-- **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED`, `SOURCE_UNAVAILABLE`.
+- **Stop reasons:** `USER`, `TV_OFF`, `OUTPUT_LOST`, `OUTPUT_BUSY`, `OUTPUT_NOT_FOUND`, `OUTPUT_TOO_MANY_CHANNELS`, `OUTPUT_UNAVAILABLE`, `AUTH_FAILED` (the output rejected Glowcast's key), `SOURCE_UNAVAILABLE`, `SOURCE_AUTH_FAILED` (the source rejected Glowcast's key, #110).
 
 ### 3.6 Update rate
 
@@ -204,7 +219,7 @@ stop:     cancel both sub-tasks → output.stop() → output.close() → source.
 | High (default) | 3 | |
 | Maximum | as fast as the TV allows (about 4 on a 2023 G3) | |
 
-The TV cannot go faster than about 4 per second, so there is no level above Maximum. The lights are always updated 25 times per second by fading, whatever the level.
+The TV cannot go faster than about 4 per second, so there is no level above Maximum. A source caps the rate with its own `max_rate_hz` (3.2): the screen source has the same four levels, with Maximum at 4 per second (#110). The lights are always updated 25 times per second by fading, whatever the level.
 
 ## 4. Home Assistant integration
 
@@ -224,7 +239,7 @@ Today the steps are:
 Rules:
 - **One Glowcast entry per TV:** the entry's unique id is the `webostv` entry's unique id; adding the same TV twice aborts.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
-- **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. The generic reauth step runs the reauth step of the entry's output type. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
+- **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. The generic reauth step runs the reauth step of the entry's output type. With `SOURCE_AUTH_FAILED` (#110) it passes `{"glowcast_reauth_part": "source"}` as the flow's data, and the generic step runs the source type's `reauth_step` instead, so a rejected helper token never leads to pairing with the bridge again (each pairing adds an app on the bridge). A type without a reauth step aborts with `reauth_unavailable`; the screen source's step, which asks for a new pairing code, is #109. HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
 - **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Diagnostics never include it (4.4). The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` lets the output type say what the user must clean up: the Hue output type shows a persistent notification with the steps in the Hue app (the same as in the README), for an entry that paired with a bridge.
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
@@ -289,6 +304,7 @@ The startup grace period (3.5) covers the seconds between the TV reporting "on" 
 |---|---|---|
 | Config flow, options flow and reauth flow (the screens): chaining the types' steps and parts, creating and storing the entry (4.1, 4.2) | `config_flow.py`; `flow.py` | #6, #66 |
 | Each type's own steps and options part: the TV step; the bridge, link, pair, area and reauth steps and the area on the options screen | `sources/webos_flow.py`; `outputs/hue_entertainment_flow.py` | #66 |
+| The screen source (3.4): frames, no picture, the rejected token and the 4 per second cap; no setup or reauth step yet (#109) | `sources/screen.py` | #110 |
 | The entry's lifecycle: `async_setup_entry` / `async_unload_entry` (which create and stop the runtime in `entry.runtime_data`), stopping on `EVENT_HOMEASSISTANT_STOP`, and the update listener that hands every options change to the runtime (4.2) | `__init__.py` | #6, #7, #13 |
 | The runtime (`GlowcastData`, one per entry, reached by every platform through `entry.runtime_data`): running the pipeline with `entry.async_create_background_task`, stopping and restarting it, its listeners (the general one for starts, stops and options changes; the status listener for every status of the running pipeline, without a stop during an options restart), reacting to the pipeline's status (clear the repair issues when the lights are claimed, also after a retry; on a stop: switch off, start reauth, repair issue), keeping the last status after a stop until the next start (`GlowcastData.status`, `None` if never started), and raising and removing the repair issues. Each issue, its translation key and its log message come from the source or output type (`Issue` in `issues.py`); the generic code only adds the entry id to the issue's key. Only the running pipeline's reports count: after an options restart, a late report from the old pipeline is ignored. On an options change (`async_options_updated`): notify the entities, then pass the settings to the running pipeline, or restart it when the output block differs from the one it started with (4.2) | `runtime.py` | #7, #63, #64, #13, #14 |
 | Reading the settings from `options` into `Settings` (defaults from `const.py` for missing keys) and writing them back; used by the setup flow, the options flow and the pipeline start | `settings.py` | #63 |
@@ -329,11 +345,14 @@ options = {     # everything the user can change in the settings screen
 }
 ```
 
+A screen source (#110) stores the helper and Glowcast's token in its block: `"source": {"type": "screen", "helper_id": "<helper id>", "host": "...", "port": 8488, "token": "..."}`. The helper id stays when the address changes (#109 keeps `host` current through discovery).
+
 The selectable output (type and its settings) lives entirely in `options`, so a later output type (loose lights, #9) can be chosen in the settings screen without a migration. Adapters are looked up in two small registries:
 
 ```python
 SOURCES = {"webos": SourceType(create, is_missing, device_identifier, device_id,  # sources/__init__.py
-                               steps, setup_step, missing)}
+                               steps, setup_step, reauth_step, missing),
+           "screen": SourceType(create, is_missing, device_identifier, device_id)}
 OUTPUTS = {"hue_entertainment": OutputType(create, is_missing, device_id, entities,  # outputs/__init__.py
                                            steps, setup_step, reauth_step,
                                            options_fields, options_output,
@@ -451,7 +470,7 @@ A PC or Mac screen becomes a picture source through a small **screen helper** on
   - `GET /v1/frame` returns `200` with 6,912 bytes (`application/octet-stream`, 64x36 RGB, one byte per channel, row-major from the top left), or **`204` with no body for "no picture"**: the screen is locked, capture fails, or a grab takes longer than 1 s. A black picture is a picture (`200`), never "no picture". A client tells the cases apart by status alone: `200` a frame, `204` no picture, `401` pair again, anything else or no answer within its timeout unavailable.
   - `GET /v1/info` returns JSON: `id`, `name`, `protocol`, `version` (of the helper), `width`, `height`, `screens` (`index`, `width`, `height`, `left`, `top`, `primary`; empty for a pattern), `screen` (the index captured, or `null`), `pattern` (`null`, or `name`, `showing`, `since` in UTC and, for `cycle`, `interval`) and `no_picture` (`null`, or the reason of the last "no picture": `capture_failed`, `capture_timeout`, `screen_missing`). The helper lists the screens again every 5 s while frames are pulled, so a changed or re-plugged monitor is captured as it is now, and a chosen screen that is gone is "no picture".
   - Run flags for tests and parallel runs (#112, #134): `--host` (the address to listen on; a loopback address is not announced) and `--config-dir` (a separate id and pairings, so a test never touches the user's own).
-- **`ScreenFrameSource`** (planned, `sources/screen.py`, #110): source type `"screen"` behind `FrameSource`; the same update-rate levels as the TV, with Maximum capped at 4 frames per second (product owner's decision); builds `Frame` directly (no JPEG decoding); `is_on()` false when the helper is unreachable or has no picture; 401 starts reauth. The entry stores the helper id, address and token in `data` (Glowcast's own secret, like the Hue keys).
+- **`ScreenFrameSource`** (#110, built; 3.4): source type `"screen"` behind `FrameSource`; the same update-rate levels as the TV, with Maximum capped at 4 frames per second (product owner's decision); builds `Frame` directly (no JPEG decoding); `is_on()` false when the helper is unreachable or has no picture, after asking once more; 401 stops with `SOURCE_AUTH_FAILED` and starts the source's reauth. The entry stores the helper id, address and token in `data` (Glowcast's own secret, like the Hue keys). Until #109 such an entry can only be made by hand (tests, development); the setup flow does not offer source types without setup steps.
 - **Setup** (planned, #109, after #66): Home Assistant's zeroconf discovery (`"zeroconf": ["_glowcast._tcp.local."]` in the manifest) shows the helper under Discovered; the screen source type provides the pairing-code step; unique id = the helper id, so a new address updates the entry.
 
 ## 9. Decisions
