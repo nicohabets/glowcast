@@ -61,30 +61,74 @@ def test_nothing_changes_means_not_found() -> None:
     assert locate.locate(off, off, (32, 34))["found"] < TH.min_found
 
 
+def test_a_change_that_stays_after_the_light_is_off_does_not_count() -> None:
+    """Something else brightened meanwhile (a screen): it is in `on` and in
+    `after`, so the light is still found where it is."""
+    off = _frame([])
+    on = _frame([(470, 150, 30, 20, 250), (800, 400, 200, 200, 255)])
+    after = _frame([(800, 400, 200, 200, 255)])
+    found = locate.locate(on, off, (48, 34), after=after)
+    assert 420 <= found["box"][0] <= 470
+    assert found["contrast"] >= TH.min_contrast
+
+
+def test_a_picture_that_changed_everywhere_has_no_contrast() -> None:
+    off = _frame([])
+    on = np.full((720, 1280, 3), 80, dtype=np.float32)
+    assert locate.locate(on, off, (32, 34))["contrast"] < TH.min_contrast
+
+
+# The wall's 95th percentiles from -11 to -5, recorded on the bench (30-10-2026,
+# the lights in warm white at full brightness); the spot's rim clips at
+# every exposure (its core). Means: the -8 reference scaled per step.
+WALL_P95 = {-11: 84, -10: 133, -9: 178, -8: 215, -7: 249, -6: 255, -5: 255}
+SPOT_CLIPPED = {-11: 0.18, -10: 0.25, -9: 0.33, -8: 0.42, -7: 0.55, -6: 0.68, -5: 0.8}
+DARK = (1.0, 0.0, 1.0)
+
+
+def _wall(e: int) -> tuple:
+    white = tuple(v * 2.0 ** (e + 8) for v in (183.5, 115.0, 73.5))
+    return (white, DARK, WALL_P95[e], 0.0)
+
+
+def _spot(e: int) -> tuple:
+    white = tuple(min(255.0, v * 2.0 ** (e + 8)) for v in (195.0, 183.0, 180.0))
+    return (white, DARK, 255.0, SPOT_CLIPPED[e])
+
+
 def test_the_exposure_sweep() -> None:
-    """The 95th percentiles are recorded on the bench (30-10-2026, the lights in
-    warm white at full brightness): the wall 84, 133, 178, 215, 249, 255, 255
-    from -11 to -5, the spot's rim 255 at every exposure (its core clips).
-    The means are the -8 reference scaled per step."""
-    dark = (1.0, 0.0, 1.0)
-    wall_p95 = {-11: 84, -10: 133, -9: 178, -8: 215, -7: 249, -6: 255, -5: 255}
-    sweep = {
-        float(e): {
-            "wall": (
-                tuple(v * 2.0 ** (e + 8) for v in (183.5, 115.0, 73.5)),
-                dark,
-                p95,
-            ),
-            "spot": ((195.0, 183.0, 180.0), dark, 255.0),
-        }
-        for e, p95 in wall_p95.items()
-    }
+    sweep = {float(e): {"wall": _wall(e), "spot": _spot(e)} for e in WALL_P95}
     chosen, always = rp.choose_exposure(sweep, TH)
     assert chosen == -8.0
     assert always == ["spot"]
     # Too dark everywhere: nothing fits.
-    dim = {-11.0: {"wall": ((10.0, 8.0, 5.0), dark, 12.0)}}
+    dim = {-11.0: {"wall": ((10.0, 8.0, 5.0), DARK, 12.0, 0.0)}}
     assert rp.choose_exposure(dim, TH) == (None, [])
+
+
+def test_a_clipping_spot_is_judged_on_its_rim() -> None:
+    """Alone, the spot gets the darkest exposure that still lifts it well
+    above dark; one that is mostly clipped is never taken."""
+    sweep = {float(e): {"spot": _spot(e)} for e in WALL_P95}
+    assert rp.choose_exposure(sweep, TH) == (-11.0, ["spot"])
+    clipped = {float(e): {"spot": (*_spot(e)[:3], 0.9)} for e in WALL_P95}
+    assert rp.choose_exposure(clipped, TH) == (None, ["spot"])
+    # With the wall, the spot's rim still limits how bright it may go.
+    sweep = {float(e): {"wall": _wall(e), "spot": _spot(e)} for e in WALL_P95}
+    strict = rp.Thresholds(max_clipped_share=0.3)
+    assert rp.choose_exposure(sweep, strict)[0] == -10.0
+
+
+def test_the_pictures_before_and_after_the_calibration() -> None:
+    assert rp.same_picture((113.9, 65.3, 34.4), (114.5, 65.4, 32.8), 0.12)
+    assert not rp.same_picture((113.9, 65.3, 34.4), (60.0, 40.0, 20.0), 0.12)
+    assert rp.same_picture((1.0, 0.0, 1.0), (3.0, 1.0, 2.0), 0.12)  # both off
+
+
+def test_overlapping_regions() -> None:
+    assert rp.overlap([0, 0, 40, 40], [100, 100, 40, 40]) == 0.0
+    assert rp.overlap([0, 0, 40, 40], [20, 0, 40, 40]) == 0.5
+    assert rp.overlap([0, 0, 40, 40], [10, 10, 10, 10]) == 1.0
 
 
 def test_ambient_light() -> None:
@@ -125,6 +169,14 @@ def test_left_and_right_come_from_the_bridge() -> None:
         "spot": rp.channel_x(AREA, SERVICES, "light-down"),
     }
     assert xs == {"wall": -0.69272, "spot": 0.69832}
+    # A gradient strip in two channels sits at their mean x.
+    strip = {
+        "channels": [
+            {"position": {"x": -0.4}, "members": [{"service": {"rid": "svc-up"}}]},
+            {"position": {"x": 0.0}, "members": [{"service": {"rid": "svc-up"}}]},
+        ]
+    }
+    assert rp.channel_x(strip, SERVICES, "light-up") == -0.2
     assert rp.sides(xs, 0.2) == {"wall": "left", "spot": "right"}
     # Both at the same x (before the product owner moved them): no sides.
     assert rp.sides({"wall": -0.30077, "spot": -0.28475}, 0.2) is None

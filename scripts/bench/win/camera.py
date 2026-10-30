@@ -5,7 +5,8 @@ numpy`, never imported by the integration or the tests. It opens the webcam
 with OpenCV's DirectShow backend and the settings of spike #133, reads frames
 on a thread, stamps each with time.time() (the Windows clock) when read()
 returns, and prints one JSON line per frame on standard output with the mean
-RGB and the 95th percentile of the brightest channel per region. No frame
+RGB, the 95th percentile of the brightest channel and the share of clipped
+pixels (brightest channel 250 or more) per region. No frame
 leaves this process, except a snapshot the caller asks for.
 
 Usage:
@@ -17,10 +18,13 @@ Usage:
     snapshot PATH   saves the next frame as a PNG (regions drawn on it)
     exposure N      sets the fixed exposure (log2 seconds), answers "exposure"
     regions JSON    measures these regions from now on
-    grab NAME N     keeps the mean of the next N frames in memory as NAME
+    grab JSON       {"name": NAME, "frames": N}: keeps the mean of the next N
+                    frames in memory as NAME, answers "grabbed"
+    means JSON      {"grab": NAME, "regions": {...}}: the regions' mean RGB in
+                    a grabbed picture, answers "means"
     locate JSON     finds lights and the monitor in grabbed frames (locate.py):
-                    {"name": {"on": grab, "off": grab, "size": [w, h],
-                    "others": [grab, ...]}}, answers "located"
+                    {"name": {"on": grab, "off": grab, "after": grab,
+                    "size": [w, h], "others": [grab, ...]}}, answers "located"
     forget          drops the grabbed frames
     quit            stops
 It also stops when standard input closes.
@@ -89,8 +93,13 @@ def _measure(frame: Any, regions: dict[str, list[int]]) -> dict[str, Any]:
     for name, (x, y, w, h) in regions.items():
         crop = frame[y : y + h, x : x + w].reshape(-1, 3).astype(np.float32)
         mean = crop.mean(axis=0)[::-1]  # BGR to RGB
-        p95 = float(np.percentile(crop.max(axis=1), 95))
-        out[name] = [round(float(v), 1) for v in mean] + [round(p95, 1)]
+        brightest = crop.max(axis=1)
+        p95 = float(np.percentile(brightest, 95))
+        clipped = float((brightest >= 250).mean())
+        out[name] = [round(float(v), 1) for v in mean] + [
+            round(p95, 1),
+            round(clipped, 3),
+        ]
     return out
 
 
@@ -122,18 +131,17 @@ def log(regions: dict[str, list[int]], settings: dict[str, Any]) -> None:
     threading.Thread(target=_commands, args=(commands,), daemon=True).start()
     snapshot: str | None = None
     grabs: dict[str, Any] = {}
-    grabbing: list[Any] = []  # [name, frames left, sum]
+    grabbing: list[Any] = []  # [name, frames left, sum, frames]
     while True:
         ok, frame = cap.read()
         t = time.time()
         if ok:
             _emit(t=round(t, 4), r=_measure(frame, regions))
             if grabbing:
-                name, left, total = grabbing
+                name, left, total, count = grabbing
                 total = frame.astype(np.float32) if total is None else total + frame
-                grabbing = [name, left - 1, total]
+                grabbing = [name, left - 1, total, count]
                 if left - 1 <= 0:
-                    count = max(1, int(grabs.pop(f"{name}#n", 1)))
                     grabs[name] = total / count
                     grabbing = []
                     _emit(event="grabbed", name=name)
@@ -159,17 +167,28 @@ def log(regions: dict[str, list[int]], settings: dict[str, Any]) -> None:
                 regions = json.loads(command.split(" ", 1)[1])
                 _emit(event="regions")
             elif command.startswith("grab "):
-                _, name, count = command.split()
-                grabs[f"{name}#n"] = int(count)
-                grabbing = [name, int(count), None]
+                request = json.loads(command.split(" ", 1)[1])
+                count = max(1, int(request["frames"]))
+                grabbing = [request["name"], count, None, count]
+            elif command.startswith("means "):
+                request = json.loads(command.split(" ", 1)[1])
+                picture = grabs[request["grab"]]
+                _emit(
+                    event="means",
+                    values={
+                        n: [round(float(v), 1) for v in m[:3]]
+                        for n, m in _measure(picture, request["regions"]).items()
+                    },
+                )
             elif command.startswith("locate "):
                 targets = json.loads(command.split(" ", 1)[1])
                 found = {}
                 for name, target in targets.items():
                     off = grabs[target["off"]]
                     others = [change(grabs[o], off) for o in target.get("others", [])]
+                    after = grabs.get(target.get("after", ""))
                     found[name] = locate(
-                        grabs[target["on"]], off, tuple(target["size"]), others
+                        grabs[target["on"]], off, tuple(target["size"]), others, after
                     )
                 _emit(event="located", targets=found)
             elif command == "forget":

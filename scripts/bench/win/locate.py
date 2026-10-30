@@ -39,14 +39,29 @@ def locate(
     off: np.ndarray,
     size: tuple[int, int],
     others: list[np.ndarray] | None = None,
+    after: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Where this light is: the window of `size` that brightens most when it
-    switches on, minus what the other lights brighten there (so a region
-    lit by two lights is not chosen). `found` is the mean change per pixel
-    in that window (0-765)."""
+    switches on, minus what the other lights brighten there (so a region lit
+    by two lights is not chosen).
+
+    With `after` (the picture once it is off again), a pixel counts only as
+    much as it changed against both pictures without the light, so something
+    else that changed meanwhile (a screen, a passing shadow) does not.
+    `found` is the mean change per pixel in the window (0-765); `contrast`
+    is that over the whole picture's median change (plus 1), so a window
+    that merely stands on a picture that changed everywhere is not taken.
+    """
     score = change(on, off)
+    if after is not None:
+        score = np.minimum(score, change(on, after))
     if others:
         score = np.clip(score - np.maximum.reduce(others), 0, None)
     width, height = size
     x, y, total = best_window(score, width, height)
-    return {"box": [x, y, width, height], "found": round(total / (width * height), 1)}
+    found = total / (width * height)
+    return {
+        "box": [x, y, width, height],
+        "found": round(found, 1),
+        "contrast": round(found / (float(np.median(score)) + 1.0), 1),
+    }

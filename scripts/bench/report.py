@@ -72,6 +72,15 @@ class Thresholds:
     # warm white must lift a region at least this much (sum of RGB) above
     # dark; ambient light (lights off) may be at most this share of white.
     min_found: float = 30.0
+    # ... and stand this many times above the picture's median change.
+    min_contrast: float = 5.0
+    # Two found regions may share at most this much of the smaller one.
+    max_overlap: float = 0.3
+    # A light region that moved more than this is reported as a warning.
+    warn_moved_px: float = 40.0
+    # A region that clips at every exposure (a spot's core): at most this
+    # share of its pixels may clip, so its rim is still measured.
+    max_clipped_share: float = 0.6
     clip_p95: float = 240.0
     min_white_lift: float = 60.0
     max_ambient: float = 0.35
@@ -418,16 +427,21 @@ def _cell(value: Any) -> str:
 
 
 def choose_exposure(
-    sweep: dict[float, dict[str, tuple[Sequence[float], Sequence[float], float]]],
+    sweep: dict[
+        float, dict[str, tuple[Sequence[float], Sequence[float], float, float]]
+    ],
     th: Thresholds,
 ) -> tuple[float | None, list[str]]:
-    """The fixed exposure for the run, from a sweep with the lights in warm white
-    at full brightness: per exposure and region (white mean, dark mean, p95).
+    """The fixed exposure for the run, from a sweep with the lights in warm
+    white at full brightness: per exposure and region (white mean, dark mean,
+    p95, share of clipped pixels).
 
-    The brightest exposure at which no region clips and every region is lifted
-    well above dark. A region that clips at every exposure (a spot's core) is
-    left out of the clipping rule and returned, so the report can say it.
-    Returns (None, ...) when no exposure fits.
+    Every region must be lifted well above dark. A region that clips at some
+    exposures must have its p95 under the clip limit. A region that clips at
+    every exposure (a spot's core) is judged on its rim: at most
+    `max_clipped_share` of its pixels may clip. The brightest exposure that
+    fits wins; when only always-clipping regions are there, the darkest one
+    (the most rim). Returns (None, always) when no exposure fits.
     """
     regions = {r for values in sweep.values() for r in values}
     always = sorted(
@@ -435,17 +449,23 @@ def choose_exposure(
         for r in regions
         if all(v[r][2] >= th.clip_p95 for v in sweep.values() if r in v)
     )
-    fits = [
-        exposure
-        for exposure, values in sweep.items()
-        if all(
-            (r in always or p95 < th.clip_p95)
-            and sum(w - d for w, d in zip(white[:3], dark[:3], strict=True))
-            >= th.min_white_lift
-            for r, (white, dark, p95) in values.items()
-        )
-    ]
-    return (max(fits) if fits else None), always
+
+    def fits(values: dict[str, tuple[Any, Any, float, float]]) -> bool:
+        for region, (white, dark, p95, clipped) in values.items():
+            lift = sum(w - d for w, d in zip(white[:3], dark[:3], strict=True))
+            if lift < th.min_white_lift:
+                return False
+            if region in always:
+                if clipped > th.max_clipped_share:
+                    return False
+            elif p95 >= th.clip_p95:
+                return False
+        return True
+
+    good = [exposure for exposure, values in sweep.items() if fits(values)]
+    if not good:
+        return None, always
+    return (max(good) if regions - set(always) else min(good)), always
 
 
 def ambient_ratio(dark: Sequence[float], white: Sequence[float]) -> float:
@@ -464,16 +484,46 @@ def moved(configured: Sequence[int], found: Sequence[int]) -> float:
 def channel_x(
     area: dict[str, Any], services: list[dict[str, Any]], light_rid: str
 ) -> float | None:
-    """The x position of the area's channel that holds this light (bridge data:
-    the channel's members are entertainment services, each renders a light)."""
+    """The x position of this light in the area (bridge data: a channel's
+    members are entertainment services, each renders a light). A gradient
+    strip has several channels; their mean x is where the light is."""
     renders = {
         s["id"]: (s.get("renderer_reference") or {}).get("rid") for s in services
     }
-    for channel in area.get("channels", []):
-        for member in channel.get("members", []):
-            if renders.get(member.get("service", {}).get("rid")) == light_rid:
-                return channel.get("position", {}).get("x")
-    return None
+    xs = [
+        channel.get("position", {}).get("x", 0.0)
+        for channel in area.get("channels", [])
+        if any(
+            renders.get(member.get("service", {}).get("rid")) == light_rid
+            for member in channel.get("members", [])
+        )
+    ]
+    return sum(xs) / len(xs) if xs else None
+
+
+def channel_spread(area: dict[str, Any]) -> float:
+    """How far apart the area's channels sit in x."""
+    xs = [c.get("position", {}).get("x", 0.0) for c in area.get("channels", [])]
+    return max(xs) - min(xs) if xs else 0.0
+
+
+def same_picture(a: Sequence[float], b: Sequence[float], tolerance: float) -> bool:
+    """Two means of one region at one exposure without a calibration (the
+    picture before the run and after the calibration's restore): each channel
+    within `tolerance` of the brighter picture's brightest channel."""
+    scale = max(max(a[:3]), max(b[:3]), 20.0)
+    return all(
+        abs(x - y) / scale <= tolerance for x, y in zip(a[:3], b[:3], strict=True)
+    )
+
+
+def overlap(a: Sequence[int], b: Sequence[int]) -> float:
+    """The shared area of two boxes (x, y, w, h) as a share of the smaller one."""
+    width = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+    height = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+    if width <= 0 or height <= 0:
+        return 0.0
+    return width * height / min(a[2] * a[3], b[2] * b[3])
 
 
 def sides(xs: dict[str, float | None], min_spread: float) -> dict[str, str] | None:

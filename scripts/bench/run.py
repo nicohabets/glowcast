@@ -460,10 +460,13 @@ async def run(
                 report.exit_code = rp.EXIT_FAILED
     forbidden = bench.forbidden()
     (folder / "report.json").write_text(rp.scrub(report.to_json(), forbidden))
-    # The recorded numbers, for tuning the tolerances; local, never attached.
-    (folder / "raw.json").write_text(rp.scrub(json.dumps(bench.raw()), forbidden))
     markdown = rp.scrub(report.to_markdown(), forbidden)
     (folder / "report.md").write_text(markdown)
+    # The recorded numbers, for tuning the tolerances; local, never attached.
+    try:
+        (folder / "raw.json").write_text(rp.scrub(json.dumps(bench.raw()), forbidden))
+    except Exception as err:  # noqa: BLE001 - the report is written already
+        print("Writing raw.json failed: " + rp.describe_error(err), file=sys.stderr)
     print(markdown)
     print(f"Report: {folder / 'report.md'} (and report.json)")
     return report.exit_code
@@ -477,31 +480,33 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
     """Every exit path, in this order: the bench Glowcast off and its area
     inactive (stopping the local Home Assistant if need be), the lights set
     back and checked with the camera, the TV's Glowcast back on if the run
-    switched it off, then everything the run started stopped."""
-    report = bench.report
-    ha_stopped = False
-    if bench.ha_start is not None and not bench.ha_start.done():
-        # Ctrl+C during the start: let it finish, then stop it below.
-        with contextlib.suppress(BaseException):
-            await asyncio.shield(bench.ha_start)
-    if bench.ha is not None:
-        try:
+    switched it off, then everything the run started stopped.
+
+    Each part runs on its own: an error in one is printed and never skips the
+    others, so the TV's Glowcast is always switched back on.
+    """
+    state = {"ha_stopped": False}
+
+    async def bench_off() -> None:
+        if bench.ha_start is not None and not bench.ha_start.done():
+            # Ctrl+C during the start: let it finish, then stop it below.
+            with contextlib.suppress(BaseException):
+                await asyncio.shield(bench.ha_start)
+        if bench.ha is not None:
             await bench.ha.call(
                 "switch", "turn_off", {"entity_id": bench.ha.entities["switch"]}
             )
-        except Exception as err:  # noqa: BLE001
-            print(
-                "Switching the bench Glowcast off failed: " + rp.describe_error(err),
-                file=sys.stderr,
-            )
-    if bench.ha_start is not None:
+
+    async def area_inactive() -> None:
+        if bench.ha_start is None:
+            return
         inactive = await _area_inactive(bench, cfg)
         if not inactive:
             # Stopping Home Assistant stops Glowcast and its stream.
             await asyncio.to_thread(local_ha.stop)
-            ha_stopped = True
+            state["ha_stopped"] = True
             inactive = await _area_inactive(bench, cfg)
-        report.add(
+        bench.report.add(
             rp.Step(
                 "end: bench Glowcast off, area inactive",
                 "-",
@@ -511,26 +516,47 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
         )
         if not inactive:
             print("The bench area is still streaming!", file=sys.stderr)
-    if bench.screen is not None:
-        with contextlib.suppress(Exception):
+
+    async def workers() -> None:
+        if bench.screen is not None:
             await bench.screen.stop()
-    with contextlib.suppress(Exception):
         await bench.stop_helper()
-    if bench.pre_states:
-        await _restore(bench)
-    if bench.tv_off_at is not None:
-        await _tv_back_on(bench, cfg)
-    if bench.camera is not None:
-        with contextlib.suppress(Exception):
+
+    async def lights() -> None:
+        if bench.pre_states:
+            await _restore(bench)
+
+    async def tv() -> None:
+        if bench.tv_off_at is not None:
+            await _tv_back_on(bench, cfg)
+
+    async def camera() -> None:
+        if bench.camera is not None:
             await bench.camera.stop()
-    if bench.ha is not None:
-        with contextlib.suppress(Exception):
+
+    async def clients() -> None:
+        if bench.ha is not None:
             await bench.ha.close()
-    with contextlib.suppress(Exception):
         await bench.bridge.close()
-    if not ha_stopped and bench.ha_start is not None:
-        with contextlib.suppress(Exception):
+
+    async def local() -> None:
+        if not state["ha_stopped"] and bench.ha_start is not None:
             await asyncio.to_thread(local_ha.stop)
+
+    for name, part in (
+        ("switching the bench Glowcast off", bench_off),
+        ("checking the bench area", area_inactive),
+        ("stopping the helper and the window", workers),
+        ("setting the lights back", lights),
+        ("switching the TV's Glowcast back on", tv),
+        ("stopping the camera", camera),
+        ("closing the connections", clients),
+        ("stopping the local Home Assistant", local),
+    ):
+        try:
+            await part()
+        except Exception as err:  # noqa: BLE001 - every part runs
+            print(f"Cleanup, {name}: " + rp.describe_error(err), file=sys.stderr)
 
 
 async def _area_inactive(bench: Any, cfg: dict[str, Any]) -> bool:
@@ -557,13 +583,13 @@ async def _restore(bench: Any) -> None:
         )
         report.add(rp.Step(name, "-", rp.FAIL, note="setting the lights back failed"))
         return
-    if not bench.calibrated:
+    if not bench.calibrated or not bench.pre_camera:
         report.add(
             rp.Step(
                 name,
                 "-",
                 rp.SKIP,
-                note="set back, not checked: the camera was not calibrated yet",
+                note="set back, not checked: the calibration did not finish",
             )
         )
         return
