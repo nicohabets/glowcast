@@ -43,6 +43,16 @@ An entertainment area follows the picture much more smoothly: up to 25 changes p
 
 While Glowcast streams to an entertainment area, its lights only listen to Glowcast, so automations and the Hue app cannot control them until syncing stops.
 
+## Together with an entertainment area
+
+One Glowcast can drive an entertainment area and loose lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Entertainment area and loose lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the loose lights and their places, then brightness, intensity and the update rate.
+
+- The area keeps its own pace (the update rate, up to 25 changes per second), and the loose lights theirs (about once per second); the loose lights never slow the area down.
+- A light that is in the entertainment area cannot also be a loose light: it already follows the picture through the area. The settings screen says which lights, and so does the **Lights** or **Entertainment area** entity on the device page when you pick an area, group or entertainment area that would put a light in both. Pick the other lights one by one, or a group without them.
+- If one of the two cannot start (for example another app streams to the area, or none of the loose lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the loose lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again. The log says what happened, and the status shows the lights that dropped out (see [Status](status.md)). A rejected bridge key, a removed area or a Hue integration that is not set up gets its own repair or re-pairing, as for an area alone.
+- Only when both are lost does Glowcast stop, as it does for one.
+- Switching off (or the picture source off, or Home Assistant stopping) releases the area and puts every loose light back as it was.
+
 ## Make an entertainment area in the Hue app
 
 1. Open the Hue app, go to **Settings → Entertainment areas** and tap **Create entertainment area** (or **+**).
