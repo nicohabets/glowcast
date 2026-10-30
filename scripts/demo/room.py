@@ -103,12 +103,18 @@ NAME_TAGS = {
     "table_lamp": (116, 430, 150),
 }
 TAG_SIZE, TAG_FILL = 16, "#2A2638"
-PART_NAMES = {"ha_lights": "Loose lights", "hue_entertainment": "Entertainment area"}
+PART_NAMES = {
+    "ha_lights": "Home Assistant lights",
+    "hue_entertainment": "Entertainment area",
+}
 # As in room_harness.py, which runs in an interpreter of its own.
 LIGHTS = ("area", "loose", "combined")
 EXIT_NO_OUTPUT = 3
 # How a side is labelled when it is the only one, per --lights.
-MODE_LABELS = {"loose": "Loose lights", "combined": "Area + loose lights"}
+MODE_LABELS = {
+    "loose": "Home Assistant lights",
+    "combined": "Area + Home Assistant lights",
+}
 
 Light = tuple[str, float] | None  # (colour at full brightness, strength 0-1)
 
@@ -554,14 +560,15 @@ def compose(
 
 
 def notes(sample: dict[str, Any]) -> list[str]:
-    """What a sample's room says at its bottom: the loose lights that are
-    unavailable, and the parts of a combined output that are dropped."""
+    """What a sample's room says at its bottom: the Home Assistant lights that
+    are unavailable, and the parts of a combined output that are dropped."""
     lines = []
     if unavailable := sample.get("unavailable"):
         names = [LIGHT_NAMES.get(id_, id_) for id_ in unavailable]
         if len(names) > 2:  # a list that long does not fit
-            names = [f"{len(names)} loose lights"]
-        lines.append(f"{', '.join(names)} unavailable".capitalize())
+            lines.append(f"{len(names)} Home Assistant lights unavailable")
+        else:
+            lines.append(f"{', '.join(names)} unavailable".capitalize())
     for part in sample.get("retrying", []):
         lines.append(f"{PART_NAMES.get(part, part)} lost, retrying")
     for part in sample.get("dropped", []):

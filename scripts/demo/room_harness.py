@@ -255,7 +255,7 @@ def scenarios(
     if lights == "combined":
         run.append(
             Scenario(
-                "7 Loose lights unavailable",
+                "7 Home Assistant lights unavailable",
                 # One loose light 1 s in, the others 3 s in, the check up to
                 # 5 s later, the retry, and a moment to see that part dropped.
                 3.0 + 5.0 + lost_retry_delay + 2.0,

@@ -180,13 +180,13 @@ def test_a_room_says_what_is_unavailable_or_dropped() -> None:
     assert room.notes({"unavailable": [], "retrying": [], "dropped": []}) == []
     assert room.notes({"unavailable": ["light_bar"], "retrying": ["ha_lights"]}) == [
         "Light bar unavailable",
-        "Loose lights lost, retrying",
+        "Home Assistant lights lost, retrying",
     ]
     assert room.notes(
         {"unavailable": ["floor_lamp", "light_bar"], "dropped": ["ha_lights"]}
-    ) == ["Floor lamp, light bar unavailable", "Loose lights dropped"]
+    ) == ["Floor lamp, light bar unavailable", "Home Assistant lights dropped"]
     assert room.notes({"unavailable": ["a", "b", "c"]}) == [
-        "3 loose lights unavailable"
+        "3 Home Assistant lights unavailable"
     ]
 
 
