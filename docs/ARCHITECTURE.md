@@ -1,6 +1,6 @@
 # Glowcast - Architecture
 
-Status: **v0.3.0 released**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.5, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
+Status: **v0.3.1 released; v0.4 in progress**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.6, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
 
 ## 1. Goal
 
@@ -17,7 +17,7 @@ Glowcast only translates picture into colour into light. Everything Home Assista
 
 ### Not in v0.1
 
-Home Assistant lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2 to v0.5, or without a milestone when not planned yet. Build one only when its issue is in Todo, and never build placeholders for them. Section 8 shows where they will plug in.
+Home Assistant lights, other TVs, extra entities, effects and so on are GitHub issues in milestones v0.2 to v0.6, or without a milestone when not planned yet. Build one only when its issue is in Todo, and never build placeholders for them. Section 8 shows where they will plug in.
 
 ## 2. Verified facts (tested 2026-10-28 on an LG OLED65G36LA, 2023)
 
@@ -63,7 +63,7 @@ Home Assistant lights, other TVs, extra entities, effects and so on are GitHub i
 | "When syncing stops" in the Hue app (#142) | Each entertainment area has a Hue app setting for what the lights do when a stream ends (the app offers "Pause on the last colour", "Off", "Last on-state" and some scenes; only the first and third were tested). The bridge applies it to Glowcast's stream too. With "Pause" the lights kept the last streamed colour for the 30-40 s they were watched, in 6 of 6 runs here and 2 of #133: whatever the last colour, with or without a pause before `stop()`, with `PUT stop` before or after the DTLS close, and when the bridge's own idle timeout ended the stream (no `stop()`). With "Last on-state" the camera saw them back 1.7 s after `stop()` returned, in 2 of 2 runs; the TV's area uses that setting, which matches the restores in #7 and #19. The setting is not in CLIP v2's `entertainment_configuration`, and after the stream the bridge and Home Assistant report the lights' state from before it either way, so only looking at the lights shows it. Setting the lights again through Home Assistant brings them back. |
 | The bridge's device in Home Assistant (#163) | Home Assistant 2026.10.4 with a Hue Bridge Pro (read from the device registry): the bridge's device has the bridge id as the bridge reports it as a `hue` identifier (16 characters, with `fffe` in the middle), while the `hue` entry's unique id is the normalised 12-character form (`aiohue`'s `normalize_bridge_id`, the same in 2025.7.2). Every device of the `hue` entry, the bridge's included, has a `via_device_id` (2026.10 splits composite devices). The Hue output finds the bridge by the normalised identifier, else as the device most of the entry's devices are linked through. |
 | The test TV's firmware (#185) | Home Assistant's device registry reports firmware 33.31.68 for the test TV (read 2026-10-30). LG's firmware history for this model lists 33.31.68 from 2026-06-29 and 43.21.96 from 2026-10-29. Inference (`docs/research/webos-devices.md`): the tests in this table ran on 33.31.68 or older, and by LG's numbering 33.x is the webOS 25 line and 43.x the webOS 26 line, so the TV runs webOS 25, not the webOS 23 it shipped with. |
-| Not yet tested | Other DRM apps (Netflix etc.) and HDCP-protected HDMI sources may also return black frames. Whether each segment of a gradient TV strip shows its own colour on the lights (unit-tested in #4; the test strip has loose contacts, #94). `executeOneShot` is undocumented and could disappear in a firmware update; it is not yet tested on webOS 26 (#185, `docs/research/webos-devices.md`), with pairing through Home Assistant 2026.8.3 or newer (#213). |
+| Not yet tested | Other DRM apps (Netflix etc.) and HDCP-protected HDMI sources may also return black frames. Whether each segment of a gradient TV strip shows its own colour on the lights (unit-tested in #4; the test strip has loose contacts, #94). `executeOneShot` is undocumented and could disappear in a firmware update; it is not yet tested on webOS 26 (#185, `docs/research/webos-devices.md`), with pairing through Home Assistant 2026.8.3 or newer (#213). Whether gradient lamps other than a lightstrip (for example a floor lamp with several segments) show up as several entertainment channels. |
 
 ## 3. Architecture: ports and adapters
 
@@ -233,7 +233,8 @@ start:    try source.start() and one good capture, retrying, for up to 10 s (sta
           channels = output.start()   (with what each light showed before)
           → light_state.fade_in(each channel's start_rgb)
 run:      two concurrent sub-tasks under the supervisor:
-            capture loop: every 1/update_rate s: frame = source.capture() → target = engine.compute(...)
+            capture loop: every 1/update_rate s: frame = source.capture() → picture inside the bars = letterbox.update(frame, ...)
+                          → target = engine.compute(frame, ..., picture)
                           → light_state.set_target(target, frame black?, now)
             send loop:    every 1/25 s: output.send(light_state.colors(now, brightness));
                           every 5 s: output.check()
