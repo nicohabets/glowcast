@@ -16,13 +16,17 @@ imports either, so it is tested with fake parts and a fake clock.
   when the last part rejected the key), so the pipeline stops without a retry
   of its own.
 - stop() and close() reach every part, also the dropped ones.
+- Each channel keeps what its part reports, its starting colour included,
+  so the first colours fade in for every part (#153). A part that comes back
+  after its retry gets the current colours at once, without a fade-in, as
+  after the pipeline's own retry.
 """
 
 import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..core.models import Channel, ChannelColor
 from ..core.pipeline import LOST_AGAIN_WINDOW, LOST_RETRY_DELAY, Clock, MonotonicClock
@@ -199,9 +203,10 @@ class CompositeOutput:
         part.running = True
         part.error = None
         part.next_send = self._clock.now()
+        # With the rest of each channel as the part reports it: its position
+        # and what its light showed before (for the fade-in, #153).
         return [
-            Channel(part.channel_id(channel.id), channel.name, channel.x, channel.z)
-            for channel in channels
+            replace(channel, id=part.channel_id(channel.id)) for channel in channels
         ]
 
     def _lost(self, part: _Part, error: Exception) -> None:

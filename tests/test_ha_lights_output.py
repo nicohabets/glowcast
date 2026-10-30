@@ -535,6 +535,110 @@ async def test_a_claim_soon_after_a_release_restores_the_state_from_before(
     assert len(turn_off) == 2
 
 
+def approx_rgb(rgb: tuple[float, float, float]) -> Any:
+    return pytest.approx(rgb, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    ("state", "attributes", "start"),
+    [
+        # As Glowcast would send it: the colour scaled to full, times brightness.
+        (
+            "on",
+            {"color_mode": "rgb", "rgb_color": [255, 128, 0], "brightness": 102},
+            (0.4, 0.2, 0.0),
+        ),
+        (
+            "on",
+            {"color_mode": "hs", "hs_color": [30, 50], "brightness": 255},
+            (1.0, 0.75, 0.50),
+        ),
+        (
+            "on",
+            {"color_mode": "xy", "xy_color": [0.3, 0.3], "brightness": 255},
+            (0.88, 0.89, 1.0),
+        ),
+        # A warm white: from its colour temperature, also when it reports a
+        # colour too.
+        (
+            "on",
+            {
+                "color_mode": "color_temp",
+                "color_temp_kelvin": 2700,
+                "rgb_color": [1, 2, 3],
+                "brightness": 255,
+            },
+            (1.0, 0.654, 0.343),
+        ),
+        ("on", {"color_mode": "onoff"}, (1.0, 1.0, 1.0)),  # on, nothing else
+        ("off", {}, (0.0, 0.0, 0.0)),
+        ("unavailable", {}, None),
+    ],
+)
+async def test_each_light_reports_what_it_showed_before(
+    hass: HomeAssistant,
+    turn_on: list[ServiceCall],
+    turn_off: list[ServiceCall],
+    state: str,
+    attributes: dict[str, Any],
+    start: tuple[float, float, float] | None,
+) -> None:
+    """For the fade-in after a claim (#153): the light's own state as it
+    would be sent, so the first colours fade in from there."""
+    lamp = add_light(hass, "lamp")
+    other = add_light(hass, "other")  # so the output starts in every case
+    hass.states.async_set(
+        lamp.entity_id,
+        state,
+        {"supported_color_modes": ["xy", "color_temp"], **attributes},
+    )
+    output = HaLightsOutput(hass, lights_output(lamp, other), now=Clock())
+    channels = await output.start()
+    lamp_channel = [c for c in channels if c.id == lamp.id]
+    if state == "unavailable":
+        assert lamp_channel == []  # skipped for the run
+        return
+    [channel] = lamp_channel
+    assert channel.start_rgb == approx_rgb(start)
+    await output.stop()
+
+
+async def test_a_claim_soon_after_a_release_fades_in_from_the_state_from_before(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    """The light still shows Glowcast's colour in Home Assistant (#125)."""
+    was_off = add_light(hass, "was_off", state="off")
+    output = HaLightsOutput(hass, lights_output(was_off), now=Clock())
+    await output.start()
+    hass.states.async_set(was_off.entity_id, "on", GLOWCAST_RED)
+    await output.stop()  # no picture: released, the state not yet reported
+    [channel] = await output.start()  # the picture is back
+    assert channel.start_rgb == (0.0, 0.0, 0.0)
+    await output.stop()
+
+
+async def test_a_group_starts_from_its_members_on_average(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    off = add_light(hass, "member_off", state="off")
+    on = add_light(hass, "member_on")
+    hass.states.async_set(
+        on.entity_id,
+        "on",
+        {
+            "supported_color_modes": ["xy"],
+            "color_mode": "rgb",
+            "rgb_color": [255, 0, 0],
+            "brightness": 255,
+        },
+    )
+    group = add_light(hass, "room", "group", members=[off.entity_id, on.entity_id])
+    output = HaLightsOutput(hass, lights_output(group), now=Clock())
+    [channel] = await output.start()
+    assert channel.start_rgb == approx_rgb((0.5, 0.0, 0.0))
+    await output.stop()
+
+
 GLOWCAST_RED = {
     "supported_color_modes": ["xy", "color_temp"],
     "color_mode": "hs",
