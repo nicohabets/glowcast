@@ -167,7 +167,7 @@
           "combined_options": "Entertainmentruimte en losse lampen"
         },
         "menu_option_descriptions": {
-          "combined_options": "Kies lampen een voor een, of een hele ruimte of lampgroep uit Home Assistant; elke lamp krijgt een eigen plek."
+          "combined_options": "Kies lampen één voor één, of een hele ruimte of lampgroep uit Home Assistant; elke lamp krijgt een eigen plek."
         }
       },
       "settings": {
