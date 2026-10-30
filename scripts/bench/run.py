@@ -598,11 +598,16 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
             await bench.camera.stop()
 
     async def clients() -> None:
-        if bench.ha is not None:
-            await bench.ha.close()
-        if hasattr(bench.owner, "close"):
-            await bench.owner.close()
-        await bench.bridge.close()
+        # Each on its own: one that fails never leaves another open.
+        for client in (bench.ha, bench.owner, bench.bridge):
+            if client is None or not hasattr(client, "close"):
+                continue
+            try:
+                await client.close()
+            except Exception as err:  # noqa: BLE001
+                print(
+                    "Closing a connection: " + rp.describe_error(err), file=sys.stderr
+                )
 
     async def local() -> None:
         if not state["ha_stopped"] and bench.ha_start is not None:
@@ -648,6 +653,9 @@ async def _restore(bench: Any) -> None:
         )
         report.add(rp.Step(name, "-", rp.FAIL, note="setting the lights back failed"))
         return
+    if getattr(bench, "loose", None):
+        # Judged by their state, whatever the camera: their own step.
+        await _loose_end_step(bench)
     if not bench.calibrated or not bench.pre_camera:
         report.add(
             rp.Step(
@@ -674,31 +682,68 @@ async def _restore(bench: Any) -> None:
     numbers: dict[str, Any] = {
         f"{bench.label[k]} back after s": v for k, v in back.items()
     }
-    if getattr(bench, "loose", None):
-        loose_ok, loose_numbers = await _loose_restored(bench)
-        ok &= loose_ok
-        numbers.update(loose_numbers)
     with contextlib.suppress(Exception):
         numbers.update(await bench.bridge_restore_numbers())
     report.add(rp.Step(name, "-", rp.PASS if ok else rp.FAIL, numbers=numbers))
     await bench.save_image("after-run")
 
 
-async def _loose_restored(bench: Any) -> tuple[bool, dict[str, Any]]:
-    """The loose lights' states in the owner's HA as before the run (read now)."""
+async def _loose_end_step(bench: Any) -> None:
+    """The step for the loose lights at the end: always in the report."""
+    try:
+        ok, numbers = await _loose_restored(bench)
+    except Exception as err:  # noqa: BLE001 - the step must be reported
+        print(
+            "Reading the loose lights failed: " + rp.describe_error(err),
+            file=sys.stderr,
+        )
+        ok, numbers = False, {}
+    bench.report.add(
+        rp.Step(
+            "end: loose lights set back explicitly, state as before the run",
+            "-",
+            rp.PASS if ok else rp.FAIL,
+            numbers=numbers,
+            note="" if ok else "a light not back, or its state not read",
+        )
+    )
+
+
+async def _loose_restored(
+    bench: Any, within: float | None = None, every: float = 1.0
+) -> tuple[bool, dict[str, Any]]:
+    """The loose lights' states in the owner's HA as before the run, read
+    until they are (Hue reports with a lag) or `within` has passed. A light
+    whose state cannot be read counts as not verified."""
     import loose
 
+    within = bench.th.restore_within_s if within is None else within
     numbers: dict[str, Any] = {}
     ok = True
     for light in bench.loose:
         before = bench.pre_states.get(light.entity_id)
         if before is None:
             continue
-        back, _ = loose.restored(before, await bench.owner.state(light.entity_id))
-        numbers[f"{bench.loose_label[light.index]} state as before the run"] = (
-            "yes" if back else "no"
-        )
-        ok &= back
+        label = f"{bench.loose_label[light.index]} state as before the run"
+        deadline = time.monotonic() + within
+        result = "not verified"
+        while True:
+            try:
+                back, _ = loose.restored(
+                    before, await bench.owner.state(light.entity_id)
+                )
+                result = "yes" if back else "no"
+            except Exception as err:  # noqa: BLE001 - recorded, not raised
+                print(
+                    "Reading a loose light failed: " + rp.describe_error(err),
+                    file=sys.stderr,
+                )
+                result = "not verified"
+            if result == "yes" or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(every)
+        numbers[label] = result
+        ok &= result == "yes"
     return ok, numbers
 
 

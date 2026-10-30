@@ -389,7 +389,9 @@ def judge_rate(
             by_network.setdefault(n, []).extend(t for t, _ in sent.get(entity, []))
     for n, times in by_network.items():
         lights = sum(1 for v in network.values() if v == n)
-        most = max_in_window(times, 1.0 - slack)
+        # Glowcast's bound: 4 commands in any second less its tolerance
+        # (TOLERANCE, 10 ms); a millisecond less for the events' times.
+        most = max_in_window(times, 1.0 - sch.TOLERANCE - 0.001)
         name = network_label[n]
         numbers[f"{name} lights"] = lights
         numbers[f"{name} most commands in 1 s"] = most

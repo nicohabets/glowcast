@@ -10,7 +10,7 @@ to the lights of a streaming area. Judged with numbers only:
   light by its state in the owner's Home Assistant;
 - the rate, from the local HA's `call_service` events: per light at most once
   per its interval, per network at most 4 commands in any second, and
-  `transition` equal to the light's interval;
+  `transition` its actual interval (the time since its command before);
 - the restore after no picture, after a switch off and after the helper
   stops (tv_off): the owner's state as before the switch-on, and the camera
   lights as before the run.

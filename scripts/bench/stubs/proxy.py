@@ -103,8 +103,11 @@ class Owner:
             return await response.json()
 
     async def call(self, service: str, data: dict[str, Any]) -> None:
-        if service not in ("turn_on", "turn_off") or data["entity_id"] not in (
-            self._lights
+        entity = data.get("entity_id")
+        if (
+            service not in ("turn_on", "turn_off")
+            or not isinstance(entity, str)
+            or entity not in self._lights
         ):
             raise HomeAssistantError("not one of the bench's calls")
         async with self._session.post(
@@ -161,7 +164,12 @@ async def async_setup_lights(
     async def poll() -> None:
         while True:
             await asyncio.sleep(POLL_SECONDS)
-            await asyncio.gather(*(light.async_refresh() for light in lights))
+            results = await asyncio.gather(
+                *(light.async_refresh() for light in lights), return_exceptions=True
+            )
+            for result in results:
+                if isinstance(result, Exception):  # keep polling
+                    _LOGGER.warning("A proxy light's poll failed: %s", describe(result))
 
     entry.async_create_background_task(hass, poll(), "bench proxy poll")
 
