@@ -2,7 +2,7 @@
 
 ## The switch
 
-Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls (and its settings under Configuration), for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop. [Loose lights](loose-lights.md#when-glowcast-stops) go back to how they were when it stops.
+Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls (and its settings under Configuration), for example `switch.glowcast_living_room_tv`. Turn it on to start syncing and off to stop. [Home Assistant lights](loose-lights.md#when-glowcast-stops) go back to how they were when it stops.
 
 ![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
 
