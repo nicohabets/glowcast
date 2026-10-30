@@ -317,6 +317,80 @@ async def test_loose_lights_entry_pairs_and_adds_an_area(hass: HomeAssistant) ->
     }
 
 
+@pytest.mark.parametrize("problem", ["unreachable", "no_areas", "key_rejected"])
+async def test_the_area_is_kept_when_the_bridge_cannot_give_its_areas(
+    hass: HomeAssistant,
+    bridge: FakeBridge,  # noqa: F811
+    problem: str,
+) -> None:
+    lamp = add_light(hass, "floor_lamp")
+    other = add_light(hass, "desk_lamp")
+    entry = combined_entry(hass, combined(lamp))
+    if problem == "unreachable":
+        bridge.reachable = False
+    elif problem == "no_areas":
+        bridge.areas = []
+    else:
+        bridge.areas_status = 403
+
+    result = await options(hass, entry, "combined_options")
+    # A notice, not an abort; then the loose lights' steps.
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "hue_area_kept"
+    result = await options_configure(hass, result, {})
+    assert result["step_id"] == "ha_lights"
+    result = await options_configure(hass, result, {"follow": "lights"})
+    result = await options_configure(hass, result, {"lights": [other.entity_id]})
+    result = await options_configure(hass, result, {"position": "right"})
+    result = await save_settings(hass, result)
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    # The stored area is kept, the loose lights changed.
+    assert entry.options["output"] == {
+        "type": "combined",
+        "parts": [
+            {"type": "hue_entertainment", "area_id": "area-tv"},
+            {
+                "type": "ha_lights",
+                "follow": "lights",
+                "lights": [{"entity": other.id, "x": 1.0, "z": 0.0}],
+            },
+        ],
+    }
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == (
+        [SOURCE_REAUTH] if problem == "key_rejected" else []
+    )
+
+
+async def test_the_area_alone_still_aborts_when_the_bridge_is_down(
+    hass: HomeAssistant,
+    bridge: FakeBridge,  # noqa: F811
+) -> None:
+    entry = glowcast_entry(hass)
+    bridge.reachable = False
+    result = await options(hass, entry, "hue_options")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+
+
+async def test_choosing_both_without_a_stored_area_aborts(
+    hass: HomeAssistant,
+    bridge: FakeBridge,  # noqa: F811
+) -> None:
+    """Loose lights paired with a bridge before, but no area to keep."""
+    lamp = add_light(hass, "floor_lamp")
+    entry = glowcast_entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, "output": combined(lamp)["parts"][1]}
+    )
+    bridge.reachable = False
+    result = await options(hass, entry, "combined_options")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+
+
 def area_with(
     bridge: FakeBridge,  # noqa: F811
     *lights: er.RegistryEntry,

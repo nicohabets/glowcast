@@ -199,6 +199,10 @@
           "area": "Entertainment area"
         }
       },
+      "hue_area_kept": {
+        "title": "Entertainment area",
+        "description": "The entertainment area cannot be changed right now: Glowcast cannot read the areas from the Hue bridge. The bridge cannot be reached, has no entertainment areas, or no longer accepts Glowcast's key (then Home Assistant asks you to pair again). The entertainment area stays as it is. Click Submit to go on with the rest of the settings."
+      },
       "ha_lights": {
         "title": "Choose the loose lights",
         "description": "Glowcast can follow single lights, the lights of a Home Assistant area, or the lights of a light group (for example a Hue room or zone). Each light gets its own place next to the screen.",

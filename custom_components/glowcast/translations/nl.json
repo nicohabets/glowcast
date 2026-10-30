@@ -199,6 +199,10 @@
           "area": "Entertainmentruimte"
         }
       },
+      "hue_area_kept": {
+        "title": "Entertainmentruimte",
+        "description": "De entertainmentruimte kan nu niet worden gewijzigd: Glowcast kan de ruimtes niet uit de Hue-bridge lezen. De bridge is niet bereikbaar, heeft geen entertainmentruimtes, of accepteert de sleutel van Glowcast niet meer (dan vraagt Home Assistant je opnieuw te koppelen). De entertainmentruimte blijft zoals hij is. Klik op Verzenden om verder te gaan met de rest van de instellingen."
+      },
       "ha_lights": {
         "title": "Kies de losse lampen",
         "description": "Glowcast kan losse lampen volgen, de lampen van een ruimte in Home Assistant, of de lampen van een lampgroep (bijvoorbeeld een Hue-ruimte of -zone). Elke lamp krijgt een eigen plek naast het scherm.",

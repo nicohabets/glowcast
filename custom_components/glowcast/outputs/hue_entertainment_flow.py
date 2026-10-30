@@ -249,8 +249,10 @@ class HueEntertainmentOptionsSteps(HueEntertainmentSteps, OptionsFlow):
 
         An entry set up with another output type has no `bridge` block yet:
         then the setup's steps pair with a bridge. Aborts when the list cannot
-        be read, and starts reauth when the bridge rejects the key. Tells the
-        area entity the list it read, so both show the same areas.
+        be read, and starts reauth when the bridge rejects the key; as part of
+        the combined settings with a stored area, it keeps that area instead
+        (#197). Tells the area entity the list it read, so both show the same
+        areas.
         """
         entry = self.config_entry
         if CONF_BRIDGE not in entry.data:
@@ -262,21 +264,38 @@ class HueEntertainmentOptionsSteps(HueEntertainmentSteps, OptionsFlow):
             self._hue_area_default = output.get(CONF_AREA_ID)
         host = bridge_host(self.hass, bridge[CONF_UNIQUE_ID])
         if host is None:
-            return self.async_abort(reason="cannot_connect")
+            return self._hue_no_areas("cannot_connect")
         try:
             areas = await async_areas(self.hass, host, bridge[CONF_APP_KEY])
         except OutputAuthFailed:
             entry.async_start_reauth(self.hass)
-            return self.async_abort(reason="reauth_required")
+            return self._hue_no_areas("reauth_required")
         except OutputUnavailable:
-            return self.async_abort(reason="cannot_connect")
+            return self._hue_no_areas("cannot_connect")
         async_dispatcher_send(self.hass, signal_areas_read(entry.entry_id), areas)
         if not areas:
-            return self.async_abort(reason="no_areas")
+            return self._hue_no_areas("no_areas")
         self._hue_bridge_unique_id = bridge[CONF_UNIQUE_ID]
         self._hue_host = host
         self._hue_keys = (bridge[CONF_APP_KEY], bridge[CONF_CLIENT_KEY])
         return self._hue_area_form(areas)
+
+    async def async_step_hue_area_kept(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The area cannot be changed now: keep the stored one and go on (#197)."""
+        if user_input is None:
+            return self.async_show_form(step_id="hue_area_kept")
+        output = output_block(self.config_entry.options, OUTPUT_HUE_ENTERTAINMENT)
+        assert output is not None
+        return await self.async_output_chosen({}, dict(output))
+
+    def _hue_no_areas(self, reason: str) -> ConfigFlowResult:
+        """The areas cannot be read: abort, or keep the stored area while the
+        combined settings run, so the other lights can still be changed."""
+        if self.combining and self._hue_area_default is not None:
+            return self.async_show_form(step_id="hue_area_kept")
+        return self.async_abort(reason=reason)
 
 
 def options_output(user_input: Mapping[str, Any]) -> dict[str, Any]:
