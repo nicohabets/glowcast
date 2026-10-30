@@ -71,9 +71,11 @@ CHANNELS = [
     ("right", 0.4, 0.0),  # the strip's right side
     ("floor_lamp", -1.0, -0.5),  # the floor lamp, left of the TV
     ("light_bar", 1.0, -0.5),  # the light bar on the console, right
+    ("table_lamp", -1.0, -0.3),  # the table lamp by the sofa, left, at the back
 ]
 # Each area channel's depth (y: +1 the TV side, -1 the far side) and the light
-# it is a part of: the strip's five segments are one gradient light (#23).
+# it is a part of: the strip's five segments are one gradient light (#23); the
+# table lamp stands at the back of the room, so it follows more softly (#15).
 # Given only to a core/ whose Channel has these fields, so --compare still
 # runs an older main.
 DEPTH = {
@@ -84,6 +86,7 @@ DEPTH = {
     "right": (0.8, "strip"),
     "floor_lamp": (0.6, "floor_lamp"),
     "light_bar": (0.9, "light_bar"),
+    "table_lamp": (-0.8, "table_lamp"),
 }
 # The Home Assistant lights (#9) of "Room v2" (#196), one at every place, each with its
 # name and place: a preset of outputs/ha_lights.py or "x,z" as the sliders
@@ -205,6 +208,17 @@ def _letterbox(x: float, y: float) -> RGB:
     return _across([(70, 140, 60), (150, 175, 70)], x)  # field
 
 
+def _concert(x: float, y: float) -> RGB:
+    """A concert: a purple and an orange spotlight on a dark stage (#233)."""
+    if math.hypot(x - 0.3, (y - 0.35) * 0.6) < 0.12:
+        return 160, 60, 230
+    if math.hypot(x - 0.72, (y - 0.35) * 0.6) < 0.1:
+        return 250, 140, 30
+    if y > 0.8:
+        return 46, 40, 44  # the audience, dimly lit
+    return 36, 34, 42
+
+
 def _ocean(x: float, y: float) -> RGB:
     return _across([(31, 181, 196), (61, 123, 255), (43, 79, 214)], x)
 
@@ -253,7 +267,7 @@ def scenarios(
 ) -> list[Scenario]:
     """The fixed scenarios, in order; the timings follow `core/`.
 
-    The combined output gets a seventh: its Home Assistant lights become unavailable,
+    The combined output gets an eighth: its Home Assistant lights become unavailable,
     the first (the wall light) 1 s in and the others 3 s in, until that part
     is dropped (the Home Assistant lights are checked every 5 s, then released and
     started again once after `lost_retry_delay`) while the entertainment area
@@ -270,12 +284,14 @@ def scenarios(
             "5 Fade between scenes", 3.0, _crossfade(_ocean, _meadow, 0.5, 2.0), 0.6
         ),
         # All-zero frames: released after NO_PICTURE_WAIT.
-        Scenario("6 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
+        # Colourful spots on a dark stage: a mixed picture (#233).
+        Scenario("6 Concert", 2.5, _still(_concert)),
+        Scenario("7 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
     ]
     if lights == "combined":
         run.append(
             Scenario(
-                "7 Home Assistant lights unavailable",
+                "8 Home Assistant lights unavailable",
                 # One Home Assistant light 1 s in, the others 3 s in, the check up to
                 # 5 s later, the retry, and a moment to see that part dropped.
                 3.0 + 5.0 + lost_retry_delay + 2.0,
