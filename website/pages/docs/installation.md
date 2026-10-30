@@ -30,8 +30,8 @@ Add it as a custom repository: in HACS, open the menu (⋮) in the top right cor
 
 Updates show up in HACS and under Settings → System → Updates. The [releases](https://github.com/nicohabets/glowcast/releases) say what changed in each version.
 
+From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketplace](https://hacs.xyz/docs/marketplace/) (Settings → Marketplace); custom repositories added in HACS carry over. Updated steps follow in [#57](https://github.com/nicohabets/glowcast/issues/57).
+
 ### Home Assistant older than 2026.8.3?
 
-From Glowcast 0.5.0 Glowcast needs Home Assistant 2026.8.3 or newer. On an older Home Assistant, HACS will not install the new version: it says the version requires Home Assistant 2026.8.3 or newer. The Glowcast you have keeps working as it is. To get the new version, first update Home Assistant to 2026.8.3 or newer (Settings → System → Updates), then update Glowcast.
-
-From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketplace](https://hacs.xyz/docs/marketplace/) (Settings → Marketplace); custom repositories added in HACS carry over. Updated steps follow in [#57](https://github.com/nicohabets/glowcast/issues/57).
+Glowcast 0.5.0 and newer need Home Assistant 2026.8.3 or newer. On an older Home Assistant, HACS will not install the new version: it says the version requires Home Assistant 2026.8.3 or newer. The Glowcast you have keeps working as it is. To get the new version, first update Home Assistant to 2026.8.3 or newer (Settings → System → Updates), then update Glowcast.
