@@ -25,8 +25,8 @@ from typing import Any
 
 import aiohttp
 import clients
+import ha_lights
 import local_ha
-import loose
 import report as rp
 import scenes
 import winproc
@@ -159,24 +159,27 @@ class Bench:
         self.tokens: list[str] = []
         # Picture changes on the Windows clock: [mode, picture, time].
         self.changes: list[list[Any]] = []
-        # Loose lights (#9, suite `loose`; #11, suite `combined`: only those
-        # not in the bench area, beside it): the config, their labels, their
-        # proxies in the local HA (index -> entity id, registry entry) and
-        # the owner's token for the proxies (written into the private storage).
-        parsed = loose.parse(cfg) if suite in ("loose", "combined") else []
-        self.loose: list[loose.LooseLight] = (
-            loose.beside_area(parsed) if suite == "combined" else parsed
+        # Home Assistant lights (#9, suite `ha-lights`; #11, suite `combined`:
+        # only those not in the bench area, beside it): the config, their
+        # labels, their proxies in the local HA (index -> entity id, registry
+        # entry) and the owner's token for the proxies (written into the
+        # private storage).
+        parsed = ha_lights.parse(cfg) if suite in ("ha-lights", "combined") else []
+        self.ha_lights: list[ha_lights.HaLight] = (
+            ha_lights.beside_area(parsed) if suite == "combined" else parsed
         )
-        # The combined suite's loose light that is in the bench area too
+        # The combined suite's Home Assistant light that is in the bench area too
         # (#198; `in_area: true`), with a proxy of its own but not in
-        # `loose`; each camera light's bridge light from the calibration
+        # `ha_lights`; each camera light's bridge light from the calibration
         # (None: not one), whose id is that proxy's unique id.
-        self.in_area = loose.in_area(parsed) if suite == "combined" else None
+        self.in_area = ha_lights.in_area(parsed) if suite == "combined" else None
         self.rid_of: dict[str, str | None] = {}
         # The helper's pattern in pattern mode (the combined suite also shows
         # one steady picture).
         self.helper_pattern = "cycle"
-        self.loose_label: dict[int, str] = loose.labels(self.loose, self.label)
+        self.ha_lights_label: dict[int, str] = ha_lights.labels(
+            self.ha_lights, self.label
+        )
         self.proxies: dict[int, dict[str, Any]] = {}
         self.owner_token = ""
 
@@ -213,7 +216,7 @@ class Bench:
             ha.get("tv_switch") or "",
             self.app_id,
             *[light["entity_id"] for light in self.lights.values()],
-            *[light.entity_id for light in self.loose],
+            *[light.entity_id for light in self.ha_lights],
             *[
                 str(
                     self.pre_states.get(light.entity_id, {})
@@ -221,7 +224,7 @@ class Bench:
                     .get("friendly_name")
                     or ""
                 )
-                for light in self.loose
+                for light in self.ha_lights
             ],
             *[str(p.get("id", "")) for p in self.proxies.values()],
             *self.light_rids,
@@ -394,7 +397,7 @@ class Bench:
         assert self.owner is not None and self.bridge is not None
         for entity in dict.fromkeys(
             [light["entity_id"] for light in self.lights.values()]
-            + [light.entity_id for light in self.loose]
+            + [light.entity_id for light in self.ha_lights]
         ):
             self.pre_states[entity] = await self.owner.state(entity)
         for rid in self.light_rids:
@@ -972,7 +975,7 @@ class Bench:
         settings = {"brightness": 80, "intensity": 100, "update_rate": "high"}
         proxies: dict[str, dict[str, Any]] | None = None
         if self.suite == "combined":
-            # The bench area and the loose lights beside it in one entry (#11).
+            # The bench area and the Home Assistant lights beside it in one entry (#11).
             entry = local_ha.combined_glowcast_entry(
                 helper=helper,
                 app_key=self.keys["app_key"],
@@ -980,9 +983,9 @@ class Bench:
                 area_id=self.cfg["bench_area_id"],
                 settings=settings,
             )
-        elif self.loose:
-            # Glowcast's loose-lights output on proxy lights (stubs/proxy.py).
-            entry = local_ha.loose_glowcast_entry(helper=helper, settings=settings)
+        elif self.ha_lights:
+            # Glowcast's Home Assistant lights output on proxy lights (stubs/proxy.py).
+            entry = local_ha.ha_lights_glowcast_entry(helper=helper, settings=settings)
         else:
             entry = local_ha.glowcast_entry(
                 helper=helper,
@@ -991,9 +994,9 @@ class Bench:
                 area_id=self.cfg["bench_area_id"],
                 settings=settings,
             )
-        if self.loose:
+        if self.ha_lights:
             proxies = {}
-            for kind in loose.KINDS:
+            for kind in ha_lights.KINDS:
                 lights = [
                     {
                         "unique_id": unique_id,
@@ -1044,18 +1047,18 @@ class Bench:
             raise BenchError(
                 "Glowcast's entities did not appear in the local Home Assistant"
             )
-        if self.loose:
-            await self.place_loose_lights()
+        if self.ha_lights:
+            await self.place_ha_lights()
         await self.ha.follow()
 
-    async def place_loose_lights(self) -> None:
+    async def place_ha_lights(self) -> None:
         """Find the proxy lights in the local HA's entity registry and store
-        them, with their positions, as Glowcast's loose-lights output."""
+        them, with their positions, as Glowcast's Home Assistant lights output."""
         assert self.ha is not None
         wanted = self.proxied()
         stubs = [
             local_ha.stub_entry_id(kind)
-            for kind in loose.KINDS
+            for kind in ha_lights.KINDS
             if any(light.kind == kind for light in wanted.values())
         ]
         for attempt in range(90):
@@ -1068,7 +1071,7 @@ class Bench:
             found = {
                 entry["unique_id"]: entry
                 for entry in await self.ha.registry()
-                if entry.get("platform") in loose.KINDS
+                if entry.get("platform") in ha_lights.KINDS
                 and entry.get("unique_id") in wanted
             }
             if found.keys() == wanted.keys():
@@ -1080,22 +1083,22 @@ class Bench:
                 "the owner's lights? see its home-assistant.log)"
             )
         self.proxies = {wanted[u].index: entry for u, entry in found.items()}
-        await self.set_loose_output(self.loose)
+        await self.set_ha_lights_output(self.ha_lights)
 
-    def proxied(self) -> dict[str, loose.LooseLight]:
-        """The loose lights with a proxy, by its unique id: `loose`, and the
-        in-area light under its bridge light's id when the calibration
+    def proxied(self) -> dict[str, ha_lights.HaLight]:
+        """The Home Assistant lights with a proxy, by its unique id: `ha_lights`,
+        and the in-area light under its bridge light's id when the calibration
         found it (#198)."""
-        out = {light.unique_id: light for light in self.loose}
+        out = {light.unique_id: light for light in self.ha_lights}
         if self.in_area is not None:
-            unique_id = loose.area_unique_id(self.in_area, self.rid_of)
+            unique_id = ha_lights.area_unique_id(self.in_area, self.rid_of)
             if unique_id is not None:
                 out[unique_id] = self.in_area
         return out
 
-    async def set_loose_output(self, lights: list[loose.LooseLight]) -> None:
-        """Store these proxies, with their positions, as Glowcast's loose
-        lights (in the combined suite beside the bench area)."""
+    async def set_ha_lights_output(self, lights: list[ha_lights.HaLight]) -> None:
+        """Store these proxies, with their positions, as Glowcast's Home
+        Assistant lights (in the combined suite beside the bench area)."""
         assert self.ha is not None
         output: dict[str, Any] = {
             "type": "ha_lights",

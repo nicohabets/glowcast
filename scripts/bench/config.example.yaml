@@ -65,11 +65,12 @@ helper:
   port: 8489
   pairing_code: "135790"
 
-# Loose lights (#9), for `--suite loose`: lights of the Home Assistant above
-# that the bench's local Home Assistant mirrors as proxy lights, for
-# Glowcast's loose-lights output. The bench reads their states there and
-# forwards light.turn_on/turn_off to them, nothing else; it adds them to its
-# allow-list of lights. Per light:
+# Home Assistant lights (#9), for `--suite ha-lights`: lights of the Home
+# Assistant above that the bench's local Home Assistant mirrors as proxy
+# lights, for Glowcast's Home Assistant lights output (called `loose_lights:`
+# until v0.4; the bench still reads that name). The bench reads their states
+# there and forwards light.turn_on/turn_off to them, nothing else; it adds
+# them to its allow-list of lights. Per light:
 #   kind: hue or matter - the stub integration its proxy is under: all `hue`
 #     lights share one Hue network, all `matter` lights one Thread network,
 #     as Glowcast's rate limits see them (at most 4 commands per second each).
@@ -81,11 +82,12 @@ helper:
 #   position: left, right, top, bottom or ambient; or x and z (-1..1: x from
 #     left to right, z from bottom to top), as in Glowcast's settings.
 #   in_area: true (optional, at most one light; kind hue with `light`) - the
-#     combined suite also adds this bench-area light to the loose lights, to
-#     check that Glowcast leaves it out (#198); the loose suite ignores it.
+#     combined suite also adds this bench-area light to the Home Assistant
+#     lights, to check that Glowcast leaves it out (#198); the ha-lights
+#     suite ignores it.
 # A Hue light must not be in an area that streams: the bridge ignores light
 # commands to it then (the bench area does not stream in this suite).
-loose_lights:
+ha_lights:
   - kind: hue
     light: wall
     position: left
@@ -96,13 +98,14 @@ loose_lights:
     entity_id: light.desk_lamp
     x: -0.8
     z: 0.0
-# Whole cycles of the helper's patterns to judge in the loose suite.
-loose_cycles: 1
+# Whole cycles of the helper's patterns to judge in the ha-lights suite
+# (called `loose_cycles` until v0.4).
+ha_lights_cycles: 1
 # `--suite combined` (#11): the bench area and, in the same Glowcast entry,
-# the loose lights above WITHOUT `light:` (the ones the camera does not see;
-# the camera lights are the area's). It needs at least one such light.
-# With a light marked `in_area: true` it also checks a loose light that is in
-# the area too (#198), for example on the first light above:
+# the Home Assistant lights above WITHOUT `light:` (the ones the camera does
+# not see; the camera lights are the area's). It needs at least one such
+# light. With a light marked `in_area: true` it also checks a Home Assistant
+# light that is in the area too (#198), for example on the first light above:
 #   - kind: hue
 #     light: wall
 #     position: left

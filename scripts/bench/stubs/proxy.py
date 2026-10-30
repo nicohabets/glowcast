@@ -5,7 +5,7 @@ this on a real Home Assistant: it replaces the integration it is copied into
 (`hue` or `matter`).
 
 The bench copies this file into its `hue` and `matter` stubs, so that Glowcast's
-loose-lights output sees one Hue network and one Thread network, as in a real
+Home Assistant lights output sees one Hue network and one Thread network, as in a real
 home. Each proxy light mirrors one light of the product owner's Home Assistant:
 its state is read there about once per second, and `light.turn_on` and
 `light.turn_off` are forwarded there with the same service data. Only the
