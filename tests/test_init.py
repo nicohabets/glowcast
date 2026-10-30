@@ -785,6 +785,7 @@ async def test_home_assistant_stop_releases_the_lights(
 # The real pipeline behind the switch
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_the_real_pipeline_behind_the_switch(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:

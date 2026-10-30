@@ -370,6 +370,7 @@ async def test_a_value_survives_a_restart(
     assert state(hass, INTENSITY) == "150"
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_the_whole_chain_with_the_real_pipeline(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:

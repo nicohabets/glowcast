@@ -260,6 +260,7 @@ class Pipeline:
                 frame = await self._async_without_lights()
             else:
                 self._channels = await self._async_start_output()
+                self._lights.fade_in(_starts(self._channels))
                 self._report(Phase.STREAMING)
             await self._async_set_target(frame)
             while True:
@@ -388,8 +389,9 @@ class Pipeline:
             await self._async_unless_stopped(self._async_pace(begin))
         _LOGGER.info("The picture is back; claiming the lights again")
         self._channels = await self._async_unless_stopped(self._async_start_output())
-        # Start afresh: the first colour is shown at once, as at a start.
+        # Start afresh: the first colours fade in, as at a start.
         self._lights = LightState()
+        self._lights.fade_in(_starts(self._channels))
         self._no_picture_since = None
         self._report(Phase.STREAMING)
         return frame
@@ -597,6 +599,11 @@ def stop_reason_of(error: Exception) -> StopReason:
         ),
         StopReason.OUTPUT_UNAVAILABLE,
     )
+
+
+def _starts(channels: list[Channel]) -> dict[str, tuple[float, float, float] | None]:
+    """What each claimed light showed before, for the fade-in."""
+    return {channel.id: channel.start_rgb for channel in channels}
 
 
 def _compute(

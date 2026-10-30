@@ -143,6 +143,7 @@ async def switch(hass: HomeAssistant, service: str) -> None:
     )
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_the_lights_follow_and_return_to_their_state(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
