@@ -31,6 +31,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import color as color_util
 from homeassistant.util import dt as dt_util
 
 from ..const import CONF_OUTPUT
@@ -138,10 +139,12 @@ class HaLightsOutput:
         self._next_check = 0.0
         self._release: asyncio.Task[None] | None = None
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Resolve the lights, save their state and return them as channels.
 
         Unavailable lights are skipped for this run and keep their position.
+        Each light's state is read from Home Assistant, so `retry` changes
+        nothing.
         Raises OutputNotFound when there are no colour lights to follow (the
         area or group was removed, or has none), OutputUnavailable when every
         one of them is unavailable.
@@ -194,12 +197,17 @@ class HaLightsOutput:
         self._sent = {}
         self._next_check = self._now() + CHECK_INTERVAL
         positions = _positions(self._output)
+        saved = {state.entity_id: state for state in self._saved}
         return [
             Channel(
                 id=light.registry_id,
                 name=light.name,
                 x=positions.get(light.registry_id, AMBIENT)[0],
                 z=positions.get(light.registry_id, AMBIENT)[1],
+                start_rgb=_start_rgb(
+                    saved.get(member)
+                    for member in restore_lights(self._hass, light.entity_id)
+                ),
             )
             for light in lights
         ]
@@ -609,6 +617,48 @@ def _command(rgb: tuple[float, float, float]) -> tuple[int, int, int, int]:
         return (255, 255, 255, 1)
     r, g, b = (min(255, max(0, round(value / peak * 255))) for value in rgb)
     return (r, g, b, min(255, max(1, round(peak * 255))))
+
+
+def _start_rgb(states: Iterable[State | None]) -> tuple[float, float, float] | None:
+    """What a light showed before the claim, as Glowcast would send it (#153).
+
+    From the states saved for the restore, so a light that has not reported
+    its restored state yet counts with the state from before. For a group, the
+    average of its members. None when none of them is on or off.
+    """
+    colors = [rgb for state in states if (rgb := _state_rgb(state)) is not None]
+    if not colors:
+        return None
+    r, g, b = (sum(values) / len(colors) for values in zip(*colors, strict=True))
+    return r, g, b
+
+
+def _state_rgb(state: State | None) -> tuple[float, float, float] | None:
+    """A light's state as a colour in 0-1, its brightness included; the
+    inverse of _command(). Black when it is off."""
+    if state is None or state.state not in (STATE_ON, STATE_OFF):
+        return None
+    if state.state == STATE_OFF:
+        return 0.0, 0.0, 0.0
+    attributes = state.attributes
+    rgb: tuple[float, ...] = (255.0, 255.0, 255.0)  # on, without a colour
+    kelvin = attributes.get("color_temp_kelvin")
+    if attributes.get("color_mode") == ColorMode.COLOR_TEMP and kelvin:
+        rgb = color_util.color_temperature_to_rgb(kelvin)
+    elif value := attributes.get("rgb_color"):
+        rgb = tuple(value)
+    elif value := attributes.get("hs_color"):
+        rgb = color_util.color_hs_to_RGB(*value)
+    elif value := attributes.get("xy_color"):
+        rgb = color_util.color_xy_to_RGB(*value)
+    elif kelvin:
+        rgb = color_util.color_temperature_to_rgb(kelvin)
+    peak = max(rgb)
+    if peak <= 0:
+        return 0.0, 0.0, 0.0
+    level = (attributes.get("brightness") or 255) / 255
+    r, g, b = (min(1.0, max(0.0, value / peak * level)) for value in rgb)
+    return r, g, b
 
 
 def _restored(hass: HomeAssistant) -> dict[str, tuple[State, datetime]]:

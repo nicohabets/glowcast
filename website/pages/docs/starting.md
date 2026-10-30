@@ -36,6 +36,6 @@ actions:
       entity_id: switch.glowcast_living_room_tv
 ```
 
-Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". Brightness, intensity and the update rate change while it runs without interrupting the lights. Choosing another entertainment area restarts syncing on the new area (a few seconds); the switch stays on.
+Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". When it takes the lights over, they fade in slowly, in about 2 seconds, from how they were (a lamp in warm white goes from warm white to the picture's colours, a light that was off fades up from dark), so the room changes calmly; the same when the picture comes back after a moment without one. With an entertainment area, a light that was bright may dip a little at the very start before it fades to the picture, because the stream cannot show a light's own full white. Brightness, intensity and the update rate change while it runs without interrupting the lights. Choosing another entertainment area restarts syncing on the new area (a few seconds); the switch stays on.
 
 When the TV turns off, Glowcast stops by itself and releases the lights; see [Troubleshooting](troubleshooting.md#when-glowcast-stops-by-itself) for this and the other reasons it stops. When Home Assistant shuts down or restarts while syncing, Glowcast releases the lights first.

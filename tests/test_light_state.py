@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 
-from custom_components.glowcast.core.light_state import BLACK_HOLD, LightState
+from custom_components.glowcast.core.light_state import (
+    BLACK_HOLD,
+    FADE_IN,
+    LightState,
+)
 from custom_components.glowcast.core.models import ChannelColor
 
 RED = (1.0, 0.0, 0.0)
@@ -190,6 +194,100 @@ def test_a_black_region_in_a_picture_is_not_held() -> None:
     lights.set_target(target(BLACK), False, 1.0)
     assert rgb_at(lights, 1.0) == approx_rgb(RED_SENT)
     assert rgb_at(lights, 2.0) == approx_rgb(GLOW_ONLY)
+
+
+# Fading in when the lights are claimed (#153)
+
+WARM_WHITE = (0.8, 0.62, 0.40)  # what a light showed before the claim
+
+
+def claimed(starts: dict[str, Any] | None = None) -> LightState:
+    """A light state for lights just claimed, with what they showed before."""
+    lights = LightState()
+    lights.fade_in(starts if starts is not None else {"1": WARM_WHITE})
+    return lights
+
+
+def test_the_fade_in_takes_about_2_s() -> None:
+    assert 1.5 <= FADE_IN <= 2.5
+
+
+def test_the_first_colours_fade_in_from_the_lights_own_state() -> None:
+    lights = claimed()
+    lights.set_target(target(BLUE), False, 5.0)
+    assert rgb_at(lights, 5.0) == approx_rgb(WARM_WHITE)
+    half = tuple(s + (b - s) * 0.5 for s, b in zip(WARM_WHITE, BLUE, strict=True))
+    assert rgb_at(lights, 5.0 + FADE_IN / 2) == approx_rgb(half)
+    assert rgb_at(lights, 5.0 + FADE_IN) == approx_rgb(BLUE)
+    assert rgb_at(lights, 5.0 + 3 * FADE_IN) == approx_rgb(BLUE)
+
+
+@pytest.mark.parametrize("brightness", [1.0, 0.80, 0.20])
+def test_the_starting_colour_is_sent_as_it_is_whatever_the_brightness(
+    brightness: float,
+) -> None:
+    """The light's own state is already as sent: brightness and the glow apply
+    to the picture's colours only, never to the starting colour (bench check
+    on #188)."""
+    full_white = (1.0, 0.87, 0.77)  # a cool white at full brightness
+    lights = claimed({"1": full_white})
+    lights.set_target(target(RED), False, 0.0)
+    assert rgb_at(lights, 0.0, brightness) == approx_rgb(full_white)
+
+
+def test_a_channel_without_a_starting_colour_fades_in_from_dark() -> None:
+    lights = claimed({"1": WARM_WHITE, "2": None})
+    lights.set_target(target(RED, "1", "2"), False, 0.0)
+    colors = {c.channel_id: c.rgb for c in lights.colors(FADE_IN / 4, 1.0)}
+    assert colors["2"] == approx_rgb((0.25, 0.0, 0.0))
+    lights = claimed({})  # the output could read none of them
+    lights.set_target(target(RED), False, 0.0)
+    assert rgb_at(lights, 0.0) == approx_rgb(BLACK)
+    assert rgb_at(lights, FADE_IN / 2) == approx_rgb((0.5, 0.0, 0.0))
+
+
+def test_a_new_frame_during_the_fade_in_changes_its_target_without_restarting() -> None:
+    lights = claimed({"1": BLACK})
+    lights.set_target(target(RED), False, 0.0)
+    lights.set_target(target(BLUE), False, 0.5)  # measured interval: 0.5 s
+    # Half way through the fade-in; the picture's own fade is at blue already.
+    assert rgb_at(lights, FADE_IN / 2) == approx_rgb((0.0, 0.0, 0.5))
+    lights.set_target(target(BLUE), False, FADE_IN / 2)
+    assert rgb_at(lights, FADE_IN) == approx_rgb(BLUE)
+
+
+@pytest.mark.parametrize("brightness", [1.0, 0.80, 0.03])
+def test_brightness_and_glow_apply_during_the_fade_in(brightness: float) -> None:
+    """A dark first picture fades in to the glow, not to full brightness."""
+    lights = claimed()
+    lights.set_target(target(BLACK), True, 0.0)
+    glow = tuple(min(0.10, brightness) * w for w in WARM)
+    assert rgb_at(lights, FADE_IN, brightness) == approx_rgb(glow)
+    lights = claimed({"1": BLACK})
+    lights.set_target(target(RED), False, 0.0)
+    assert rgb_at(lights, FADE_IN / 2, brightness) == approx_rgb(
+        (brightness / 2, 0.0, 0.0)
+    )
+
+
+def test_a_fade_in_has_no_jumps() -> None:
+    lights = claimed()
+    lights.set_target(target(BLUE), False, 0.0)
+    previous = rgb_at(lights, 0.0)
+    for tick in range(1, round(FADE_IN * 25) + 5):  # every send at 25 per second
+        rgb = rgb_at(lights, tick / 25)
+        assert max(abs(a - b) for a, b in zip(rgb, previous, strict=True)) < 0.05
+        previous = rgb
+
+
+def test_a_retry_does_not_fade_in_again() -> None:
+    """Only a claim fades in; a retry resumes the light state (below)."""
+    lights = claimed()
+    lights.set_target(target(RED), False, 0.0)
+    lights.resume({"1"})  # also when the retry came during the fade-in
+    lights.set_target(target(RED), False, 6.0)
+    # Where the lights were, not between their own state and the picture.
+    assert rgb_at(lights, 6.0) == approx_rgb(RED_SENT)
 
 
 # After a retry

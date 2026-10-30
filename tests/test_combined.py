@@ -691,7 +691,9 @@ async def syncing_both(
             and parts.areas[0].sent
             and tuple(hass.states.get(lamp.entity_id).attributes["hs_color"])
             == (0.0, 100.0)
-        )
+        ),
+        # Past the fade-in from the light's own state (#153), about 2 s.
+        limit=5.0,
     )
     return entry
 

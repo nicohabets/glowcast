@@ -16,13 +16,17 @@ imports either, so it is tested with fake parts and a fake clock.
   when the last part rejected the key), so the pipeline stops without a retry
   of its own.
 - stop() and close() reach every part, also the dropped ones.
+- Each channel keeps what its part reports, its starting colour included,
+  so the first colours fade in for every part (#153). A part that comes back
+  after its retry gets the current colours at once, without a fade-in, as
+  after the pipeline's own retry.
 """
 
 import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..core.models import Channel, ChannelColor
 from ..core.pipeline import LOST_AGAIN_WINDOW, LOST_RETRY_DELAY, Clock, MonotonicClock
@@ -93,7 +97,7 @@ class CompositeOutput:
         }
         return {**self._dropped, **running}
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Start every part that is not dropped, together.
 
         Raises the first part's error when none of them starts.
@@ -102,7 +106,8 @@ class CompositeOutput:
         for part in parts:
             part.running = False
         results = await asyncio.gather(
-            *(part.output.start() for part in parts), return_exceptions=True
+            *(part.output.start(retry=retry) for part in parts),
+            return_exceptions=True,
         )
         channels: list[Channel] = []
         failed: list[tuple[_Part, Exception]] = []
@@ -199,9 +204,10 @@ class CompositeOutput:
         part.running = True
         part.error = None
         part.next_send = self._clock.now()
+        # With the rest of each channel as the part reports it: its position
+        # and what its light showed before (for the fade-in, #153).
         return [
-            Channel(part.channel_id(channel.id), channel.name, channel.x, channel.z)
-            for channel in channels
+            replace(channel, id=part.channel_id(channel.id)) for channel in channels
         ]
 
     def _lost(self, part: _Part, error: Exception) -> None:
@@ -245,7 +251,7 @@ class CompositeOutput:
                 # asyncio.wait: a cancelled retry does not cancel the release.
                 await asyncio.wait(set(part.releases))
             await self._clock.sleep(LOST_RETRY_DELAY)
-            channels = await part.output.start()
+            channels = await part.output.start(retry=True)
         except Exception as err:
             part.error = err
             # A failed retry stops as lost, as for a single output, unless

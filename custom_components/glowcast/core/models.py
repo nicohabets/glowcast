@@ -20,6 +20,11 @@ class Channel:
     name: str
     x: float  # -1 = left of the screen, +1 = right
     z: float  # -1 = floor / bottom of the picture, +1 = ceiling / top
+    # What the light shows before Glowcast claims it, as the output would send
+    # it (0.0 - 1.0, its brightness included; black when it is off), so the
+    # first colours fade in from there (architecture 3.5). None when the
+    # output cannot read it: the fade-in starts from dark.
+    start_rgb: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)

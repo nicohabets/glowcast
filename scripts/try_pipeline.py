@@ -86,8 +86,8 @@ class CountingOutput:
         self.sends = 0
         self.first_send: float | None = None
 
-    async def start(self) -> list[Channel]:
-        return await self._output.start()
+    async def start(self, *, retry: bool = False) -> list[Channel]:
+        return await self._output.start(retry=retry)
 
     def send(self, colors: list[ChannelColor]) -> None:
         if self.first_send is None:

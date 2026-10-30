@@ -16,10 +16,21 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.glowcast import runtime
+from custom_components.glowcast.core import light_state
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
 from .fakes import FakeAdapters, FakePipeline
+
+
+@pytest.fixture
+def no_fade_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first colours after a claim at once, without the fade-in (#153).
+
+    For tests about something else that look at the first colours; the
+    fade-in has tests of its own (test_light_state.py, test_pipeline.py).
+    """
+    monkeypatch.setattr(light_state, "FADE_IN", 0.0)
 
 
 @pytest.fixture

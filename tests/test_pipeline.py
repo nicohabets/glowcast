@@ -4,6 +4,7 @@ No Home Assistant test framework (architecture D13).
 """
 
 import asyncio
+import dataclasses
 import itertools
 import logging
 from collections.abc import Callable
@@ -11,7 +12,12 @@ from typing import Any
 
 import pytest
 
-from custom_components.glowcast.core.light_state import BLACK_HOLD
+from custom_components.glowcast.core.light_state import (
+    BLACK_HOLD,
+    FADE_IN,
+    GLOW,
+    GLOW_COLOR,
+)
 from custom_components.glowcast.core.models import Frame
 from custom_components.glowcast.core.pipeline import (
     NO_PICTURE_WAIT,
@@ -36,6 +42,7 @@ from custom_components.glowcast.core.ports import (
 
 from .fakes import (
     BLUE,
+    CHANNEL,
     CLEANUP,
     DARK,
     NO_PICTURE,
@@ -179,14 +186,141 @@ async def test_a_capture_hanging_past_the_grace_gives_tv_off() -> None:
 # Fading and rhythm
 
 
-async def test_first_frame_is_shown_straight_away() -> None:
+WARM_WHITE = (0.8, 0.62, 0.40)  # what the light showed before Glowcast
+FIRST_FRAME_AT = 0.25  # the first capture takes 0.25 s
+RED_RGB = (1.0, 0.0, 0.0)  # red as sent at brightness 100 %
+BLUE_RGB = (0.0, 0.0, 1.0)
+
+
+def own_state(h: Harness, rgb: tuple[float, float, float] | None = WARM_WHITE) -> None:
+    """The fake output reports what its light showed before the claim."""
+    h.output.channels = [dataclasses.replace(CHANNEL, start_rgb=rgb)]
+
+
+def blend(
+    start: tuple[float, float, float], end: tuple[float, float, float], p: float
+) -> tuple[float, float, float]:
+    r, g, b = (s + (e - s) * p for s, e in zip(start, end, strict=True))
+    return r, g, b
+
+
+def sent_between(
+    h: Harness, begin: float, end: float
+) -> list[tuple[float, tuple[float, float, float]]]:
+    return [(t, colors[0].rgb) for t, colors in h.output.sent if begin <= t <= end]
+
+
+async def test_the_first_colours_fade_in_from_the_lights_own_state() -> None:
     h = Harness()
+    own_state(h)
     await h.start()
-    await h.clock.advance(0.3)
-    assert h.output.rgb_at(0) == approx_rgb((1.0, 0.0, 0.0))
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN + 1)
+    fading = sent_between(h, FIRST_FRAME_AT, FIRST_FRAME_AT + FADE_IN)
+    assert len(fading) >= FADE_IN * 25 - 1  # every send tick of the fade-in
+    assert fading[0][1] == approx_rgb(WARM_WHITE)
+    for t, rgb in fading:
+        assert rgb == approx_rgb(
+            blend(WARM_WHITE, RED_RGB, (t - fading[0][0]) / FADE_IN)
+        )
+    assert h.output.rgb_at(-1) == approx_rgb(RED_RGB)
     assert await h.stop() == StopReason.USER
 
 
+async def test_a_light_that_reports_no_state_fades_in_from_dark() -> None:
+    h = Harness()
+    own_state(h, None)
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN / 2)
+    assert h.output.rgb_at(0) == approx_rgb((0.0, 0.0, 0.0))
+    assert h.output.rgb_at(-1)[0] == pytest.approx(0.5, abs=0.03)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_a_new_frame_during_the_fade_in_changes_its_target() -> None:
+    """Blue arrives during the fade-in: the lights go to blue, from where the
+    fade-in is, and it still ends FADE_IN after the first colours."""
+    h = Harness()  # captures every 1/3 s
+    own_state(h)
+    h.source.frames = [solid(RED)]
+    h.source.default = solid(BLUE)
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN + 0.5)
+    [(began, _), *_] = sent_between(h, FIRST_FRAME_AT, 99)
+    # Half way, the picture's own fade is at blue already (by 1/3 s later).
+    [(_, half)] = sent_between(
+        h, began + FADE_IN / 2 - 0.02, began + FADE_IN / 2 + 0.02
+    )
+    assert half == pytest.approx(blend(WARM_WHITE, BLUE_RGB, 0.5), abs=0.03)
+    [(_, end)] = sent_between(h, began + FADE_IN + 0.02, began + FADE_IN + 0.06)
+    assert end == approx_rgb(BLUE_RGB)
+    assert await h.stop() == StopReason.USER
+
+
+@pytest.mark.parametrize("brightness", [100, 50, 5])
+async def test_a_dark_first_picture_fades_in_to_the_glow(brightness: int) -> None:
+    h = Harness(brightness=brightness)
+    own_state(h)
+    h.source.default = solid(DARK)
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN / 2)
+    level = min(GLOW, brightness / 100)
+    glow = tuple(level * c for c in GLOW_COLOR)
+    assert h.output.rgb_at(-1) == pytest.approx(blend(WARM_WHITE, glow, 0.5), abs=0.03)
+    await h.clock.advance(FADE_IN)
+    assert h.output.rgb_at(-1) == approx_rgb(glow)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_brightness_applies_during_the_fade_in() -> None:
+    h = Harness(brightness=100)
+    own_state(h, (0.0, 0.0, 0.0))
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN / 2)
+    h.pipeline.update_settings(Settings(40, 100, UpdateRate.HIGH))
+    sent = len(h.output.sent)
+    await h.clock.advance(TICK)
+    assert h.output.rgb_at(sent)[0] == pytest.approx(0.2, abs=0.03)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_no_fade_in_after_a_settings_change() -> None:
+    h = Harness(brightness=100)
+    own_state(h)
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN + 0.5)
+    for settings in (
+        Settings(40, 100, UpdateRate.HIGH),
+        Settings(40, 150, UpdateRate.HIGH),
+        Settings(40, 150, UpdateRate.LOW),
+    ):
+        h.pipeline.update_settings(settings)
+        await h.clock.advance(1.5)
+        assert h.output.rgb_at(-1) == approx_rgb((0.40, 0.0, 0.0))
+    assert h.log == ["source.start", "output.start"]
+    assert await h.stop() == StopReason.USER
+
+
+async def test_no_fade_in_after_a_retry() -> None:
+    """The lights come back with the picture's colours, not from their own
+    state, even when the output reports it again."""
+    h = Harness()
+    own_state(h)
+    await h.start()
+    await h.clock.advance(FIRST_FRAME_AT + FADE_IN + 0.5)
+    await lose_stream(h)
+    await h.clock.advance(5.1)  # retried
+    assert h.log.count("output.start") == 2
+    # The output need not read what the lights show (#153).
+    assert h.output.retries == [False, True]
+    retried = len(h.output.sent)
+    await h.clock.advance(1)
+    assert all(
+        colors[0].rgb == approx_rgb(RED_RGB) for _, colors in h.output.sent[retried:]
+    )
+    assert await h.stop() == StopReason.USER
+
+
+@pytest.mark.usefixtures("no_fade_in")
 async def test_fades_linearly_over_the_measured_capture_interval() -> None:
     h = Harness(rate=UpdateRate.LOW)  # one capture per second
     h.source.frames = [solid(RED), solid(RED)]
@@ -312,6 +446,7 @@ async def test_maximum_without_a_cap_goes_as_fast_as_the_source() -> None:
         (100, solid(RED), (1.0, 0.0, 0.0)),
     ],
 )
+@pytest.mark.usefixtures("no_fade_in")
 async def test_brightness_and_minimal_glow(
     brightness: int, frame: Frame, expected: tuple[float, float, float]
 ) -> None:
@@ -336,6 +471,7 @@ async def test_intensity_is_passed_as_a_factor() -> None:
 # New settings while streaming (#13): no restart, so no new claim of the lights
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_new_brightness_applies_at_the_next_send() -> None:
     h = Harness(brightness=100)
     await h.start()
@@ -382,6 +518,7 @@ async def test_new_update_rate_applies_from_the_next_capture() -> None:
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_new_settings_before_streaming_are_used_once_it_streams() -> None:
     h = Harness(brightness=100)
     h.pipeline.update_settings(Settings(40, 100, UpdateRate.HIGH))
@@ -397,6 +534,7 @@ RED_SENT = (1.0, 0.0, 0.0)  # red at brightness 100 %: no glow mixed in (#43)
 GLOW_ONLY = (0.10, 0.078, 0.050)  # black at brightness 100 %
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_tv_switched_off_during_the_hold_never_shows_the_glow() -> None:
     h = Harness()
     await h.start()
@@ -433,6 +571,7 @@ def switch_off_animation() -> Frame:
     return Frame(width=8, height=4, pixels=bytes(pixels))
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_a_switch_off_animation_counts_as_black() -> None:
     h = Harness()
     await h.start()
@@ -458,6 +597,7 @@ async def test_black_shorter_than_the_hold_goes_straight_to_the_new_picture() ->
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_starting_on_a_black_picture_shows_the_glow_at_once() -> None:
     h = Harness()
     h.source.default = solid(DARK)
@@ -875,6 +1015,7 @@ async def test_a_5_s_all_zero_moment_keeps_the_lights() -> None:
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_a_short_all_zero_moment_keeps_the_lights() -> None:
     h = Harness(rate=UpdateRate.LOW)  # one capture per second
     await h.start()
@@ -912,6 +1053,7 @@ async def test_a_picture_after_6_9_s_starts_the_wait_again() -> None:
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_the_glow_shows_before_the_release() -> None:
     h = Harness()
     await h.start()
@@ -964,8 +1106,40 @@ async def test_a_dark_scene_is_not_no_picture() -> None:
     assert await h.stop() == StopReason.USER
 
 
+async def test_after_a_claim_back_the_colours_and_the_glow_are_as_before() -> None:
+    """Nothing of the fade-in stays after it: the same picture gives the same
+    colours, and black the same glow, after a claim back (bench check on
+    #188)."""
+    h = Harness(brightness=80)
+    own_state(h)
+
+    async def red_then_glow() -> tuple[Any, Any]:
+        h.source.default = solid(RED)
+        await h.clock.advance(FADE_IN + 1)
+        red = h.output.rgb_at(-1)
+        h.source.default = solid(DARK)
+        await h.clock.advance(BLACK_HOLD + 1.5)
+        return red, h.output.rgb_at(-1)
+
+    await h.start()
+    first = await red_then_glow()
+    h.source.default = solid(NO_PICTURE)
+    await h.clock.advance(NO_PICTURE_WAIT + 1)
+    assert h.log[-2:] == ["output.stop", "output.close"]
+    for _ in range(2):  # a claim back, and one more
+        again = await red_then_glow()
+        glow = tuple(GLOW * c for c in GLOW_COLOR)
+        assert first == (approx_rgb((0.8, 0.0, 0.0)), approx_rgb(glow))
+        assert again == (approx_rgb(first[0]), approx_rgb(first[1]))
+        h.source.default = solid(NO_PICTURE)
+        await h.clock.advance(NO_PICTURE_WAIT + 1)
+    assert h.log.count("output.start") == 3
+    assert await h.stop() == StopReason.USER
+
+
 async def test_the_picture_returns_and_the_lights_are_claimed_again() -> None:
     h = Harness()
+    own_state(h)
     await lose_picture(h)
     h.source.default = solid(BLUE)
     await h.clock.advance(0.7)
@@ -974,9 +1148,15 @@ async def test_the_picture_returns_and_the_lights_are_claimed_again() -> None:
     assert h.statuses[-1] == PipelineStatus(Phase.STREAMING, channels=1)
     claimed_at = h.status_times[-1]
     await h.clock.advance(TICK)
-    # The first colour is shown at once, as at a start; no fade from red.
-    assert h.output.sent[-1][0] > claimed_at
-    assert h.output.rgb_at(-1) == approx_rgb((0.0, 0.0, 1.0))
+    # The first colours fade in from the light's own state, as at a start; no
+    # fade from the red before the release.
+    sent_at = h.output.sent[-1][0]
+    assert sent_at > claimed_at
+    assert h.output.rgb_at(-1) == approx_rgb(
+        blend(WARM_WHITE, BLUE_RGB, (sent_at - claimed_at) / FADE_IN)
+    )
+    await h.clock.advance(FADE_IN)
+    assert h.output.rgb_at(-1) == approx_rgb(BLUE_RGB)
     assert await h.stop() == StopReason.USER
     assert h.phases == [
         Phase.STARTING,
@@ -1013,6 +1193,7 @@ async def test_almost_black_frames_do_not_claim_the_lights(frame: Frame) -> None
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_switched_on_during_no_picture_leaves_the_lights_alone() -> None:
     h = Harness()
     h.source.default = solid(NO_PICTURE)

@@ -43,9 +43,11 @@ HELPER_NAME = "Test PC"  # generic, never the computer's name
 PAIRING_CODE = "123456"
 # How long all-zero frames last before the pipeline releases the lights,
 # from the working copy's core/ (loaded without Home Assistant).
-NO_PICTURE_WAIT: float = load_core(
-    REPO / "custom_components" / "glowcast" / "core", "glowcast_e2e_core"
-).pipeline.NO_PICTURE_WAIT
+_CORE = load_core(REPO / "custom_components" / "glowcast" / "core", "glowcast_e2e_core")
+NO_PICTURE_WAIT: float = _CORE.pipeline.NO_PICTURE_WAIT
+# How long the first colours fade in after the lights are claimed (#153): at
+# the switch-on and for the pattern after black.
+FADE_IN: float = _CORE.light_state.FADE_IN
 # Seconds per pattern: long enough for the black pattern's hold and release
 # (NO_PICTURE_WAIT) and the next pattern's claim, with a settled stretch in each.
 INTERVAL = NO_PICTURE_WAIT + 3.0
@@ -54,7 +56,8 @@ INTERVAL = NO_PICTURE_WAIT + 3.0
 RELEASE_EARLY = 0.5
 RELEASE_LATE = 2.0
 # Colours are compared from this long after a pattern starts (the capture
-# interval, the fade and the stream's latency), up to MARGIN before it ends.
+# interval, the fade and the stream's latency), up to MARGIN before it ends;
+# for the pattern after black, which claims the lights again, FADE_IN later.
 SETTLE = 2.0
 MARGIN = 0.5
 TOLERANCE = 12  # 0-255
@@ -479,7 +482,8 @@ def steps(
         # The first red whose settled stretch starts while streaming (it may
         # have begun just before): then white is streamed before black, so
         # the hold on black shows white, without waiting for a whole cycle.
-        earliest = found["streaming_since"] - (SETTLE - MARGIN)
+        # Its settled stretch starts after the fade-in of the switch-on.
+        earliest = found["streaming_since"] + FADE_IN + 2 * MARGIN - SETTLE
         deadline = time.time() + len(CYCLE) * INTERVAL + 10
         while time.time() < deadline:
             reds = [
@@ -527,10 +531,12 @@ def steps(
             },
             "letterbox": dict.fromkeys(CHANNELS, green),
         }[name]
+        # After black the lights are claimed again: they fade in first.
+        settle = SETTLE + FADE_IN if CYCLE[index - 1] == "black" else SETTLE
         run.step(
             f"pattern {name}",
-            lambda start=start, name=name, expected=expected: check_pattern(
-                bridge, start, name, expected
+            lambda start=start, name=name, expected=expected, settle=settle: (
+                check_pattern(bridge, start, name, expected, settle)
             ),
         )
     run.step(
@@ -622,10 +628,15 @@ def diagnostics(ha: HomeAssistant, found: dict[str, Any]) -> dict[str, Any]:
 
 
 def check_pattern(
-    bridge: Bridge, start: float, name: str, expected: dict[str, tuple[int, ...]]
+    bridge: Bridge,
+    start: float,
+    name: str,
+    expected: dict[str, tuple[int, ...]],
+    settle: float = SETTLE,
 ) -> dict[str, Any]:
-    """Every message in the settled stretch has the expected colours."""
-    frames = bridge.frames(start + SETTLE, start + INTERVAL - MARGIN)
+    """Every message in the settled stretch (from `settle` after the pattern
+    starts) has the expected colours."""
+    frames = bridge.frames(start + settle, start + INTERVAL - MARGIN)
     detail = colours(frames, expected)
     if len(frames) < MIN_FRAMES:
         raise Failed(f"{len(frames)} messages, fewer than {MIN_FRAMES}: {detail}")

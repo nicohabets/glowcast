@@ -143,6 +143,7 @@ async def switch(hass: HomeAssistant, service: str) -> None:
     )
 
 
+@pytest.mark.usefixtures("no_fade_in")
 async def test_the_lights_follow_and_return_to_their_state(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
@@ -253,7 +254,9 @@ async def syncing(hass: HomeAssistant, lamp: er.RegistryEntry) -> None:
         lambda: (
             tuple(hass.states.get(lamp.entity_id).attributes["hs_color"])
             == (0.0, 100.0)
-        )
+        ),
+        # Past the fade-in from the light's own state (#153), about 2 s.
+        limit=5.0,
     )
     assert not own_state(hass, lamp.entity_id)
 

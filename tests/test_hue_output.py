@@ -178,6 +178,9 @@ def mock_bridge(
     aioclient_mock: AiohttpClientMocker,
     areas: list[dict[str, Any]] | None = None,
     host: str = HOST,
+    lights: list[dict[str, Any]] | None = None,
+    renderers: list[dict[str, Any]] | None = None,
+    states_status: int = 200,
 ) -> None:
     aioclient_mock.get(
         f"https://{host}/auth/v1", headers={"hue-application-id": APP_ID}
@@ -186,6 +189,34 @@ def mock_bridge(
         f"https://{host}/clip/v2/resource/entertainment_configuration",
         json={"errors": [], "data": areas if areas is not None else [_area()]},
     )
+    # What each light shows before the stream (#153).
+    aioclient_mock.get(
+        f"https://{host}/clip/v2/resource/light",
+        status=states_status,
+        json={"errors": [], "data": lights or []},
+    )
+    aioclient_mock.get(
+        f"https://{host}/clip/v2/resource/entertainment",
+        status=states_status,
+        json={"errors": [], "data": renderers or []},
+    )
+
+
+def _renderer(number: int) -> dict[str, Any]:
+    """The entertainment service of device `number`."""
+    return {"id": f"ent-{number}", "owner": {"rid": f"dev-{number}"}, "renderer": True}
+
+
+def _light(number: int, **state: Any) -> dict[str, Any]:
+    """The light of device `number`, in the state given."""
+    return {"id": f"light-{number}", "owner": {"rid": f"dev-{number}"}, **state}
+
+
+def _member(number: int, index: int = 0) -> dict[str, Any]:
+    return {
+        "service": {"rid": f"ent-{number}", "rtype": "entertainment"},
+        "index": index,
+    }
 
 
 @pytest.fixture
@@ -241,6 +272,157 @@ async def test_channels_have_their_positions(
         Channel(id="1", name="Channel 1", x=0, z=0.5),
         Channel(id="2", name="Channel 2", x=1, z=1.0),
     ]
+
+
+def approx_rgb(rgb: tuple[float, float, float]) -> Any:
+    return pytest.approx(rgb, abs=0.01)
+
+
+async def test_channels_report_what_their_lights_showed_before(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Read before the stream starts, for the fade-in (#153)."""
+    add_bridge()
+    channels = [
+        {"channel_id": 0, "members": [_member(1)]},  # a warm white at half
+        {"channel_id": 1, "members": [_member(2)]},  # a colour at full
+        {"channel_id": 2, "members": [_member(3)]},  # off
+        # A gradient strip: every segment starts from the light's own colour.
+        {"channel_id": 3, "members": [_member(4, 0)]},
+        {"channel_id": 4, "members": [_member(4, 1)]},
+        {"channel_id": 5, "members": [_member(9)]},  # not found: unknown
+        {"channel_id": 6, "members": []},
+        {"channel_id": 7, "members": [_member(5)]},  # a colour temperature only
+        {"channel_id": 8, "members": [_member(6)]},  # no brightness: unknown
+        {"channel_id": 9, "members": [_member(7)]},  # no x: unknown
+    ]
+    mock_bridge(
+        aioclient_mock,
+        [{**_area(), "channels": channels}],
+        renderers=[_renderer(n) for n in (1, 2, 3, 4, 5, 6, 7)],
+        lights=[
+            _light(
+                1,
+                on={"on": True},
+                dimming={"brightness": 50.0},
+                # In colour-temperature mode a colour light reports the xy
+                # of its temperature too (here 2700 K).
+                color={"xy": {"x": 0.4578, "y": 0.4101}},
+                color_temperature={"mirek": 370, "mirek_valid": True},
+            ),
+            _light(
+                2,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color={"xy": {"x": 0.3, "y": 0.3}},
+                color_temperature={"mirek": None, "mirek_valid": False},
+            ),
+            _light(3, on={"on": False}, dimming={"brightness": 80.0}),
+            _light(
+                4,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color={"xy": {"x": 0.3, "y": 0.3}},
+            ),
+            _light(
+                5,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color_temperature={"mirek": 370, "mirek_valid": True},
+            ),
+            _light(
+                6,
+                on={"on": True},
+                dimming={"brightness": None},
+                color={"xy": {"x": 0.3, "y": 0.3}},
+            ),
+            _light(
+                7,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color={"xy": {"x": None, "y": 0.3}},
+            ),
+        ],
+    )
+    started = await output.start()
+    starts = [channel.start_rgb for channel in started]
+    # From its xy, as a colour light in xy mode: 2700 K's xy is (1.0, 0.808,
+    # 0.471) at full, here at half; not sRGB 2700 K (1.0, 0.654, 0.343), which
+    # the bridge shows redder (architecture 3.5, #38).
+    assert starts[0] == approx_rgb((0.5, 0.404, 0.236))
+    assert starts[1] == approx_rgb((0.882, 0.894, 1.0))
+    assert starts[2] == (0.0, 0.0, 0.0)
+    assert starts[3] == starts[4] == approx_rgb((0.882, 0.894, 1.0))
+    assert starts[5:7] == [None, None]
+    # Without xy: sRGB of the temperature about 800 K cooler, as the glow.
+    assert starts[7] == approx_rgb((1.0, 0.755, 0.552))
+    assert starts[8:] == [None, None]
+    # Read before the stream starts, never written.
+    assert {method for method, *_ in aioclient_mock.mock_calls} == {"GET"}
+
+
+async def test_a_retry_does_not_read_the_light_states(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """The lights come back with the picture's colours, without a fade-in,
+    so a retry does not wait for the read."""
+    add_bridge()
+    mock_bridge(aioclient_mock)
+    await output.start()
+    await output.stop()
+    await output.close()
+    aioclient_mock.mock_calls.clear()
+    channels = await output.start(retry=True)
+    assert [channel.start_rgb for channel in channels] == [None, None, None]
+    assert not any(
+        "resource/light" in str(url) for _, url, *_ in aioclient_mock.mock_calls
+    )
+    assert not any(
+        str(url).endswith("resource/entertainment")
+        for _, url, *_ in aioclient_mock.mock_calls
+    )
+
+
+@pytest.mark.parametrize("status", [404, 500])
+async def test_unreadable_light_states_start_without_them(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    status: int,
+) -> None:
+    """The fade-in then starts from dark; the stream starts as always."""
+    add_bridge()
+    mock_bridge(
+        aioclient_mock,
+        [{**_area(), "channels": [{"channel_id": 0, "members": [_member(1)]}]}],
+        states_status=status,
+    )
+    [channel] = await output.start()
+    assert channel.start_rgb is None
+    assert FakeSession.instances[-1].streaming
+
+
+async def test_light_states_that_hang_do_not_hold_the_start(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_bridge()
+    mock_bridge(aioclient_mock)
+
+    async def hang(*args: Any, **kwargs: Any) -> Any:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(hue, "STATES_TIMEOUT", 0.01)
+    monkeypatch.setattr(hue, "_async_clip_data", hang)
+    channels = await output.start()
+    assert [channel.start_rgb for channel in channels] == [None, None, None]
+    assert FakeSession.instances[-1].streaming
 
 
 async def test_start_uses_the_bridge_host_from_ha(
