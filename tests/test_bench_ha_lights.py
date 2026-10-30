@@ -1,8 +1,8 @@
-"""The test bench's loose lights (#9): config, rate, colours, restore, report.
+"""The test bench's Home Assistant lights (#9): config, rate, colours, restore, report.
 
-No hardware: the pure parts of scripts/bench/loose.py, the proxy lights'
+No hardware: the pure parts of scripts/bench/ha_lights.py, the proxy lights'
 mapping (scripts/bench/stubs/proxy.py), the bench's stub service and the
-loose suite's steps on recorded numbers.
+ha-lights suite's steps on recorded numbers.
 """
 
 import importlib.util
@@ -32,10 +32,10 @@ def _load(name: str, path: Path) -> ModuleType:
     return module
 
 
-loose = _load("bench_loose", BENCH / "loose.py")
-loose_suite = _load("bench_loose_suite", BENCH / "loose_suite.py")
-suite = _load("bench_suite_for_loose", BENCH / "suite.py")
-local_ha = _load("bench_local_ha_for_loose", BENCH / "local_ha.py")
+bench_lights = _load("bench_ha_lights", BENCH / "ha_lights.py")
+ha_lights_suite = _load("bench_ha_lights_suite", BENCH / "ha_lights_suite.py")
+suite = _load("bench_suite_for_ha_lights", BENCH / "suite.py")
+local_ha = _load("bench_local_ha_for_ha_lights", BENCH / "local_ha.py")
 proxy = _load("bench_proxy", BENCH / "stubs" / "proxy.py")
 bench_stub = _load(
     "bench_glowcast_bench", BENCH / "stubs" / "glowcast_bench" / "__init__.py"
@@ -46,7 +46,7 @@ CAMERA = {
     "wall": {"entity_id": "light.desk_up", "region": [0, 0, 10, 10]},
     "spot": {"entity_id": "light.desk_spot", "region": [20, 0, 10, 10]},
 }
-LOOSE = [
+HA_LIGHTS = [
     {"kind": "hue", "light": "wall", "position": "left"},
     {"kind": "hue", "light": "spot", "position": "right"},
     {"kind": "matter", "entity_id": "light.desk_lamp", "x": -0.8, "z": 0.25},
@@ -55,7 +55,7 @@ LOOSE = [
 
 # ---- config ------------------------------------------------------------------
 def test_the_config_is_parsed() -> None:
-    lights = loose.parse({"lights": CAMERA, "loose_lights": LOOSE})
+    lights = bench_lights.parse({"lights": CAMERA, "ha_lights": HA_LIGHTS})
     assert [(li.entity_id, li.kind, li.x, li.z, li.camera) for li in lights] == [
         ("light.desk_up", "hue", -1.0, 0.0, "wall"),
         ("light.desk_spot", "hue", 1.0, 0.0, "spot"),
@@ -66,7 +66,7 @@ def test_the_config_is_parsed() -> None:
         "Bench proxy 2",
         "Bench proxy 3",
     ]
-    assert loose.labels(lights, {"wall": "light 1", "spot": "light 2"}) == {
+    assert bench_lights.labels(lights, {"wall": "light 1", "spot": "light 2"}) == {
         1: "light 1",
         2: "light 2",
         3: "light 3 (state)",
@@ -86,30 +86,36 @@ def test_the_config_is_parsed() -> None:
 )
 def test_a_wrong_light_is_a_config_error(item: dict[str, Any], reason: str) -> None:
     with pytest.raises(ValueError, match=reason):
-        loose.parse({"lights": CAMERA, "loose_lights": [item]})
+        bench_lights.parse({"lights": CAMERA, "ha_lights": [item]})
 
 
 def test_a_light_in_the_area_too() -> None:
-    marked = [{**LOOSE[0], "in_area": True}, *LOOSE[1:]]
-    lights = loose.parse({"lights": CAMERA, "loose_lights": marked})
+    marked = [{**HA_LIGHTS[0], "in_area": True}, *HA_LIGHTS[1:]]
+    lights = bench_lights.parse({"lights": CAMERA, "ha_lights": marked})
     assert [li.in_area for li in lights] == [True, False, False]
-    assert loose.in_area(lights) == lights[0]
-    assert loose.in_area(lights[1:]) is None
-    assert loose.beside_area(lights) == [lights[2]]
-    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": None}) == "rid-1"
-    assert loose.area_unique_id(lights[0], {"wall": None}) is None
-    assert loose.area_unique_id(lights[0], {}) is None
-    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": "rid-1"}) is None
+    assert bench_lights.in_area(lights) == lights[0]
+    assert bench_lights.in_area(lights[1:]) is None
+    assert bench_lights.beside_area(lights) == [lights[2]]
+    assert (
+        bench_lights.area_unique_id(lights[0], {"wall": "rid-1", "spot": None})
+        == "rid-1"
+    )
+    assert bench_lights.area_unique_id(lights[0], {"wall": None}) is None
+    assert bench_lights.area_unique_id(lights[0], {}) is None
+    assert (
+        bench_lights.area_unique_id(lights[0], {"wall": "rid-1", "spot": "rid-1"})
+        is None
+    )
 
 
 @pytest.mark.parametrize(
     ("items", "reason"),
     [
-        ([{**LOOSE[0], "in_area": "yes"}], "true or false"),
-        ([{**LOOSE[0], "kind": "matter", "in_area": True}], "kind hue"),
-        ([{**LOOSE[2], "kind": "hue", "in_area": True}], "camera `light`"),
+        ([{**HA_LIGHTS[0], "in_area": "yes"}], "true or false"),
+        ([{**HA_LIGHTS[0], "kind": "matter", "in_area": True}], "kind hue"),
+        ([{**HA_LIGHTS[2], "kind": "hue", "in_area": True}], "camera `light`"),
         (
-            [{**LOOSE[0], "in_area": True}, {**LOOSE[1], "in_area": True}],
+            [{**HA_LIGHTS[0], "in_area": True}, {**HA_LIGHTS[1], "in_area": True}],
             "more than one",
         ),
     ],
@@ -118,23 +124,33 @@ def test_a_wrong_in_area_light_is_a_config_error(
     items: list[dict[str, Any]], reason: str
 ) -> None:
     with pytest.raises(ValueError, match=reason):
-        loose.parse({"lights": CAMERA, "loose_lights": items})
+        bench_lights.parse({"lights": CAMERA, "ha_lights": items})
+
+
+def test_the_old_key_name_still_works() -> None:
+    """`loose_lights:`, the name up to v0.3 (#228): an older config.local.yaml
+    keeps working."""
+    old = bench_lights.parse({"lights": CAMERA, "loose_lights": HA_LIGHTS})
+    assert old == bench_lights.parse({"lights": CAMERA, "ha_lights": HA_LIGHTS})
 
 
 def test_a_light_twice_is_a_config_error() -> None:
-    twice = [LOOSE[0], {"kind": "matter", "entity_id": "light.desk_up", "x": 0, "z": 0}]
+    twice = [
+        HA_LIGHTS[0],
+        {"kind": "matter", "entity_id": "light.desk_up", "x": 0, "z": 0},
+    ]
     with pytest.raises(ValueError, match="twice"):
-        loose.parse({"lights": CAMERA, "loose_lights": twice})
+        bench_lights.parse({"lights": CAMERA, "ha_lights": twice})
     with pytest.raises(ValueError, match="list"):
-        loose.parse({"lights": CAMERA, "loose_lights": []})
+        bench_lights.parse({"lights": CAMERA, "ha_lights": []})
 
 
 def test_the_presets_are_glowcasts() -> None:
-    assert loose.PRESETS == ha_lights.PRESETS
+    assert bench_lights.PRESETS == ha_lights.PRESETS
 
 
 def test_the_schedule_is_glowcasts_own() -> None:
-    sch = loose.schedule()
+    sch = bench_lights.schedule()
     assert sch.network_of("hue", "e1") == "hue:e1"
     assert sch.network_of("other", "e1") is None
     assert sch.NETWORK_COMMANDS_PER_SECOND == 4
@@ -160,14 +176,14 @@ def _on(**attributes: Any) -> dict[str, Any]:
     ],
 )
 def test_the_colour_of_a_state(state: dict[str, Any] | None, colour: str) -> None:
-    assert loose.state_colour(state) == colour
+    assert bench_lights.state_colour(state) == colour
 
 
 def test_a_settled_colour_is_one_colour() -> None:
     red, blue = _on(hs_color=[0, 100]), _on(hs_color=[236, 100])
-    assert loose.settled_colour([red, red]) == "red"
-    assert loose.settled_colour([red, blue]) is None
-    assert loose.settled_colour([]) is None
+    assert bench_lights.settled_colour([red, red]) == "red"
+    assert bench_lights.settled_colour([red, blue]) is None
+    assert bench_lights.settled_colour([]) is None
 
 
 @pytest.mark.parametrize(
@@ -184,8 +200,8 @@ def test_a_settled_colour_is_one_colour() -> None:
 def test_left_red_right_blue_by_the_lights_band(
     x: float, z: float, colour: str | None
 ) -> None:
-    light = loose.LooseLight(1, "light.a", "hue", x, z, None)
-    assert loose_suite.expected_split(light) == colour
+    light = bench_lights.HaLight(1, "light.a", "hue", x, z, None)
+    assert ha_lights_suite.expected_split(light) == colour
 
 
 # ---- restore ---------------------------------------------------------------
@@ -222,7 +238,7 @@ XY = _on(brightness=200, color_mode="xy", xy_color=[0.3, 0.4])
 def test_a_light_is_back_as_before(
     before: dict[str, Any], after: dict[str, Any] | None, ok: bool
 ) -> None:
-    assert loose.restored(before, after)[0] is ok
+    assert bench_lights.restored(before, after)[0] is ok
 
 
 def test_restored_counts_from_when_it_stays_back() -> None:
@@ -235,8 +251,8 @@ def test_restored_counts_from_when_it_stays_back() -> None:
         (14.0, "light.a", WARM),
         (13.5, "light.b", red),  # another light
     ]
-    assert loose.first_restored(samples, "light.a", WARM, 10.0, 15.0) == 13.0
-    assert loose.first_restored(samples, "light.a", WARM, 10.0, 12.5) is None
+    assert bench_lights.first_restored(samples, "light.a", WARM, 10.0, 15.0) == 13.0
+    assert bench_lights.first_restored(samples, "light.a", WARM, 10.0, 12.5) is None
 
 
 # ---- the rate ----------------------------------------------------------------
@@ -247,24 +263,24 @@ def test_only_glowcasts_colour_commands_count() -> None:
         (1.2, {"entity_id": "light.p1", "xy_color": [0.3, 0.3]}),  # a restore
         (1.3, {"entity_id": "light.other", "rgb_color": [1, 2, 3], "transition": 1}),
     ]
-    assert loose.commands(calls, ["light.p1", "light.p2"]) == {
+    assert bench_lights.commands(calls, ["light.p1", "light.p2"]) == {
         "light.p1": [(1.0, 1.0)],
         "light.p2": [(1.1, 1)],
     }
 
 
 def test_windows_and_gaps() -> None:
-    assert loose.max_in_window([0.0, 0.25, 0.5, 0.75, 1.0], 1.0) == 5
-    assert loose.max_in_window([0.0, 0.25, 0.5, 0.75, 1.0], 0.9) == 4
-    assert loose.max_in_window([], 1.0) == 0
-    assert loose.min_gap([3.0, 1.0, 2.5]) == 0.5
-    assert loose.min_gap([1.0]) is None
+    assert bench_lights.max_in_window([0.0, 0.25, 0.5, 0.75, 1.0], 1.0) == 5
+    assert bench_lights.max_in_window([0.0, 0.25, 0.5, 0.75, 1.0], 0.9) == 4
+    assert bench_lights.max_in_window([], 1.0) == 0
+    assert bench_lights.min_gap([3.0, 1.0, 2.5]) == 0.5
+    assert bench_lights.min_gap([1.0]) is None
 
 
 def _judge(sent: dict[str, list[tuple[float, float | None]]], network: dict) -> Any:
     label = {e: f"light {i}" for i, e in enumerate(sent, 1)}
     names = {n: "Hue network" for n in network.values() if n}
-    return loose.judge_rate(sent, network, label, names, slack=0.1)
+    return bench_lights.judge_rate(sent, network, label, names, slack=0.1)
 
 
 def test_once_per_second_per_light_passes() -> None:
@@ -292,7 +308,7 @@ def test_the_fade_is_the_actual_interval() -> None:
     # 1.0 s, then 1.5 s (a colour that waited a tick), then a wait of 4 s
     # (more than two intervals): its interval again.
     times = [0.0, 1.0, 2.5, 6.5]
-    assert loose.expected_transitions(times, 1.0, 2.0) == [
+    assert bench_lights.expected_transitions(times, 1.0, 2.0) == [
         (1.0,),
         (1.0,),
         (1.5,),
@@ -305,7 +321,10 @@ def test_the_fade_is_the_actual_interval() -> None:
     assert not result.ok
     assert result.numbers["light 1 transition not the actual interval"] == 1
     # At the limit of the wait both fades are right.
-    assert loose.expected_transitions([0.0, 2.05], 1.0, 2.0, 0.15)[1] == (2.05, 1.0)
+    assert bench_lights.expected_transitions([0.0, 2.05], 1.0, 2.0, 0.15)[1] == (
+        2.05,
+        1.0,
+    )
 
 
 def test_five_lights_on_a_network_share_it() -> None:
@@ -410,8 +429,8 @@ async def test_the_bench_stores_glowcasts_output(hass: HomeAssistant) -> None:
     assert entry.options == {"output": output, "brightness": 80}
 
 
-def test_the_loose_entry_and_the_stubs(tmp_path: Path) -> None:
-    entry = local_ha.loose_glowcast_entry(
+def test_the_ha_lights_entry_and_the_stubs(tmp_path: Path) -> None:
+    entry = local_ha.ha_lights_glowcast_entry(
         helper={"helper_id": "a" * 32, "host": "127.0.0.1", "port": 8489, "token": "t"},
         settings={"brightness": 80},
     )
@@ -425,7 +444,7 @@ def test_the_loose_entry_and_the_stubs(tmp_path: Path) -> None:
         ha_lights.create(None, entry["data"], entry["options"]),
         ha_lights.HaLightsOutput,
     )
-    local_ha._add_loose_stubs(SimpleNamespace(config=tmp_path))
+    local_ha._add_ha_lights_stubs(SimpleNamespace(config=tmp_path))
     custom = tmp_path / "custom_components"
     for name in ("hue", "matter"):
         assert (custom / name / "proxy.py").exists()
@@ -438,12 +457,12 @@ def test_the_loose_entry_and_the_stubs(tmp_path: Path) -> None:
 def _bench() -> Any:
     cfg = {
         "lights": CAMERA,
-        "loose_lights": LOOSE,
+        "ha_lights": HA_LIGHTS,
         "bench_area_id": "area-0000",
         "home_assistant": {"url": "http://192.0.2.10:8123", "tv_switch": "switch.tv"},
     }
-    report = rp.Report(suite="loose", modes=["pattern"], started="-")
-    bench = suite.Bench(cfg, "loose", report, None, {"host": "192.0.2.20"})
+    report = rp.Report(suite="ha-lights", modes=["pattern"], started="-")
+    bench = suite.Bench(cfg, "ha-lights", report, None, {"host": "192.0.2.20"})
     bench.pre_states = {
         "light.desk_lamp": {**XY, "attributes": {"friendly_name": "Desk lamp"}}
     }
@@ -474,7 +493,7 @@ def test_the_rate_step_and_the_report_name_no_light() -> None:
         for i in (1, 2, 3)
     ]
     bench.ha = SimpleNamespace(calls=calls)
-    loose_suite.rate_step(bench, 99.0, 103.0)
+    ha_lights_suite.rate_step(bench, 99.0, 103.0)
     (step,) = bench.report.steps
     assert step.result == rp.PASS, step.note
     assert step.numbers["Hue network lights"] == 2
@@ -496,7 +515,7 @@ def test_the_rate_step_and_the_report_name_no_light() -> None:
 
 def test_a_colour_step_by_state() -> None:
     bench = _bench()
-    bench.loose = [bench.loose[2]]  # the light judged by its state
+    bench.ha_lights = [bench.ha_lights[2]]  # the light judged by its state
     bench.offset = 0.0
     bench.camera = SimpleNamespace(lines=[])
     blue = _on(hs_color=[236.0, 100.0])
@@ -504,9 +523,9 @@ def test_a_colour_step_by_state() -> None:
         samples=[(t, "light.desk_lamp", blue) for t in (14.5, 15.5, 16.5)]
         + [(10.5, "light.desk_lamp", _on(hs_color=[0.0, 100.0]))]
     )
-    loose_suite.colour_step(bench, "blue", {3: "blue"}, 10.0, 17.0)
-    loose_suite.colour_step(bench, "red", {3: "red"}, 10.0, 17.0)
-    loose_suite.colour_step(bench, loose_suite.SPLIT, {3: None}, 10.0, 17.0)
+    ha_lights_suite.colour_step(bench, "blue", {3: "blue"}, 10.0, 17.0)
+    ha_lights_suite.colour_step(bench, "red", {3: "red"}, 10.0, 17.0)
+    ha_lights_suite.colour_step(bench, ha_lights_suite.SPLIT, {3: None}, 10.0, 17.0)
     first, second, third = bench.report.steps
     assert first.result == rp.PASS and first.numbers["light 3 (state) states"] == 3
     assert second.result == rp.FAIL
@@ -550,7 +569,7 @@ async def test_the_lights_are_stored_by_registry_id_with_their_positions() -> No
         for i in (3, 1, 2)
     ] + [{"id": "x", "entity_id": "light.other", "unique_id": "o", "platform": "hue"}]
     bench.ha = FakeLocalHA(entries)
-    await bench.place_loose_lights()
+    await bench.place_ha_lights()
     ((domain, service, data),) = bench.ha.calls
     assert (domain, service) == ("glowcast_bench", "set_output")
     assert data["entry_id"] == local_ha.ENTRY_ID
@@ -566,9 +585,9 @@ async def test_the_lights_are_stored_by_registry_id_with_their_positions() -> No
     assert bench.proxies[3]["entity_id"] == "light.bench_proxy_3"
 
 
-def test_the_rate_step_leaves_out_a_proxy_of_no_loose_light() -> None:
+def test_the_rate_step_leaves_out_a_proxy_of_no_ha_light() -> None:
     """The combined suite's proxy of a light in the area too (#198) is not
-    one of `bench.loose`: the rate step judges the loose lights only."""
+    one of `bench.ha_lights`: the rate step judges the Home Assistant lights only."""
     bench = _bench()
     bench.proxies[9] = {
         "id": "registry0009",
@@ -577,6 +596,6 @@ def test_the_rate_step_leaves_out_a_proxy_of_no_loose_light() -> None:
         "config_entry_id": "hueentry",
     }
     bench.ha = SimpleNamespace(calls=[])
-    loose_suite.rate_step(bench, 99.0, 103.0)
+    ha_lights_suite.rate_step(bench, 99.0, 103.0)
     (step,) = bench.report.steps
     assert step.numbers["Hue network lights"] == 2

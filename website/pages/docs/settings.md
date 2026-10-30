@@ -4,14 +4,18 @@
 
 Under **Configure** (Settings → Devices & services → Glowcast), or on Glowcast's device page (see [below](#settings-on-the-device-page)), you can change:
 
-- **which lights follow the picture**: the **entertainment area**, or the [Home Assistant lights](loose-lights.md) and their places;
+- **which lights follow the picture**: the **entertainment area**, or the [Home Assistant lights](home-assistant-lights.md) and their places;
 - **brightness** (1-100 %, default 80 %);
 - **intensity**: how vivid the colours are (0-200 %, default 100 %);
 - the **update rate**: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows).
 
 The lights always fade smoothly between updates. When Glowcast takes them over, they first fade in from how they were, in about 2 seconds; a new setting while syncing applies without that fade-in.
 
-**Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Home Assistant lights**, or both: **Entertainment area and Home Assistant lights**, see [Together with an entertainment area](loose-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the Home Assistant lights and their places), then brightness, intensity and the update rate. Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
+**Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Home Assistant lights**, or both: **Entertainment area and Home Assistant lights**, see [Together with an entertainment area](home-assistant-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the Home Assistant lights and their places), then brightness, intensity and the update rate. Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
+
+![The first step of Glowcast's settings screen in Home Assistant: Which lights should follow the picture?, with three options: Hue entertainment area - the smoothest, Home Assistant lights - any brand, slower, and Entertainment area and Home Assistant lights (its name cut off at phone width), with the line Pick lights one by one, or a whole area or light group from Home Assistant; each light gets its own place.](../images/settings-menu.png){ width="400" }
+
+*The first step of the settings screen under Configure: which lights follow the picture. The third option, cut off on a phone, is Entertainment area and Home Assistant lights.*
 
 ![The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second).](../images/settings.png){ width="400" }
 
@@ -57,4 +61,4 @@ Then they return to what they did before:
 
 The switch and the status do not change. The test uses your brightness, but not the intensity, so the colours stay clear. Pressing the button again during a test does nothing. Switching Glowcast on during a test ends the test first. If another app is streaming to the lights, or the lights cannot be reached, the button does nothing and the log says why. While Glowcast syncs but has let go of the lights (**Starting** or **No picture**), the button does nothing either.
 
-A light in the wrong colour has the wrong place: change it under **Configure** (Home Assistant lights) or in the Hue app (an entertainment area). Home Assistant lights change about once per second, and more slowly with more than 4 lights on one network ([How fast](loose-lights.md#how-fast)), so with many lights some may show a step late or not at all.
+A light in the wrong colour has the wrong place: change it under **Configure** (Home Assistant lights) or in the Hue app (an entertainment area). Home Assistant lights change about once per second, and more slowly with more than 4 lights on one network ([How fast](home-assistant-lights.md#how-fast)), so with many lights some may show a step late or not at all.

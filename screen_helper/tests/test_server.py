@@ -279,6 +279,23 @@ async def test_cycle_reports_each_pattern_change(make_helper: MakeHelper) -> Non
     assert all(p["since"].endswith("Z") for p in patterns)
 
 
+async def test_cycle_reports_the_first_pattern_first_after_a_clock_step_back(
+    make_helper: MakeHelper,
+) -> None:
+    # The wall clock steps back 0.15 s between the start and the first report,
+    # as on the Windows ARM runner of #216: the reports still start with red.
+    clock = FakeClock()
+    source = PatternSource("cycle", clock, interval=0.1)
+    clock.now -= 0.15
+    sleep = FakeSleep(clock, wakes=3)
+    helper = await make_helper(PatternPicture(source), pattern_sleep=sleep)
+    helper.server.start_reporting()
+    await asyncio.wait_for(sleep.done.wait(), 5)
+    await helper.server.stop_reporting()
+    shown = [e["showing"] for e in helper.events() if e["event"] == "pattern"]
+    assert shown == ["red", "green", "blue", "white"]
+
+
 async def test_cycle_never_reports_a_pattern_twice(make_helper: MakeHelper) -> None:
     # The reporter wakes 5 ms before each change and must not report the old
     # pattern again.

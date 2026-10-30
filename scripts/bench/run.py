@@ -8,7 +8,7 @@ A USB webcam watches the monitor and the bench lights. Every run writes a
 report (Markdown and JSON, numbers only) to ~/.cache/glowcast-bench/reports/.
 
 Usage (from the repository root, in WSL on the bench's Windows computer):
-    python3 scripts/bench/run.py [--suite basic|extended|loose|combined|restart]
+    python3 scripts/bench/run.py [--suite basic|extended|ha-lights|combined|restart]
                                  [--mode pattern|screen|both]
                                  [--dry-run] [--keep-images] [--wait SECONDS]
                                  [--config FILE]
@@ -92,44 +92,46 @@ PLAN = {
         "screen mode: red and blue pure at brightness 20 % and 80 %",
         "screen mode: brightness changed while off is stored; Glowcast stays off",
     ],
-    # Loose lights (#9): loose_suite.py; pattern mode only.
-    "loose": [
+    # Home Assistant lights (#9): ha_lights_suite.py; pattern mode only.
+    "ha-lights": [
         "the calibration as above (the camera lights, through the bench area)",
         "start the helper with the cycle pattern",
-        "the local Home Assistant with a proxy light per loose light, under a\n"
-        "    stub `hue` entry (one Hue network) or a stub `matter` entry (one\n"
-        "    Thread network), mirroring the owner's light; Glowcast's loose-lights\n"
-        "    output on them, stored by entity registry id",
+        "the local Home Assistant with a proxy light per Home Assistant light,\n"
+        "    under a stub `hue` entry (one Hue network) or a stub `matter` entry\n"
+        "    (one Thread network), mirroring the owner's light; Glowcast's Home\n"
+        "    Assistant lights output on them, stored by entity registry id",
         "the bench area does not stream (the bridge ignores commands to the\n"
         "    lights of a streaming area): checked before and during the steps",
-        "each loose light's state in the owner's Home Assistant before the switch-on",
+        "each Home Assistant light's state in the owner's Home Assistant before\n"
+        "    the switch-on",
         "switch on: Glowcast syncs",
-        "per colour (red, green, blue, white, letterbox): each loose light shows\n"
-        "    it (a camera light with the camera, the others by their state in the\n"
-        "    owner's Home Assistant)",
-        "left-red-right-blue: each loose light the colour of its band (skipped for\n"
-        "    a light whose band takes from both halves)",
+        "per colour (red, green, blue, white, letterbox): each Home Assistant\n"
+        "    light shows it (a camera light with the camera, the others by their\n"
+        "    state in the owner's Home Assistant)",
+        "left-red-right-blue: each Home Assistant light the colour of its band\n"
+        "    (skipped for a light whose band takes from both halves)",
         "black (all zero): released after the no-picture wait, each light back",
         "the rate (the local HA's light.turn_on calls): per light its interval,\n"
         "    per network at most 4 commands in any second, the fade = the actual\n"
         "    interval",
-        "switch off: each loose light back (owner state; camera)",
-        "switch on, stop the helper: tv_off, each loose light back",
+        "switch off: each Home Assistant light back (owner state; camera)",
+        "switch on, stop the helper: tv_off, each Home Assistant light back",
     ],
-    # The area and loose lights in one entry (#11): combined_suite.py.
+    # The area and Home Assistant lights in one entry (#11): combined_suite.py.
     "combined": [
         "the calibration as above (the camera lights, through the bench area)",
-        "the local Home Assistant with proxy lights for the loose lights that\n"
-        "    the camera does not see (as in the loose suite); one Glowcast entry\n"
-        "    with the output `combined`: the bench area and those lights",
+        "the local Home Assistant with proxy lights for the Home Assistant lights\n"
+        "    that the camera does not see (as in the ha-lights suite); one Glowcast\n"
+        "    entry with the output `combined`: the bench area and those lights",
         "cycle pattern, switch on: the area streams; per colour the area lights\n"
-        "    (camera) and the loose lights (owner state) show it; left-red-\n"
+        "    (camera) and the Home Assistant lights (owner state) show it; left-red-\n"
         "    right-blue per side and band; black releases both, lights back",
-        "the area streams with one stream through the colours; the loose lights'\n"
-        "    rate as in the loose suite (at most once a second each)",
-        "switch off: area released, bench lights back (camera), loose lights\n"
+        "the area streams with one stream through the colours; the Home\n"
+        "    Assistant lights' rate as in the ha-lights suite (at most once a\n"
+        "    second each)",
+        "switch off: area released, bench lights back (camera), Home Assistant lights\n"
         "    back (owner state)",
-        "steady picture (left-red-right-blue), switch on; the loose lights'\n"
+        "steady picture (left-red-right-blue), switch on; the Home Assistant lights'\n"
         "    proxies unavailable in the local HA only (glowcast_bench.set_available,\n"
         "    the owner's lights are not touched): `dropped_outputs` shows\n"
         "    ha_lights within 10 s while the area streams on",
@@ -156,7 +158,7 @@ PLAN = {
     ],
 }
 # The suites that run in pattern mode only.
-PATTERN_ONLY = ("loose", "combined", "restart")
+PATTERN_ONLY = ("ha-lights", "combined", "restart")
 END = (
     "At the end, also after Ctrl+C or a failure: the bench Glowcast off, the bench\n"
     "lights set back to their state from before the run (checked with the camera),\n"
@@ -199,7 +201,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--suite",
-        choices=["basic", "extended", "loose", "combined", "restart"],
+        choices=["basic", "extended", "ha-lights", "combined", "restart"],
         default="basic",
     )
     parser.add_argument("--mode", choices=["pattern", "screen", "both"], default="both")
@@ -241,10 +243,10 @@ def main() -> None:
             if args.suite == "restart":
                 print("\n" + END)
                 return
-            print("\nNeeds `loose_lights:` in the config (config.example.yaml).")
+            print("\nNeeds `ha_lights:` in the config (config.example.yaml).")
             print("\n" + END)
             print(
-                "The loose lights are set back too, and their states in the\n"
+                "The Home Assistant lights are set back too, and their states in the\n"
                 "owner's Home Assistant compared with the ones from before the run."
             )
             return
@@ -309,17 +311,17 @@ def check_config(
             raise ConfigError("`monitor` must be [left, top, width, height]")
         if cfg.get("monitor_region") is not None and not _box(cfg["monitor_region"]):
             raise ConfigError("`monitor_region` must be [x, y, w, h]")
-    if suite in ("loose", "combined"):
-        import loose
+    if suite in ("ha-lights", "combined"):
+        import ha_lights
 
         try:
-            lights = loose.parse(cfg)
+            lights = ha_lights.parse(cfg)
         except ValueError as err:
             raise ConfigError(str(err)) from None
-        if suite == "combined" and not loose.beside_area(lights):
+        if suite == "combined" and not ha_lights.beside_area(lights):
             raise ConfigError(
-                "the combined suite needs a loose light without `light`: one the "
-                "camera does not see, beside the bench area"
+                "the combined suite needs a Home Assistant light without `light`: "
+                "one the camera does not see, beside the bench area"
             )
     helper = cfg["helper"]
     if not str(helper.get("pairing_code", "")).isdigit() or not helper.get("port"):
@@ -484,7 +486,7 @@ async def run(
             ha_cfg["url"],
             token,
             [light["entity_id"] for light in cfg["lights"].values()]
-            + [light.entity_id for light in bench.loose],
+            + [light.entity_id for light in bench.ha_lights],
             ha_cfg.get("tv_switch"),
         )
         bench.bridge = clients.Bridge(
@@ -509,16 +511,16 @@ async def run(
             await bench.start_ha()
             assert bench.bridge is not None
             bench.bridge.follow(cfg["bench_area_id"])
-            if suite_name == "loose":
-                import loose_suite
+            if suite_name == "ha-lights":
+                import ha_lights_suite
 
-                print("loose lights...", flush=True)
-                await loose_suite.run(bench)
+                print("Home Assistant lights...", flush=True)
+                await ha_lights_suite.run(bench)
                 return
             if suite_name == "combined":
                 import combined_suite
 
-                print("the area and loose lights together...", flush=True)
+                print("the area and Home Assistant lights together...", flush=True)
                 await combined_suite.run(bench)
                 return
             if suite_name == "restart":
@@ -719,9 +721,9 @@ async def _restore(bench: Any) -> None:
         )
         report.add(rp.Step(name, "-", rp.FAIL, note="setting the lights back failed"))
         return
-    if getattr(bench, "loose", None):
+    if getattr(bench, "ha_lights", None):
         # Judged by their state, whatever the camera: their own step.
-        await _loose_end_step(bench)
+        await _ha_lights_end_step(bench)
     if not bench.calibrated or not bench.pre_camera:
         report.add(
             rp.Step(
@@ -754,19 +756,19 @@ async def _restore(bench: Any) -> None:
     await bench.save_image("after-run")
 
 
-async def _loose_end_step(bench: Any) -> None:
-    """The step for the loose lights at the end: always in the report."""
+async def _ha_lights_end_step(bench: Any) -> None:
+    """The step for the Home Assistant lights at the end: always in the report."""
     try:
-        ok, numbers = await _loose_restored(bench)
+        ok, numbers = await _ha_lights_restored(bench)
     except Exception as err:  # noqa: BLE001 - the step must be reported
         print(
-            "Reading the loose lights failed: " + rp.describe_error(err),
+            "Reading the Home Assistant lights failed: " + rp.describe_error(err),
             file=sys.stderr,
         )
         ok, numbers = False, {}
     bench.report.add(
         rp.Step(
-            "end: loose lights set back explicitly, state as before the run",
+            "end: Home Assistant lights set back explicitly, state as before the run",
             "-",
             rp.PASS if ok else rp.FAIL,
             numbers=numbers,
@@ -775,33 +777,33 @@ async def _loose_end_step(bench: Any) -> None:
     )
 
 
-async def _loose_restored(
+async def _ha_lights_restored(
     bench: Any, within: float | None = None, every: float = 1.0
 ) -> tuple[bool, dict[str, Any]]:
-    """The loose lights' states in the owner's HA as before the run, read
+    """The Home Assistant lights' states in the owner's HA as before the run, read
     until they are (Hue reports with a lag) or `within` has passed. A light
     whose state cannot be read counts as not verified."""
-    import loose
+    import ha_lights
 
     within = bench.th.restore_within_s if within is None else within
     numbers: dict[str, Any] = {}
     ok = True
-    for light in bench.loose:
+    for light in bench.ha_lights:
         before = bench.pre_states.get(light.entity_id)
         if before is None:
             continue
-        label = f"{bench.loose_label[light.index]} state as before the run"
+        label = f"{bench.ha_lights_label[light.index]} state as before the run"
         deadline = time.monotonic() + within
         result = "not verified"
         while True:
             try:
-                back, _ = loose.restored(
+                back, _ = ha_lights.restored(
                     before, await bench.owner.state(light.entity_id)
                 )
                 result = "yes" if back else "no"
             except Exception as err:  # noqa: BLE001 - recorded, not raised
                 print(
-                    "Reading a loose light failed: " + rp.describe_error(err),
+                    "Reading a Home Assistant light failed: " + rp.describe_error(err),
                     file=sys.stderr,
                 )
                 result = "not verified"

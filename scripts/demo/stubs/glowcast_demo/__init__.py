@@ -10,7 +10,7 @@ Glowcast's SOURCES and OUTPUTS registries. Everything else in those entries
 real pipeline, runtime, entities and status run unchanged.
 
 It also adds three demo colour lights (light.py), two of them in the area
-"Living room", for the loose-lights flows (#9); they reach no device.
+"Living room", for the Home Assistant lights flows (#9); they reach no device.
 
 It also has a service, `glowcast_demo.discover_screen_helper`, that hands
 Glowcast a zeroconf discovery of a screen helper, as Home Assistant's zeroconf

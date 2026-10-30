@@ -1,6 +1,6 @@
 """Bench stub: a service that sets a Glowcast entry's output block.
 
-Only for the test bench in scripts/bench/. The loose-lights output stores its
+Only for the test bench in scripts/bench/. The Home Assistant lights output stores its
 lights by entity registry id, which exists only once Home Assistant has added
 the proxy lights; the bench reads them then and stores the block with
 `glowcast_bench.set_output`, as Glowcast's options flow would (the same

@@ -733,7 +733,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
     """The generic platforms add only what the type provides."""
     monkeypatch.setitem(
         OUTPUTS,
-        "loose_lights",
+        "other_lights",
         OutputType(
             create=lambda hass, data, options: fakes.output(),
             is_missing=lambda hass, data, options: False,
@@ -741,7 +741,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
             entities=provided,
         ),
     )
-    entry = await setup(hass, {**OPTIONS, "output": {"type": "loose_lights"}})
+    entry = await setup(hass, {**OPTIONS, "output": {"type": "other_lights"}})
     registry = er.async_get(hass)
     unique_ids = {
         entity.unique_id: entity.domain
