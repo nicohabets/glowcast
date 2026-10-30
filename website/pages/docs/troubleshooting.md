@@ -47,7 +47,7 @@ Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and att
 
 ## The hardware check { #the-hardware-check }
 
-To make Glowcast work on a TV we have not tested, we need facts you cannot read off a settings screen. The **Run hardware check** button collects them. It is on Glowcast's device page under **Diagnostic** (**Settings → Devices & services → Glowcast**, then the device).
+To make Glowcast work on a TV we have not tested, we need facts you cannot read off a settings screen. The **Run hardware check** button collects them. It is on Glowcast's device page under **Diagnostic** (**Settings → Devices & services → Glowcast**, then the device), when Glowcast uses an LG webOS TV or a Hue entertainment area: with a computer screen and Home Assistant lights only, there is nothing for it to check, so the button is not there.
 
 1. Turn the TV on and show a picture, for example an HDMI input or the app you watch with. Glowcast may be on or off.
 2. Press **Run hardware check**. It takes up to about 30 seconds; a notification says when it is done.
@@ -58,6 +58,6 @@ What it collects:
 - **The TV**: its model, webOS and firmware version, whether it answers the screenshot call (and if not, how it refuses), the size and format of a screenshot, how long a screenshot takes (shortest, middle and longest of about 10) and how many per second, whether the screenshots were all black, and the app or input on screen (its id, such as `com.webos.app.hdmi1`, so we can recognise apps with copy protection).
 - **The Hue bridge**: its model, software and API version; for your entertainment area: the number of channels, where each sits, and the product type of each light or gradient segment in it (a model number, never its name); whether the area or the bridge is streaming, and whether that is Glowcast or another app (not which one).
 
-It only reads: it does not start a stream or change a light. To see where your lights sit, use **Test lights** ([Test the lights](settings.md#test-lights)). While Glowcast syncs, the check takes no screenshots of its own, so it never disturbs syncing; it reports Glowcast's own capture rate instead. A TV that is off or a bridge that does not answer is recorded as such; the check still finishes.
+It only reads: it does not start a stream or change a light. To see where your lights sit, use **Test lights** ([Test the lights](settings.md#test-lights)). While Glowcast syncs, the check takes no screenshots of its own, so it never disturbs syncing; it reports Glowcast's own capture rate instead. Switching Glowcast on while the check takes screenshots ends the check: its result then only says it was interrupted, so run it again. A TV that is off or a bridge that does not answer is recorded as such; the check still finishes.
 
-No picture is kept, and no names, addresses, keys, ids or serial numbers. The result stays in Home Assistant's memory until the next check or a restart of Home Assistant, and is only in the diagnostics you download yourself.
+No picture is kept, and no names, addresses, keys, ids or serial numbers. The result stays in Home Assistant's memory until the next check, a reload of Glowcast (also when you change the kind of lights in the settings) or a restart of Home Assistant, and is only in the diagnostics you download yourself.
