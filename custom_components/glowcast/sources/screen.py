@@ -41,8 +41,7 @@ CAPTURE_TIMEOUT = 5.0
 # The helper hands out one grab for 50 ms; the retry asks for a new one.
 RETRY_DELAY = 0.1
 # No picture for this long after a frame turns the source off (product owner's
-# decision, #110), like the 3 s wait for an all-zero picture (#68), so a few
-# slow grabs on a busy computer do not stop syncing.
+# decision, #110), so a few slow grabs on a busy computer do not stop syncing.
 NO_PICTURE_WAIT = 3.0
 
 

@@ -54,6 +54,7 @@
     "step": {
       "init": {
         "title": "Instellingen van Glowcast",
+        "description": "Deze instellingen staan ook op de apparaatpagina van Glowcast, onder Configuratie. Daar kun je ze tijdens het synchroniseren wijzigen en in automatiseringen gebruiken.",
         "data": {
           "area": "Entertainmentruimte",
           "brightness": "Helderheid",
