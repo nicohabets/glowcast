@@ -17,6 +17,9 @@ MIN_LIT_SHARE = 0.05
 
 BLACK = (0.0, 0.0, 0.0)
 
+# A part of the frame: col0, col1, row0, row1.
+Picture = tuple[int, int, int, int]
+
 
 def is_black(frame: Frame) -> bool:
     """Whether the whole frame is (almost) black: fewer than MIN_LIT_SHARE lit pixels.
@@ -46,45 +49,65 @@ def is_all_zero(frame: Frame) -> bool:
 
 
 def channel_region(
-    channel: Channel, width: int, height: int
+    channel: Channel, width: int, height: int, picture: Picture | None = None
 ) -> tuple[int, int, int, int]:
     """Return the part of the frame a channel samples: col0, col1, row0, row1.
 
-    x and z map linearly from -1..1 to the frame edges (z = +1 is the top
-    row). The region is centred there and moved inwards where it would cross
-    an edge, so it always covers REGION_SIZE of the frame.
+    x and z map linearly from -1..1 to the edges of the picture (z = +1 is
+    its top row): the whole frame, or `picture` (col0, col1, row0, row1), the
+    part inside letterbox bars (#34). The region is centred there and moved
+    inwards where it would cross an edge, so it always covers REGION_SIZE of
+    the picture.
     """
+    col0, col1, row0, row1 = picture or (0, width, 0, height)
     x = min(max(channel.x, -1.0), 1.0)
     z = min(max(channel.z, -1.0), 1.0)
-    col0, col1 = _band((x + 1) / 2, width)
-    row0, row1 = _band((1 - z) / 2, height)
-    return col0, col1, row0, row1
+    return (*_band((x + 1) / 2, col0, col1), *_band((1 - z) / 2, row0, row1))
+
+
+def channel_regions(
+    channels: list[Channel], width: int, height: int, picture: Picture | None = None
+) -> list[tuple[int, int, int, int]]:
+    """The region of every channel, in the order of `channels`.
+
+    One step over all channels, so a mapping that depends on the others
+    (#23) has them.
+    """
+    return [channel_region(channel, width, height, picture) for channel in channels]
 
 
 def compute(
-    frame: Frame, channels: list[Channel], intensity: float
+    frame: Frame,
+    channels: list[Channel],
+    intensity: float,
+    picture: Picture | None = None,
 ) -> list[ChannelColor]:
     """Return a colour per channel, in the order of `channels`.
 
     intensity scales saturation: 0 = grey/white, 1 = as on screen, 2 = boosted.
+    `picture` is the part of the frame inside letterbox bars, if any.
     """
+    regions = channel_regions(channels, frame.width, frame.height, picture)
     return [
-        ChannelColor(channel.id, _saturate(_average(frame, channel), intensity))
-        for channel in channels
+        ChannelColor(channel.id, _saturate(_average(frame, region), intensity))
+        for channel, region in zip(channels, regions, strict=True)
     ]
 
 
-def _band(centre: float, size: int) -> tuple[int, int]:
-    """A REGION_SIZE band around centre (0..1), kept inside 0..size."""
+def _band(centre: float, start: int, end: int) -> tuple[int, int]:
+    """A REGION_SIZE band around centre (0..1 of start..end), kept inside it."""
+    size = end - start
     length = max(1, round(REGION_SIZE * size))
-    start = round(centre * size - length / 2)
-    start = min(max(start, 0), size - length)
-    return start, start + length
+    first = round(start + centre * size - length / 2)
+    first = min(max(first, start), end - length)
+    return first, first + length
 
 
-def _average(frame: Frame, channel: Channel) -> tuple[float, float, float]:
-    """Average of the lit pixels in the channel's region, or black."""
-    col0, col1, row0, row1 = channel_region(channel, frame.width, frame.height)
+def _average(
+    frame: Frame, region: tuple[int, int, int, int]
+) -> tuple[float, float, float]:
+    """Average of the lit pixels in a region, or black."""
+    col0, col1, row0, row1 = region
     pixels = frame.pixels
     stride = frame.width * 3
     red = green = blue = lit = 0

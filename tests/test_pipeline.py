@@ -12,13 +12,14 @@ from typing import Any
 
 import pytest
 
+from custom_components.glowcast.core.letterbox import STABLE
 from custom_components.glowcast.core.light_state import (
     BLACK_HOLD,
     FADE_IN,
     GLOW,
     GLOW_COLOR,
 )
-from custom_components.glowcast.core.models import Frame
+from custom_components.glowcast.core.models import Channel, Frame
 from custom_components.glowcast.core.pipeline import (
     NO_PICTURE_WAIT,
     Phase,
@@ -122,7 +123,7 @@ class Harness:
     async def _runner(self, func: Callable[..., Any], *args: Any) -> Any:
         if self.compute_error is not None:
             raise self.compute_error
-        self.intensities.append(args[-1])
+        self.intensities.append(args[2] if len(args) > 2 else args[-1])
         self.frames.append((self.clock.now(), args[0]))
         return func(*args)
 
@@ -1585,3 +1586,33 @@ async def test_cleanup_continues_after_a_failing_step() -> None:
     await h.clock.advance(1)
     assert await h.stop() == StopReason.USER
     assert h.log[-3:] == CLEANUP
+
+
+async def test_letterbox_bars_move_the_regions_after_they_were_stable() -> None:
+    """The top light samples the picture inside the bars once they have been
+    there for STABLE (#34); before that, the frame's own top."""
+    top = Channel(id="top", name="top", x=0.0, z=1.0)
+    h = Harness()
+    h.output.channels = [top]
+    width, height = 64, 36
+
+    def paint(col: int, row: int) -> tuple[int, int, int]:
+        if row < 8 or row >= height - 8:
+            return (0, 0, 0)
+        return (40, 40, 40) if row < 11 else (255, 0, 0)
+
+    h.source.default = Frame(
+        width,
+        height,
+        bytes(
+            c for row in range(height) for col in range(width) for c in paint(col, row)
+        ),
+    )
+    await h.start()
+    await h.clock.advance(1)
+    before = h.output.rgb_at(-1)
+    await h.clock.advance(STABLE + 1.5)
+    after = h.output.rgb_at(-1)
+    assert before[0] < 0.2  # the dark strip next to the bar: a dim grey
+    assert after[0] > 0.5 > after[2] * 2  # the picture's red
+    assert await h.stop() == StopReason.USER
