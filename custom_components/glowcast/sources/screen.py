@@ -311,11 +311,6 @@ def is_missing(
     return False
 
 
-def device_identifier(data: Mapping[str, Any]) -> None:
-    """None: the computer has no device in Home Assistant to link to."""
-    return None
-
-
 def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> None:
     """None: the computer has no device in Home Assistant."""
     return None
