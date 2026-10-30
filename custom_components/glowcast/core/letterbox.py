@@ -9,23 +9,42 @@ so a dark scene or a subtitle does not move the lights' regions (#34).
 from collections.abc import Callable
 from typing import NamedTuple
 
-from .color_engine import BLACK_LEVEL, Picture, is_black
+from .color_engine import BLACK_LEVEL, MIN_LIT_SHARE, Picture, is_black
 from .models import Frame
 
 # A side's new bar width is taken once it has been measured this long.
 STABLE = 2.0
+# A new width that has not been measured for longer than this is forgotten, so
+# a few readings of it with black frames or dark scenes in between do not add
+# up to STABLE. More than one capture interval at the Low update rate (1 per
+# second, plus the capture's own jitter), so a width there stays pending from
+# one capture to the next.
+EXPIRE = 1.5
 # A bar is at most this share of the frame per side; a longer black run is a
 # dark scene, not a bar.
 MAX_BAR = 0.25
-# A row or column with at most this share of lit pixels is black.
-BAR_LIT_SHARE = 0.05
+# A row or column with at most this share of lit pixels is black: the colour
+# engine's share for a black region or frame.
+BAR_LIT_SHARE = MIN_LIT_SHARE
 # Rows count as bar when the outer parts of the picture's width (this share at
 # each side) are black, whatever the middle shows: subtitles sit in the
 # middle of the bottom bar.
 ROW_EDGE = 0.15
 # Widths that differ by this many pixels count as the same, so a bar edge
-# that falls halfway through a row does not keep the area moving.
+# that falls halfway through a row does not keep the area moving. Only for a
+# reading wider than the bar: a narrower one is always taken after STABLE, so
+# no row of the picture is cut off.
 TOLERANCE = 1
+
+
+class _Pending(NamedTuple):
+    """A side's new width: as first seen, the narrowest seen meanwhile, since
+    when, and when it was last seen."""
+
+    seen: int
+    narrowest: int
+    since: float
+    last: float
 
 
 class Bars(NamedTuple):
@@ -103,8 +122,7 @@ class Letterbox:
     def __init__(self) -> None:
         """Start without bars: the whole frame is the picture."""
         self._bars = list(NO_BARS)
-        # Per side: the new width seen, the narrowest seen meanwhile, since when.
-        self._pending: list[tuple[int, int, float] | None] = [None] * 4
+        self._pending: list[_Pending | None] = [None] * 4
 
     @property
     def bars(self) -> Bars:
@@ -125,18 +143,23 @@ class Letterbox:
     def _update_side(self, side: int, width: Side, now: float) -> None:
         if width is None:
             return  # a dark scene on this side: nothing learned
-        if abs(width - self._bars[side]) <= TOLERANCE:
-            self._pending[side] = None
-            return
+        bar = self._bars[side]
         pending = self._pending[side]
-        if pending is None or abs(width - pending[0]) > TOLERANCE:
-            self._pending[side] = (width, width, now)
+        if pending is not None and now - pending.last > EXPIRE:
+            pending = None  # not seen for too long: forgotten
+        if bar <= width <= bar + TOLERANCE:
+            # The bar as it is. A wider width pending was a dark scene; a
+            # narrower one stays pending (a bar edge halfway through a row
+            # gives both readings), until it expires.
+            self._pending[side] = pending if pending and pending.seen < bar else None
             return
-        seen, narrowest, since = pending
-        narrowest = min(narrowest, width)
-        if now - since >= STABLE:
+        if pending is None or abs(width - pending.seen) > TOLERANCE:
+            self._pending[side] = _Pending(width, width, now, now)
+            return
+        narrowest = min(pending.narrowest, width)
+        if now - pending.since >= STABLE:
             # The narrowest bar seen, so no row of the picture is cut off.
             self._bars[side] = narrowest
             self._pending[side] = None
         else:
-            self._pending[side] = (seen, narrowest, since)
+            self._pending[side] = pending._replace(narrowest=narrowest, last=now)
