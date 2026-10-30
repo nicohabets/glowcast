@@ -975,3 +975,29 @@ async def test_loose_lights_alone_are_never_left_out(
     )
     assert [channel.name for channel in await loose.start()] == ["Tv Strip"]
     await loose.stop()
+
+
+async def test_the_notice_says_what_the_start_left_out(
+    hass: HomeAssistant,
+    bridge: FakeBridge,  # noqa: F811
+) -> None:
+    """The issue follows what the start did, not a later look at the bridge."""
+    strip = add_light(hass, "tv_strip", "hue", hue_bridge_entry(hass))
+    lamp = add_light(hass, "floor_lamp")
+    output = with_strip(lamp, strip)
+    entry = combined_entry(hass, output)
+    area_with(bridge, strip)
+    options = part_options(entry.options, output["parts"][1])
+    notice = OUTPUTS["ha_lights"].async_notice
+    assert await notice(hass, entry.data, options) is None  # not started yet
+
+    loose = OUTPUTS["ha_lights"].create(hass, entry.data, options)
+    await loose.start()
+    bridge.reachable = False
+    assert await notice(hass, entry.data, options) == {"lights": "Tv Strip"}
+    await loose.stop()
+
+    # The next start cannot ask the bridge: nothing is left out, no notice.
+    await loose.start()
+    assert await notice(hass, entry.data, options) is None
+    await loose.stop()

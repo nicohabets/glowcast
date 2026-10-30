@@ -295,14 +295,18 @@ class GlowcastData:
 
     async def _async_check_notices(self, pipeline: Pipeline) -> None:
         """Raise or remove each output part's notice, now the lights are claimed."""
+        output = self._entry.options[CONF_OUTPUT]
         for _, output_type, part_opts in self._parts():
             if output_type.notice is None or output_type.async_notice is None:
                 continue
             placeholders = await output_type.async_notice(
                 self._hass, self._entry.data, part_opts
             )
-            if pipeline is not self._pipeline:
-                return  # stopped or restarted meanwhile; the next start checks
+            if (
+                pipeline is not self._pipeline
+                or self._entry.options[CONF_OUTPUT] != output
+            ):
+                return  # stopped or changed meanwhile; the next claim checks
             if placeholders is None:
                 ir.async_delete_issue(
                     self._hass,
