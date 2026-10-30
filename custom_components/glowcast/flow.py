@@ -17,7 +17,10 @@ The steps talk to the flow that runs them through what that flow provides:
 - `chosen_outputs`: in the settings screen of a combined output (#11), the
   data and block each earlier type's steps handed in this flow, so a later
   type's steps can leave out the lights an earlier one drives; empty
-  otherwise.
+  otherwise;
+- `combining`: whether the steps run as a part of the combined output's
+  settings screen (#11), where a type that cannot load its choices may keep
+  its stored block, so the other types' steps still run (#197).
 
 A type reads its own stored block with `outputs.blocks.output_block`, which
 also finds it inside a combined output.

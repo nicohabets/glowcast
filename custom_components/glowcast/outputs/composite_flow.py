@@ -44,6 +44,11 @@ class CombinedOptionsSteps(OptionsFlow):
             return []
         return list(self._combined_chosen)
 
+    @property
+    def combining(self) -> bool:
+        """Whether the parts' steps run now (flow.py)."""
+        return self._combined_collecting
+
     async def async_output_chosen(
         self, data: dict[str, Any], output: dict[str, Any]
     ) -> ConfigFlowResult:

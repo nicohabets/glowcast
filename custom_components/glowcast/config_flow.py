@@ -68,6 +68,11 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
         """No earlier output types at setup: an entry starts with one (flow.py)."""
         return []
 
+    @property
+    def combining(self) -> bool:
+        """Never at setup: an entry starts with one output type (flow.py)."""
+        return False
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -184,6 +189,11 @@ class GlowcastOptionsBase(OptionsFlow):
         Empty unless the combined output's steps run (flow.py).
         """
         return []
+
+    @property
+    def combining(self) -> bool:
+        """Whether the combined output's steps run (flow.py); not here."""
+        return False
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
