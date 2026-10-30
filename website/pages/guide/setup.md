@@ -44,6 +44,10 @@ If the button was not pressed in time, press it and click **Submit** again. If t
 
 A light that joins the area or group later follows the middle of the picture until you place it under **Configure**.
 
+![The Glowcast setup flow with Home Assistant lights in Home Assistant: choose LG webOS TV and the TV, choose Home Assistant lights, follow a Home Assistant area, choose the area Living Room, put Floor lamp left of the screen, fine-tune Light bar with the two sliders, done.](../images/ha-lights-setup.gif){ width="400" }
+
+*Setting up Glowcast with Home Assistant lights: the TV, Home Assistant lights, a Home Assistant area, then a place for each light (a preset for the first, Fine-tune for the second).*
+
 ### Both together
 
 An entertainment area and Home Assistant lights together are set up under **Configure**, after setup:
@@ -52,6 +56,10 @@ An entertainment area and Home Assistant lights together are set up under **Conf
 2. The entertainment area's steps: **Choose the entertainment area** (first **Choose the Hue bridge** and **Pair with the Hue bridge** if Glowcast has not paired with the bridge yet).
 3. The Home Assistant lights' steps, as above. A light that is already in the entertainment area cannot also be a Home Assistant light: the step says which lights, and you pick others.
 4. **Glowcast settings**: brightness, intensity and the update rate, which apply to both.
+
+![Glowcast's settings screen in Home Assistant: choose Entertainment area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" }
+
+*An entertainment area and Home Assistant lights together, under Configure: the area, the Home Assistant lights and their places, brightness, intensity and the update rate, then both on the device page.*
 
 [Choosing your lights](lights.md#both-together) says when this is useful.
 
