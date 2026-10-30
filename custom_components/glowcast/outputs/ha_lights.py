@@ -14,9 +14,10 @@ left are no longer used.
 
 import asyncio
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from types import MappingProxyType
 from typing import Any
 
@@ -38,8 +39,9 @@ from ..const import CONF_OUTPUT
 from ..core.models import Channel, ChannelColor
 from ..core.ports import OutputLost, OutputNotFound, OutputUnavailable
 from ..issues import Issue
+from .blocks import other_block
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
-from .hue_entertainment import async_area_lights
+from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT, async_area_lights
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +78,13 @@ NO_LIGHTS = Issue(
     ISSUE_NO_LIGHTS,
     "ha_lights_not_found",
     "there are no colour lights to follow",
+)
+# Loose lights that joined the entertainment area later, in the Hue app
+# (#198): left out while the area streams to them.
+IN_AREA = Issue(
+    "loose_lights_in_area",
+    "loose_lights_in_area",
+    "some loose lights are in the entertainment area too",
 )
 
 # The send loop's rhythm: one command per network per tick at most, so never
@@ -120,14 +129,18 @@ class HaLightsOutput:
         hass: HomeAssistant,
         output: Mapping[str, Any],
         now: Callable[[], float] | None = None,
+        area_lights: Callable[[], Awaitable[set[str]]] | None = None,
     ) -> None:
         """Initialize for the output block in the entry's options.
 
         `now` is the clock in seconds (the event loop's by default).
+        `area_lights` gives the entity ids of the lights an entertainment area
+        in the same entry streams to (#198): they are left out.
         """
         self._hass = hass
         self._now = now or (lambda: asyncio.get_running_loop().time())
         self._output = dict(output)
+        self._area_lights = area_lights
         self._lights: dict[str, Light] = {}
         self._schedule: Schedule | None = None
         self._colors: dict[str, tuple[int, int, int, int]] = {}
@@ -142,16 +155,31 @@ class HaLightsOutput:
     async def start(self, *, retry: bool = False) -> list[Channel]:
         """Resolve the lights, save their state and return them as channels.
 
-        Unavailable lights are skipped for this run and keep their position.
-        Each light's state is read from Home Assistant, so `retry` changes
-        nothing.
+        Unavailable lights are skipped for this run and keep their position,
+        and so are lights the entertainment area of the same entry streams to
+        (#198). Each light's state is read from Home Assistant, so `retry`
+        changes nothing.
         Raises OutputNotFound when there are no colour lights to follow (the
         area or group was removed, or has none), OutputUnavailable when every
-        one of them is unavailable.
+        one of them is unavailable or in the entertainment area.
         """
         if self._saved is not None:
             await self.stop()
         candidates = resolve(self._hass, self._output)
+        if self._area_lights is not None and (
+            in_area := lights_in(self._hass, candidates, await self._area_lights())
+        ):
+            _LOGGER.warning(
+                "%s follow the picture through the entertainment area, so they "
+                "are left out of the loose lights; choose the loose lights again "
+                "in Glowcast's settings",
+                ", ".join(sorted(light.name for light in in_area)),
+            )
+            candidates = [light for light in candidates if light not in in_area]
+            if not candidates:
+                raise OutputUnavailable(
+                    "Every loose light is in the entertainment area"
+                )
         lights: list[Light] = []
         unavailable = 0
         for light in candidates:
@@ -317,8 +345,19 @@ class HaLightsOutput:
 def create(
     hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> HaLightsOutput:
-    """Build the output from a Glowcast entry's options (architecture 5)."""
-    return HaLightsOutput(hass, options[CONF_OUTPUT])
+    """Build the output from a Glowcast entry's options (architecture 5).
+
+    With an entertainment area in the same entry, the lights it streams to
+    are left out (#198).
+    """
+    area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
+    if area is None:
+        return HaLightsOutput(hass, options[CONF_OUTPUT])
+    return HaLightsOutput(
+        hass,
+        options[CONF_OUTPUT],
+        area_lights=partial(async_area_lights, hass, data, area),
+    )
 
 
 def is_missing(
@@ -439,12 +478,32 @@ async def async_lights_in_area(
         lights = resolve(hass, output)
     except (OutputNotFound, OutputUnavailable):
         return None
-    names = sorted(
-        light.name
+    names = sorted(light.name for light in lights_in(hass, lights, taken))
+    return ", ".join(names) or None
+
+
+def lights_in(
+    hass: HomeAssistant, lights: Iterable[Light], taken: set[str]
+) -> list[Light]:
+    """The lights that are among the `taken` entity ids; a light group when
+    one of its members is."""
+    return [
+        light
         for light in lights
         if {light.entity_id, *group_lights(hass, light.entity_id)} & taken
-    )
-    return ", ".join(names) or None
+    ]
+
+
+async def async_in_area_notice(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> Mapping[str, str] | None:
+    """The placeholders of IN_AREA when loose lights are in the entertainment
+    area of the same entry, else None (also when the bridge cannot be asked)."""
+    area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
+    if area is None:
+        return None
+    names = await async_lights_in_area(hass, data, area, options[CONF_OUTPUT])
+    return None if names is None else {"lights": names}
 
 
 def area_lights(hass: HomeAssistant, area_id: str) -> list[str]:

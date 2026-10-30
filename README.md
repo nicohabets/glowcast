@@ -102,6 +102,7 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 - **Streaming apps with DRM** in the TV's own apps give no picture (tested with Prime Video); the same app on a streaming stick over HDMI works.
 - **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
 - **Loose lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.
+- **A Hue light follows through the entertainment area or as a loose light, not both**: one added to the area later in the Hue app is left out of the loose lights, and a repair issue says how to fix it.
 - **The TV's capture call is undocumented** by LG and could stop working after a firmware update.
 
 More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).

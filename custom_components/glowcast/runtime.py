@@ -186,6 +186,7 @@ class GlowcastData:
             for output_type in OUTPUTS.values()
             for issue in (
                 *output_type.stop_issues.values(),
+                output_type.notice,
                 *((output_type.missing,) if missing else ()),
             )
         ]
@@ -279,6 +280,11 @@ class GlowcastData:
             previous is None or previous.phase is not Phase.STREAMING
         ):
             self._remove_issues_except(status.dropped_parts)
+            self._entry.async_create_task(
+                self._hass,
+                self._async_check_notices(pipeline),
+                f"glowcast {self._entry.title} notices",
+            )
         self._async_parts_dropped(status.dropped_parts)
         if status.phase is Phase.STOPPED:
             # The pipeline always gives a reason; without one, still turn off.
@@ -287,14 +293,40 @@ class GlowcastData:
         for update in list(self._status_listeners):
             update()
 
+    async def _async_check_notices(self, pipeline: Pipeline) -> None:
+        """Raise or remove each output part's notice, now the lights are claimed."""
+        for _, output_type, part_opts in self._parts():
+            if output_type.notice is None or output_type.async_notice is None:
+                continue
+            placeholders = await output_type.async_notice(
+                self._hass, self._entry.data, part_opts
+            )
+            if pipeline is not self._pipeline:
+                return  # stopped or restarted meanwhile; the next start checks
+            if placeholders is None:
+                ir.async_delete_issue(
+                    self._hass,
+                    DOMAIN,
+                    issue_id(self._entry.entry_id, output_type.notice.key),
+                )
+            else:
+                self._raise_issue(output_type.notice.key, placeholders)
+
     def _remove_issues_except(self, dropped: Mapping[str, StopReason]) -> None:
-        """Remove the entry's repair issues, but not those of dropped parts."""
+        """Remove the entry's repair issues, but not those of dropped parts.
+
+        The notices stay: the check after the claim raises or removes them.
+        """
         keep = {
             issue.key
             for type_id, reason in dropped.items()
             if (output_type := OUTPUTS.get(type_id)) is not None
             for issue in (output_type.missing, output_type.stop_issues.get(reason))
             if issue is not None
+        } | {
+            output_type.notice.key
+            for output_type in OUTPUTS.values()
+            if output_type.notice is not None
         }
         for key in issue_keys():
             if key not in keep:
@@ -380,12 +412,20 @@ class GlowcastData:
             self._missing_reference(source_type, starting=False)
         self._notify()
 
-    def _raise_issue(self, key: str) -> None:
+    def _raise_issue(
+        self, key: str, placeholders: Mapping[str, str] | None = None
+    ) -> None:
         """Raise the repair issue with this key of the entry's source or outputs."""
         source_type = SOURCES[self._entry.data[CONF_SOURCE][CONF_TYPE]]
         issues = [source_type.missing]
         for _, output_type, _ in self._parts():
-            issues.extend((output_type.missing, *output_type.stop_issues.values()))
+            issues.extend(
+                (
+                    output_type.missing,
+                    *output_type.stop_issues.values(),
+                    output_type.notice,
+                )
+            )
         issue = next(
             issue for issue in issues if issue is not None and issue.key == key
         )
@@ -396,7 +436,10 @@ class GlowcastData:
             is_fixable=False,
             severity=ir.IssueSeverity.ERROR,
             translation_key=issue.translation_key,
-            translation_placeholders={"name": self._entry.title},
+            translation_placeholders={
+                **(placeholders or {}),
+                "name": self._entry.title,
+            },
         )
 
     def _notify(self) -> None:
@@ -420,6 +463,7 @@ def issue_keys() -> list[str]:
                 for output_type in OUTPUTS.values()
                 for issue in output_type.stop_issues.values()
             ),
+            *(output_type.notice for output_type in OUTPUTS.values()),
         ]
     )
 
