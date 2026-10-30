@@ -521,7 +521,7 @@ def test_lights(rec: Recorder) -> None:
         if entry["platform"] == "glowcast"
     ]
     (switch,) = [e for e in registry if e["entity_id"].startswith("switch.")]
-    (button,) = [e for e in registry if e["entity_id"].startswith("button.")]
+    (button,) = [e for e in registry if e["unique_id"].endswith("_test_lights")]
     rec.page.evaluate(
         f"id => {HASS}.callService('switch', 'turn_off', {{entity_id: id}})",
         switch["entity_id"],
@@ -536,6 +536,39 @@ def test_lights(rec: Recorder) -> None:
     rec.step("pressed")
     row(rec, switch["entity_id"]).scroll_into_view_if_needed()
     rec.step("switch-still-off")
+
+
+def hardware_check(rec: Recorder) -> None:
+    """The Run hardware check button under Diagnostic on the device page
+    (#115), then the notification that it is done.
+
+    Pressed while Glowcast is off. The demo's fake TV and lights answer with
+    generic values (glowcast_demo's probes); the result is in the diagnostics.
+    """
+    registry = [
+        entry
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast"
+    ]
+    (button,) = [e for e in registry if e["unique_id"].endswith("_hardware_check")]
+    rec.goto(f"/config/devices/device/{button['device_id']}")
+    rec.begin()
+    press = row(rec, button["entity_id"]).locator("ha-button, mwc-button").first
+    press.scroll_into_view_if_needed()
+    rec.step("device")
+    rec.click(press)
+    rec.wait(1000)
+    rec.step("pressed")
+    # The demo's fake TV takes about 2 s; then the notification comes.
+    rec.wait(2500)
+    rec.page.evaluate(
+        "() => document.querySelector('home-assistant').shadowRoot"
+        ".querySelector('home-assistant-main')"
+        ".dispatchEvent(new CustomEvent('hass-show-notifications',"
+        " {bubbles: true, composed: true}))"
+    )
+    rec.wait(1000)
+    rec.step("done")
 
 
 def refused(rec: Recorder) -> None:
@@ -856,6 +889,7 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "combined-settings": combined_settings,
     "blueprint": blueprint,
     "test-lights": test_lights,
+    "hardware-check": hardware_check,
     "refused": refused,
 }
 # Flows that need an instance started for them, so only run when named.

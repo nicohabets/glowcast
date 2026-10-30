@@ -36,7 +36,7 @@ See the docstring at the top of each script for usage. Credentials come from env
 python3 scripts/demo.py start                          # first run installs (a few minutes)
 python3 scripts/demo.py start --no-fake-sync           # Glowcast's real TV source and light output: syncing stops after about 10 s
 GLOWCAST_DEMO_REFUSE=not_permitted python3 scripts/demo.py start   # the fake TV refuses the screenshot call (or not_supported)
-python3 scripts/demo.py record                         # every flow; or name some: setup settings device entities screen-setup screen-discovery ha-lights-setup ha-lights-settings combined-settings blueprint test-lights refused
+python3 scripts/demo.py record                         # every flow; or name some: setup settings device entities screen-setup screen-discovery ha-lights-setup ha-lights-settings combined-settings blueprint test-lights hardware-check refused
 python3 scripts/demo.py record --lang nl --theme dark  # en|nl, light|dark; --out DIR
 python3 scripts/demo.py record settings --still        # a PNG of each step instead of a GIF
 python3 scripts/demo.py stop
@@ -57,6 +57,7 @@ python3 scripts/demo.py clean --all                    # stop all and remove ~/.
 - `screen-discovery`: the same helper as discovered by Home Assistant (#109): the card "Glowcast - Test PC" under Discovered, Add, a wrong pairing code and its error, the right code, then the output's steps, ending on the new device's page. The demo loads no zeroconf integration, so the flow hands Glowcast the discovery itself through the `glowcast_demo` stub's service `glowcast_demo.discover_screen_helper` (host, port, id, name), as Home Assistant's zeroconf integration would; it needs the stub, so not with `--no-fake-sync`.
 - `ha-lights-setup`: setup with Home Assistant lights (#9): the TV, Home Assistant lights in the output menu, a Home Assistant area (the demo lights' "Living room"), a place for each light (the first Left of the screen, the second fine-tuned with the sliders), ending on the integration page. Needs the `glowcast_demo` stub.
 - `ha-lights-settings`: an entry with Home Assistant lights (made through the setup flow's API before the recording starts) switched to an entertainment area in the settings: the output menu, the bridge, the link button and pairing, the area, then brightness, intensity and the update rate. Needs the `glowcast_demo` stub.
+- `hardware-check`: on the device page, **Run hardware check** under Diagnostic (#115), pressed while Glowcast is off, then the notification that it is done; the demo's fake TV and lights answer the check with generic values.
 - `refused`: a TV that refuses the screenshot call (#214), on an instance started with `GLOWCAST_DEMO_REFUSE` (above), so only when named: on the device page, switching Glowcast on, the status turning to Error and the switch off, then Repairs and the webOS source type's repair issue.
 
 The other flows set Glowcast up first (unrecorded) if needed. With `--still`, each step is saved as `<lang>-<theme>-<flow>-<nn>-<name>.png` instead, in the same mobile view. If a flow fails, `error.png` shows the page at that moment. GIFs and screenshots for a pull request go up as GitHub attachments (rule 11 in `CLAUDE.md`); do not commit them.
