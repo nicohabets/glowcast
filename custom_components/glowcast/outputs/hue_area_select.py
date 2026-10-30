@@ -14,7 +14,6 @@ import asyncio
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import (
@@ -49,6 +48,7 @@ from .hue_entertainment import (
     bridge_host,
     signal_areas_read,
 )
+from .labels import unique_labels
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
 
     def _use(self, areas: dict[str, str]) -> None:
         self._areas = areas
-        self._labels = _labels(areas)
+        self._labels = unique_labels(areas)
 
     @callback
     def _async_retry_later(self) -> None:
@@ -251,21 +251,3 @@ class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
         self._async_cancel_retry()
         if self._reading is not None and not self._reading.done():
             self._reading.cancel()
-
-
-def _labels(areas: dict[str, Any]) -> dict[str, str]:
-    """{area id: label}, sorted by name; a name used twice gets a number.
-
-    A select option is a name, and a bridge can have two areas with the same
-    name. Ordered by name and then id, so the labels stay the same.
-    """
-    labels: dict[str, str] = {}
-    used: set[str] = set()
-    for area_id, name in sorted(areas.items(), key=lambda item: (item[1], item[0])):
-        label, number = name, 1
-        while label in used:
-            number += 1
-            label = f"{name} ({number})"
-        used.add(label)
-        labels[area_id] = label
-    return labels

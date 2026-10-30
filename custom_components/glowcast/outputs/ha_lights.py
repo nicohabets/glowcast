@@ -41,6 +41,7 @@ from ..core.models import Channel, ChannelColor
 from ..core.ports import OutputLost, OutputNotFound, OutputUnavailable
 from ..issues import Issue
 from .blocks import other_block
+from .colors import at_level, average
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
 from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT, async_area_lights
 
@@ -706,11 +707,7 @@ def _start_rgb(states: Iterable[State | None]) -> tuple[float, float, float] | N
     its restored state yet counts with the state from before. For a group, the
     average of its members. None when none of them is on or off.
     """
-    colors = [rgb for state in states if (rgb := _state_rgb(state)) is not None]
-    if not colors:
-        return None
-    r, g, b = (sum(values) / len(colors) for values in zip(*colors, strict=True))
-    return r, g, b
+    return average([rgb for state in states if (rgb := _state_rgb(state)) is not None])
 
 
 def _state_rgb(state: State | None) -> tuple[float, float, float] | None:
@@ -733,12 +730,7 @@ def _state_rgb(state: State | None) -> tuple[float, float, float] | None:
         rgb = color_util.color_xy_to_RGB(*value)
     elif kelvin:
         rgb = color_util.color_temperature_to_rgb(kelvin)
-    peak = max(rgb)
-    if peak <= 0:
-        return 0.0, 0.0, 0.0
-    level = (attributes.get("brightness") or 255) / 255
-    r, g, b = (min(1.0, max(0.0, value / peak * level)) for value in rgb)
-    return r, g, b
+    return at_level(rgb, (attributes.get("brightness") or 255) / 255)
 
 
 def _restored(hass: HomeAssistant) -> dict[str, tuple[State, datetime]]:

@@ -86,9 +86,7 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
             for source_type in SOURCES.values()
             if source_type.setup_step
         ]
-        if len(setup_steps) == 1:
-            return await self._async_step(setup_steps[0], user_input)
-        return self.async_show_menu(step_id="user", menu_options=setup_steps)
+        return await _async_menu(self, "user", setup_steps, user_input)
 
     async def async_source_chosen(
         self, source: dict[str, Any], title: str
@@ -111,9 +109,7 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
             for output_type in OUTPUTS.values()
             if output_type.setup_step
         ]
-        if len(setup_steps) == 1:
-            return await self._async_step(setup_steps[0], user_input)
-        return self.async_show_menu(step_id="output", menu_options=setup_steps)
+        return await _async_menu(self, "output", setup_steps, user_input)
 
     async def async_output_chosen(
         self, data: dict[str, Any], output: dict[str, Any]
@@ -211,9 +207,7 @@ class GlowcastOptionsBase(OptionsFlow):
         if not options_steps:
             self._output = dict(self.config_entry.options[CONF_OUTPUT])
             return await self.async_step_settings()
-        if len(options_steps) == 1:
-            return await getattr(self, f"async_step_{options_steps[0]}")()
-        return self.async_show_menu(step_id="init", menu_options=options_steps)
+        return await _async_menu(self, "init", options_steps)
 
     async def async_output_chosen(
         self, data: dict[str, Any], output: dict[str, Any]
@@ -286,3 +280,15 @@ def _percentage(minimum: int, maximum: int) -> NumberSelector:
             mode=NumberSelectorMode.SLIDER,
         )
     )
+
+
+async def _async_menu(
+    flow: ConfigFlow | OptionsFlow,
+    step_id: str,
+    steps: list[str],
+    user_input: dict[str, Any] | None = None,
+) -> ConfigFlowResult:
+    """A menu of the types' first steps; with one type, its step without one."""
+    if len(steps) == 1:
+        return await getattr(flow, f"async_step_{steps[0]}")(user_input)
+    return flow.async_show_menu(step_id=step_id, menu_options=steps)
