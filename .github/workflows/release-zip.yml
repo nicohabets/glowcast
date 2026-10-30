@@ -1,0 +1,41 @@
+name: Release zip
+
+# Attaches glowcast.zip, the asset HACS installs (`zip_release` in hacs.json,
+# #189), to a GitHub release: automatically when a release is published, or by
+# hand for an existing tag (`gh workflow run release-zip.yml -f tag=v0.2.0`).
+# GitHub counts the downloads of a release asset; see docs/releasing.md.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release's tag, for example v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    name: glowcast.zip
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      # The script from the commit the workflow runs from (by hand: the
+      # branch it is started on, so main also works for older tags, such as
+      # v0.2.0, that have no script), the integration from the release's tag.
+      - uses: actions/checkout@v7
+        with:
+          path: tools
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: release
+      - run: python3 tools/scripts/build_release_zip.py glowcast.zip release/custom_components/glowcast
+      # HACS unpacks the zip into custom_components/glowcast/, so
+      # manifest.json must be at its root.
+      - run: unzip -Z1 glowcast.zip | grep -qx manifest.json
+      - run: gh release upload "$TAG" glowcast.zip --clobber --repo "$GITHUB_REPOSITORY"
