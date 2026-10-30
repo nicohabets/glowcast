@@ -28,6 +28,7 @@ from .ports import (
     OutputTooManyChannels,
     OutputUnavailable,
     SourceAuthFailed,
+    SourceNotSupported,
     SourceUnavailable,
 )
 
@@ -70,6 +71,10 @@ class StopReason(StrEnum):
     AUTH_FAILED = "auth_failed"
     SOURCE_UNAVAILABLE = "source_unavailable"
     SOURCE_AUTH_FAILED = "source_auth_failed"
+    # The source refuses to give its picture (#214): it does not offer the
+    # capture, or it does not permit it.
+    SOURCE_NOT_SUPPORTED = "source_not_supported"
+    SOURCE_NOT_PERMITTED = "source_not_permitted"
 
 
 class Phase(StrEnum):
@@ -333,6 +338,8 @@ class Pipeline:
         except SourceAuthFailed as err:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
+        except SourceNotSupported as err:
+            raise _not_supported(err) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -482,6 +489,8 @@ class Pipeline:
         except SourceAuthFailed as err:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
+        except SourceNotSupported as err:
+            raise _not_supported(err) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -607,6 +616,14 @@ def stop_reason_of(error: Exception) -> StopReason:
         ),
         StopReason.OUTPUT_UNAVAILABLE,
     )
+
+
+def _not_supported(error: SourceNotSupported) -> _Stop:
+    """Stop at the first refusal: the source will refuse every capture."""
+    _LOGGER.warning("%s", error)
+    if error.not_permitted:
+        return _Stop(StopReason.SOURCE_NOT_PERMITTED)
+    return _Stop(StopReason.SOURCE_NOT_SUPPORTED)
 
 
 def _starts(channels: list[Channel]) -> dict[str, tuple[float, float, float] | None]:

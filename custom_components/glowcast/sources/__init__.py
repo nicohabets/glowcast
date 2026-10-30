@@ -1,12 +1,13 @@
 """Frame sources: adapters behind the FrameSource port."""
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.config_entries import ConfigFlow
 from homeassistant.core import HomeAssistant
 
+from ..core.pipeline import StopReason
 from ..core.ports import FrameSource
 from ..issues import Issue
 from . import screen, screen_flow, webos, webos_flow
@@ -32,8 +33,10 @@ class SourceType:
     setup_step: str | None = None
     # The step that pairs again when the source rejects Glowcast's key.
     reauth_step: str | None = None
-    # The repair issue when the integration entry it uses is missing.
+    # The repair issue when the integration entry it uses is missing, and the
+    # ones for stop reasons the source causes (as for an output type).
     missing: Issue | None = None
+    stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
 
 
 SOURCES = {
@@ -45,6 +48,7 @@ SOURCES = {
         steps=webos_flow.WebOsSteps,
         setup_step="tv",
         missing=webos.MISSING,
+        stop_issues=webos.STOP_ISSUES,
     ),
     # Also set up through Home Assistant's zeroconf discovery (manifest.json).
     screen.SOURCE_SCREEN: SourceType(

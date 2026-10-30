@@ -38,6 +38,7 @@ from custom_components.glowcast.core.ports import (
     OutputTooManyChannels,
     OutputUnavailable,
     SourceAuthFailed,
+    SourceNotSupported,
     SourceUnavailable,
 )
 
@@ -944,6 +945,59 @@ async def test_source_rejects_the_key_while_streaming() -> None:
     await h.clock.advance(1)
     h.source.frames = [SourceAuthFailed("rejected")]
     assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
+    assert h.log[-3:] == CLEANUP
+
+
+# The source refuses to give its picture (#214): stop at the first refusal.
+
+REFUSALS = [
+    (SourceNotSupported("no such call"), StopReason.SOURCE_NOT_SUPPORTED),
+    (
+        SourceNotSupported("not permitted", not_permitted=True),
+        StopReason.SOURCE_NOT_PERMITTED,
+    ),
+]
+
+
+@pytest.mark.parametrize(("error", "reason"), REFUSALS)
+async def test_source_refuses_at_the_first_capture(
+    error: SourceNotSupported, reason: StopReason
+) -> None:
+    """No retrying for the startup grace, and the lights are never touched."""
+    h = Harness()
+    h.source.frames = [error]
+    await h.start()
+    await h.clock.advance(0.5)
+    assert h.task is not None and h.task.done()
+    assert await h.finish() == reason
+    assert h.source.captures == 1
+    assert "output.start" not in h.log
+    assert h.log[-3:] == CLEANUP
+
+
+@pytest.mark.parametrize(("error", "reason"), REFUSALS)
+async def test_source_refuses_while_streaming(
+    error: SourceNotSupported, reason: StopReason
+) -> None:
+    """The first refusal stops, without waiting for five failed captures."""
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    captures = h.source.captures
+    h.source.frames = [error]
+    await h.clock.advance(0.5)
+    assert h.task is not None and h.task.done()
+    assert await h.finish() == reason
+    assert h.source.captures == captures + 1
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_source_refuses_while_the_lights_are_released() -> None:
+    h = Harness()
+    await lose_picture(h)
+    h.source.frames = [SourceNotSupported("no such call")]
+    await h.clock.advance(0.5)
+    assert await h.finish() == StopReason.SOURCE_NOT_SUPPORTED
     assert h.log[-3:] == CLEANUP
 
 
