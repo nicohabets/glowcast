@@ -15,10 +15,10 @@ REGION_SIZE = 0.3
 BLACK_LEVEL = 32
 # A region with fewer lit pixels than this share is black.
 MIN_LIT_SHARE = 0.05
-# A light with several channels, all at or above this depth (y) and on both
-# sides of the centre (x), is around the TV, like a gradient lightstrip
-# behind it: its channels are stretched so its outermost ones reach the edges
-# of the picture (#23).
+# A light with several channels at or above this depth (y) is around the TV,
+# when they are all there and on both sides of the centre (x), like a gradient
+# lightstrip behind it: its channels are stretched so its outermost ones reach
+# the edges of the picture (#23).
 NEAR_TV = 0.5
 # Along an axis where a light's channels all sit closer to the centre than
 # this (all at the middle height, say), they are left where they are.
