@@ -12,7 +12,7 @@
 
 *The picture changes; a moment later the lights around the TV and in the room follow it.*
 
-Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Other colour lights in Home Assistant can follow too, as Home Assistant lights. Support for other lights and other TVs is planned.
+Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Other colour lights in Home Assistant can follow too, as Home Assistant lights. Support for other lights and other TVs is planned.
 
 **The full documentation is on Glowcast's website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).** This README is the short version. New to Glowcast? The [user guide](https://nicohabets.github.io/glowcast/guide/) takes you from installing to the first evening.
 
@@ -24,7 +24,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-->  Hue Bridge  -->  your lights
 ```
 
-Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integration (no extra prompt on the TV) and asks the TV for a small screen capture about 3 times per second. Each light gets the average colour of the part of the screen that matches its position, taken inside any black bars around the picture, and the colours stream to an entertainment area on your Hue Bridge, fading smoothly between frames; a gradient lightstrip shows several colours along its length, its segments following the edges of the picture. Or they go to Home Assistant lights: any colour light in Home Assistant, each at the place you give it, about once per second. When Glowcast takes the lights over, they fade in slowly from how they were. On a black picture the lights keep a faint warm glow instead of going dark. Everything stays on your local network.
+Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integration (no extra prompt on the TV) and asks the TV for a small screen capture about 3 times per second. Each light gets the colour of the part of the screen that matches its position (its colourful, bright part leads, so the lights stay lively instead of turning a grey average), taken inside any black bars around the picture, and the colours stream to an entertainment area on your Hue Bridge, fading smoothly between frames; a gradient lightstrip shows several colours along its length, its segments following the edges of the picture. Or they go to Home Assistant lights: any colour light in Home Assistant, each at the place you give it, about once per second. When Glowcast takes the lights over, they fade in slowly from how they were. On a black picture the lights keep a faint warm glow instead of going dark. Everything stays on your local network.
 
 At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
 
@@ -51,6 +51,10 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 <img width="400" alt="The Glowcast setup flow in Home Assistant: choose the TV, choose Hue entertainment area, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/setup-flow.gif">
 
 *Setting up Glowcast: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
+
+<img width="400" alt="The Glowcast setup flow with Home Assistant lights in Home Assistant: choose LG webOS TV and the TV, choose Home Assistant lights, follow a Home Assistant area, choose the area Living Room, put Floor lamp left of the screen, fine-tune Light bar with the two sliders, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/ha-lights-setup.gif">
+
+*Or with Home Assistant lights: the TV, Home Assistant lights, a Home Assistant area, then a place for each light. More: [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/).*
 
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
