@@ -186,6 +186,32 @@ def test_a_settled_colour_is_one_colour() -> None:
     assert bench_lights.settled_colour([]) is None
 
 
+def test_the_colours_of_a_window_with_their_number() -> None:
+    red, blue = _on(hs_color=[0, 100]), _on(hs_color=[236, 100])
+    assert bench_lights.colour_counts([red, blue, blue, {"state": "off"}]) == (
+        "red 1, blue 2, off 1"
+    )
+    assert bench_lights.colour_counts([]) == ""
+
+
+def test_raw_json_keeps_the_colour_attributes_only() -> None:
+    state = {
+        "entity_id": "light.desk_lamp",
+        "state": "on",
+        "last_updated": "2026-10-30T16:40:00+00:00",
+        "attributes": {
+            "friendly_name": "Desk lamp",
+            "color_mode": "xy",
+            "hs_color": [236, 100],
+            "xy_color": [0.15, 0.06],
+        },
+    }
+    raw = bench_lights.raw_state(state)
+    assert raw["color_mode"] == "xy" and raw["xy_color"] == [0.15, 0.06]
+    assert raw["last_updated"] == "2026-10-30T16:40:00+00:00"
+    assert "Desk lamp" not in str(raw) and "light.desk_lamp" not in str(raw)
+
+
 @pytest.mark.parametrize(
     ("x", "z", "colour"),
     [
@@ -529,7 +555,44 @@ def test_a_colour_step_by_state() -> None:
     first, second, third = bench.report.steps
     assert first.result == rp.PASS and first.numbers["light 3 (state) states"] == 3
     assert second.result == rp.FAIL
+    assert second.numbers["light 3 (state) colours"] == "blue 3"
+    assert "light 3 (state) colours" not in first.numbers
     assert third.result == rp.SKIP
+    assert first.numbers["light 3 (state) judged from s"] == 4.0
+
+
+def test_after_a_release_the_colour_counts_from_glowcasts_first_command() -> None:
+    """#217: a light released on no picture and switched on again by
+    Glowcast 3.5 s into the next picture reports its old colour first."""
+    bench = _bench()
+    bench.ha_lights = [bench.ha_lights[2]]
+    bench.offset = 0.0
+    bench.camera = SimpleNamespace(lines=[])
+    old, blue = _on(hs_color=[22.0, 35.0]), _on(hs_color=[242.6, 100.0])
+    bench.owner = SimpleNamespace(
+        samples=[(14.7, "light.desk_lamp", old)]
+        + [(t, "light.desk_lamp", blue) for t in (15.7, 16.7, 17.7, 18.7, 19.7)]
+    )
+    command = {"entity_id": "light.bench_proxy_3", "rgb_color": [0, 0, 255]}
+    bench.ha = SimpleNamespace(
+        calls=[
+            (9.0, {**command, "rgb_color": [255, 199, 128], "transition": 1.0}),
+            *[(t, {**command, "transition": 1.0}) for t in (13.5, 14.5, 15.5)],
+        ]
+    )
+    ha_lights_suite.colour_step(bench, ha_lights_suite.SPLIT, {3: "blue"}, 10.0, 22.0)
+    (step,) = bench.report.steps
+    assert step.result == rp.PASS
+    assert step.numbers["light 3 (state) judged from s"] == 7.5
+    assert step.numbers["light 3 (state) states"] == 3
+
+
+def test_the_window_opens_settle_after_the_first_command() -> None:
+    assert bench_lights.judged_from(10.0, [9.0, 13.5, 14.5], 22.0, 4.0) == 17.5
+    assert (
+        bench_lights.judged_from(10.0, [9.0], 22.0, 4.0) == 14.0
+    )  # no command: the change
+    assert bench_lights.judged_from(10.0, [23.0], 22.0, 4.0) == 14.0
 
 
 def test_the_bench_checks_its_home_assistant_is_its_own(

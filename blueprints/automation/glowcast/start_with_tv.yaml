@@ -4,8 +4,9 @@ blueprint:
     Turns the Glowcast switch on when the TV turns on, so the lights follow
     the picture. Glowcast waits for the TV to show a picture, so it can start
     the moment the TV reports "on". A restart of Home Assistant normally does
-    not start Glowcast. Optionally turns the switch off again when the TV turns
-    off.
+    not start Glowcast. Optionally starts only after dark, or only for the
+    inputs or apps you choose, and turns the switch off again when the TV
+    turns off.
   domain: automation
   source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/start_with_tv.yaml
   homeassistant:
@@ -31,10 +32,33 @@ blueprint:
       name: Also stop when the TV turns off
       description: >-
         Glowcast stops by itself when the TV turns off; this also turns the
-        switch off the moment the TV reports "off".
+        switch off the moment the TV reports "off". With inputs or apps chosen
+        below, it also turns the switch off when the TV switches to an input or
+        app that is not in the list, if this automation started Glowcast.
       default: false
       selector:
         boolean:
+    only_after_dark:
+      name: Only after dark
+      description: >-
+        Starts Glowcast only while the sun is below the horizon (after sunset,
+        before sunrise). Needs Home Assistant's Sun integration (sun.sun);
+        without it, Glowcast never starts.
+      default: false
+      selector:
+        boolean:
+    sources:
+      name: Only for these inputs or apps
+      description: >-
+        Starts Glowcast only when the TV shows one of these inputs or apps, also
+        when the TV switches to one of them while it is on. Type each name as
+        the TV's source shows it in Home Assistant, for example "HDMI 2" or
+        "Netflix"; the names depend on the TV's language and your own input
+        names. Leave empty for every input and app.
+      default: []
+      selector:
+        text:
+          multiple: true
 
 # The latest TV change wins: if the TV goes on and off again quickly, the run
 # for "on" is replaced by the run for "off". Each run is one short action
@@ -43,6 +67,24 @@ mode: restart
 
 variables:
   also_stop: !input also_stop
+  only_after_dark: !input only_after_dark
+  sources: !input sources
+  glowcast_switch: !input glowcast_switch
+  dark_ok: "{{ not only_after_dark or is_state('sun.sun', 'below_horizon') }}"
+  source: >-
+    {{ trigger.to_state.attributes.source
+       if trigger is defined and trigger.to_state is defined and trigger.to_state
+       else none }}
+  source_ok: "{{ sources | count == 0 or source in sources }}"
+  # "Started by this automation": the switch's state still carries the context
+  # of this automation's last run. Only runs that pass the conditions below
+  # give the automation a new context. With "also stop" on (the only case that
+  # reads this) every such run turns the switch on or off, so `this` (the
+  # automation's state before this run) holds the context of the run that
+  # turned the switch on.
+  started_here: >-
+    {{ this is not none and states[glowcast_switch] is not none
+       and states[glowcast_switch].context.id == this.context.id }}
 
 triggers:
   # From "off" or "unavailable" only: when Home Assistant starts while the TV
@@ -62,21 +104,46 @@ triggers:
     from: "on"
     to: "off"
     id: tv_off
+  # Another input or app while the TV stays on; only used with chosen sources.
+  - trigger: state
+    entity_id: !input tv
+    attribute: source
+    id: source
+
+conditions:
+  # Without the new inputs only "source" fails, so the automation behaves as
+  # before they existed. A source reported together with "on" is handled by
+  # tv_on; the "source" trigger only counts changes while the TV stays on, so
+  # Glowcast is not started twice.
+  - condition: template
+    value_template: >-
+      {% if trigger.id == 'tv_on' %}
+        {{ dark_ok and source_ok }}
+      {% elif trigger.id == 'source' %}
+        {{ sources | count > 0
+           and trigger.from_state.state == 'on'
+           and trigger.to_state.state == 'on'
+           and ((source_ok and dark_ok and not is_state(glowcast_switch, 'on'))
+                or (not source_ok and also_stop
+                    and is_state(glowcast_switch, 'on') and started_here)) }}
+      {% else %}
+        true
+      {% endif %}
 
 actions:
   - choose:
       - conditions:
-          - condition: trigger
-            id: tv_on
+          - condition: template
+            value_template: "{{ trigger.id in ['tv_on', 'source'] and source_ok }}"
         sequence:
           - action: switch.turn_on
             target:
               entity_id: !input glowcast_switch
       - conditions:
-          - condition: trigger
-            id: tv_off
           - condition: template
-            value_template: "{{ also_stop }}"
+            value_template: >-
+              {{ (trigger.id == 'tv_off' and also_stop)
+                 or (trigger.id == 'source' and not source_ok) }}
         sequence:
           - action: switch.turn_off
             target:

@@ -10,7 +10,12 @@ from typing import Any
 
 import aiohttp
 from aiowebostv import WebOsClient, WebOsTvState
-from aiowebostv.exceptions import WebOsTvError, WebOsTvPairError
+from aiowebostv.exceptions import (
+    WebOsTvError,
+    WebOsTvPairError,
+    WebOsTvResponseTypeError,
+    WebOsTvServiceNotFoundError,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST
 from homeassistant.core import HomeAssistant
@@ -19,7 +24,8 @@ from PIL import Image
 
 from ..const import CONF_SOURCE, CONF_UNIQUE_ID
 from ..core.models import Frame
-from ..core.ports import SourceUnavailable
+from ..core.pipeline import StopReason
+from ..core.ports import SourceNotSupported, SourceUnavailable
 from ..devices import entry_devices
 from ..issues import Issue
 
@@ -36,6 +42,39 @@ MISSING = Issue(
     "webos_missing",
     "the TV is not set up (or not loaded) in Home Assistant",
 )
+
+# Where a user whose TV refuses the capture can report it, and read more (#214).
+HARDWARE_REPORT_URL = (
+    "https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md"
+)
+TROUBLESHOOTING_URL = (
+    "https://nicohabets.github.io/glowcast/docs/troubleshooting/"
+    "#the-tv-does-not-allow-screenshots"
+)
+_REFUSED_PLACEHOLDERS = {
+    "report_url": HARDWARE_REPORT_URL,
+    "help_url": TROUBLESHOOTING_URL,
+}
+# Repair issues when the TV refuses the screenshot call (#214); never rename
+# the keys.
+NOT_SUPPORTED = Issue(
+    "webos_not_supported",
+    "webos_not_supported",
+    "the TV does not offer the screenshot call Glowcast uses",
+    _REFUSED_PLACEHOLDERS,
+)
+NOT_PERMITTED = Issue(
+    "webos_not_permitted",
+    "webos_not_permitted",
+    "the TV does not permit the screenshot call Glowcast uses",
+    _REFUSED_PLACEHOLDERS,
+)
+STOP_ISSUES = {
+    StopReason.SOURCE_NOT_SUPPORTED: NOT_SUPPORTED,
+    StopReason.SOURCE_NOT_PERMITTED: NOT_PERMITTED,
+}
+# aiowebostv's error text when the TV refuses a call for lack of permission.
+INSUFFICIENT_PERMISSIONS = "401 insufficient permissions"
 
 FRAME_SIZE = (64, 36)
 # aiowebostv waits up to 10-20 s for single replies; the pipeline's startup
@@ -127,6 +166,7 @@ class WebOsFrameSource:
         # Reasons are set outside the except blocks so the original error, whose
         # text can contain the image URL, is not chained to SourceUnavailable.
         reason: str
+        not_permitted: bool | None = None  # set when the TV refuses the call
         try:
             async with asyncio.timeout(CAPTURE_TIMEOUT):
                 if client.connection is None:
@@ -136,12 +176,24 @@ class WebOsFrameSource:
                 return await self._hass.async_add_executor_job(_decode, data)
         except TimeoutError:
             reason = "The capture timed out"
+        except WebOsTvServiceNotFoundError:
+            # "404 no such service or method": this TV has no such call (#214).
+            reason = "The TV does not offer the screenshot call"
+            not_permitted = False
+        except WebOsTvResponseTypeError as err:
+            if _is_insufficient_permissions(err):
+                reason = "The TV does not permit the screenshot call"
+                not_permitted = True
+            else:
+                reason = "The TV refused the capture"
         except WebOsTvError:
             reason = "The TV refused the capture"
         except (aiohttp.ClientError, KeyError, TypeError):
             reason = "Could not download the capture"
         except (OSError, ValueError):
             reason = "Could not read the capture"
+        if not_permitted is not None:
+            raise SourceNotSupported(reason, not_permitted=not_permitted)
         raise SourceUnavailable(reason)
 
     async def close(self) -> None:
@@ -253,6 +305,19 @@ def tvs(hass: HomeAssistant) -> dict[str, str]:
         for entry in hass.config_entries.async_loaded_entries(WEBOSTV_DOMAIN)
         if entry.unique_id is not None
     }
+
+
+def _is_insufficient_permissions(error: WebOsTvResponseTypeError) -> bool:
+    """Whether the TV refused the call for lack of permission.
+
+    aiowebostv (0.7.4 to 0.10.0) raises this error with the TV's whole error
+    response as its argument; only its "error" field is read.
+    """
+    response = error.args[0] if error.args else None
+    return (
+        isinstance(response, Mapping)
+        and response.get("error") == INSUFFICIENT_PERMISSIONS
+    )
 
 
 def _decode(data: bytes) -> Frame:
