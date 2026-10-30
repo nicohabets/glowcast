@@ -13,7 +13,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.const import CONF_HOST, CONF_TOKEN
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
@@ -26,9 +26,8 @@ from .runtime import GlowcastConfigEntry, GlowcastData, issue_id, issue_keys
 from .settings import read_settings
 from .sources import SOURCES
 
-# A backstop: nothing below should carry these, though only the stored
-# data's shape is shown.
-TO_REDACT = {CONF_HOST, CONF_TOKEN, "helper_id", "title", "serial_number"}
+# A backstop: nothing below should carry these.
+TO_REDACT = {CONF_HOST, "title", "serial_number"}
 # What a device tells about its hardware and software; never its name.
 DEVICE_FIELDS = ("manufacturer", "model", "sw_version")
 
