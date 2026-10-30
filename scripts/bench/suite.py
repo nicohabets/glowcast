@@ -199,6 +199,41 @@ class Bench:
                 [t, s["status"]]
                 for t, s in (self.bridge.samples if self.bridge else [])
             ],
+            **self.raw_loose(),
+        }
+
+    def raw_loose(self) -> dict[str, Any]:
+        """The loose lights' polled owner states and the light calls in the
+        local HA (#217), by label: what a colour step judged, beside the
+        commands Glowcast sent."""
+        label = {light.entity_id: self.loose_label[light.index] for light in self.loose}
+        proxy = {
+            p["entity_id"]: label.get(light.entity_id, "in area")
+            for light in [*self.loose, *([self.in_area] if self.in_area else [])]
+            if (p := self.proxies.get(light.index))
+        }
+        calls = []
+        for t, service, data in self.ha.light_calls if self.ha else []:
+            ids = data.get("entity_id")
+            names = [
+                proxy.get(e) for e in ([ids] if isinstance(ids, str) else ids or [])
+            ]
+            if any(names):
+                calls.append(
+                    [
+                        t,
+                        service,
+                        [n for n in names if n],
+                        {k: v for k, v in data.items() if k != "entity_id"},
+                    ]
+                )
+        return {
+            "loose_states": [
+                [t, label[e], loose.raw_state(s)]
+                for t, e, s in (self.owner.samples if self.owner else [])
+                if e in label
+            ],
+            "loose_calls": calls,
         }
 
     def forbidden(self) -> list[str]:

@@ -299,6 +299,50 @@ def settled_colour(states: Sequence[Mapping[str, Any]]) -> str | None:
     return colours.pop() if len(colours) == 1 else None
 
 
+def judged_from(
+    change: float, sent: Iterable[float], stop: float, settle: float
+) -> float:
+    """When a light's colour counts in a step that starts at `change`:
+    `settle` after the first command Glowcast sent it from the change on
+    (`sent`, the times of its colour commands), or after the change when it
+    got none before `stop`. After no picture the lights were released, and
+    Glowcast takes a few seconds to take the picture up again (#217): a light
+    coming on from off reports its old colour first."""
+    first = min((t for t in sent if change <= t < stop), default=change)
+    return first + settle
+
+
+def colour_counts(states: Sequence[Mapping[str, Any]]) -> str:
+    """The colours of the states in a window with their number, in the order
+    they first show ("white 2, blue 6"): why a window did not settle."""
+    counts: dict[str, int] = {}
+    for state in states:
+        colour = state_colour(state)
+        counts[colour] = counts.get(colour, 0) + 1
+    return ", ".join(f"{colour} {n}" for colour, n in counts.items())
+
+
+RAW_ATTRIBUTES = (
+    "color_mode",
+    "brightness",
+    "hs_color",
+    "rgb_color",
+    "xy_color",
+    "color_temp_kelvin",
+)
+
+
+def raw_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    """What raw.json keeps of a light's state: on or off, the colour
+    attributes and `last_updated` (no entity id, no name)."""
+    a = state.get("attributes") or {}
+    return {
+        "state": state.get("state"),
+        "last_updated": state.get("last_updated"),
+        **{key: a.get(key) for key in RAW_ATTRIBUTES},
+    }
+
+
 # ---- the rate ----------------------------------------------------------------
 def epoch(iso: str) -> float:
     return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
