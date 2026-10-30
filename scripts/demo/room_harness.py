@@ -29,6 +29,7 @@ Usage (room.py runs it; the result is JSON):
 import argparse
 import asyncio
 import colorsys
+import dataclasses
 import heapq
 import importlib
 import importlib.util
@@ -60,15 +61,30 @@ UPDATE_RATE = "high"
 #
 # The entertainment area (--lights area, and combined), with each channel's
 # position (x: -1 left of the screen, +1 right; z: -1 floor, +1 ceiling).
+# The strip sits where a real area puts a gradient TV strip: close to the
+# centre, between -0.4 and 0.4 (architecture 2, "TV strip positions").
 CHANNELS = [
-    ("left", -1.0, 0.0),  # the strip's left side
-    ("top_left", -0.5, 1.0),  # the strip's top, left third
-    ("top", 0.0, 1.0),  # the strip's top, middle
-    ("top_right", 0.5, 1.0),  # the strip's top, right third
-    ("right", 1.0, 0.0),  # the strip's right side
+    ("left", -0.4, 0.0),  # the strip's left side
+    ("top_left", -0.2, 0.4),  # the strip's top, left third
+    ("top", 0.0, 0.4),  # the strip's top, middle
+    ("top_right", 0.2, 0.4),  # the strip's top, right third
+    ("right", 0.4, 0.0),  # the strip's right side
     ("floor_lamp", -1.0, -0.5),  # the floor lamp, left of the TV
     ("light_bar", 1.0, -0.5),  # the light bar on the console, right
 ]
+# Each area channel's depth (y: +1 the TV side, -1 the far side) and the light
+# it is a part of: the strip's five segments are one gradient light (#23).
+# Given only to a core/ whose Channel has these fields, so --compare still
+# runs an older main.
+DEPTH = {
+    "left": (0.8, "strip"),
+    "top_left": (0.8, "strip"),
+    "top": (0.8, "strip"),
+    "top_right": (0.8, "strip"),
+    "right": (0.8, "strip"),
+    "floor_lamp": (0.6, "floor_lamp"),
+    "light_bar": (0.9, "light_bar"),
+}
 # The loose lights (#9) of "Room v2" (#196), one at every place, each with its
 # name and place: a preset of outputs/ha_lights.py or "x,z" as the sliders
 # fine-tune it (--place). --lights loose: all of them. Combined: those that
@@ -415,7 +431,13 @@ class RecordingOutput:
         self.colors: dict[str, list[float]] = {}
 
     async def start(self, *, retry: bool = False) -> list[Any]:
-        return [self._models.Channel(id, id, x, z) for id, x, z in CHANNELS]
+        fields = {f.name for f in dataclasses.fields(self._models.Channel)}
+        channels = []
+        for id, x, z in CHANNELS:
+            y, light = DEPTH[id]
+            extra = {"y": y, "light": light} if {"y", "light"} <= fields else {}
+            channels.append(self._models.Channel(id, id, x, z, **extra))
+        return channels
 
     def send(self, colors: list[Any]) -> None:
         self.colors = {color.channel_id: list(color.rgb) for color in colors}

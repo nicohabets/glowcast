@@ -27,6 +27,7 @@ from custom_components.glowcast.core.ports import (
 from custom_components.glowcast.outputs import hue_entertainment as hue
 from custom_components.glowcast.outputs.hue_entertainment import (
     HueEntertainmentOutput,
+    _light_of,
 )
 
 BRIDGE_ID = "bridge-unique-id"
@@ -268,10 +269,20 @@ async def test_channels_have_their_positions(
     mock_bridge(aioclient_mock)
     channels = await output.start()
     assert channels == [
-        Channel(id="0", name="Channel 0", x=-1, z=0.0),
-        Channel(id="1", name="Channel 1", x=0, z=0.5),
-        Channel(id="2", name="Channel 2", x=1, z=1.0),
+        Channel(id="0", name="Channel 0", x=-1, z=0.0, y=0.8),
+        Channel(id="1", name="Channel 1", x=0, z=0.5, y=0.8),
+        Channel(id="2", name="Channel 2", x=1, z=1.0, y=0.8),
     ]
+
+
+def test_segments_of_one_light_share_it() -> None:
+    """The segments of a gradient light have their light's entertainment
+    service as `light` (#23); a channel of several lights has none."""
+    assert _light_of({"members": [_member(4, 0)]}) == "ent-4"
+    assert _light_of({"members": [_member(4, 2)]}) == "ent-4"
+    assert _light_of({"members": [_member(1), _member(2)]}) is None
+    assert _light_of({"members": []}) is None
+    assert _light_of({}) is None
 
 
 def approx_rgb(rgb: tuple[float, float, float]) -> Any:
