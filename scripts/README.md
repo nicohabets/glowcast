@@ -34,7 +34,7 @@ See the docstring at the top of each script for usage. Credentials come from env
 ```
 python3 scripts/demo.py start                          # first run installs (a few minutes)
 python3 scripts/demo.py start --no-fake-sync           # Glowcast's real TV source and light output: syncing stops after about 10 s
-python3 scripts/demo.py record                         # every flow; or name some: setup settings device entities screen-setup screen-discovery loose-setup loose-settings
+python3 scripts/demo.py record                         # every flow; or name some: setup settings device entities screen-setup screen-discovery loose-setup loose-settings combined-settings test-lights
 python3 scripts/demo.py record --lang nl --theme dark  # en|nl, light|dark; --out DIR
 python3 scripts/demo.py record settings --still        # a PNG of each step instead of a GIF
 python3 scripts/demo.py stop

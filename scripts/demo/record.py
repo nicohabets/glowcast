@@ -508,6 +508,35 @@ def entities(rec: Recorder) -> None:
     rec.step("off")
 
 
+def test_lights(rec: Recorder) -> None:
+    """The Test lights button under Configuration on the device page (#182).
+
+    Pressed while Glowcast is off: the switch stays off. The demo's fake
+    lights do not show colours, so the GIF shows the button and the switch.
+    """
+    registry = [
+        entry
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast"
+    ]
+    (switch,) = [e for e in registry if e["entity_id"].startswith("switch.")]
+    (button,) = [e for e in registry if e["entity_id"].startswith("button.")]
+    rec.page.evaluate(
+        f"id => {HASS}.callService('switch', 'turn_off', {{entity_id: id}})",
+        switch["entity_id"],
+    )
+    rec.goto(f"/config/devices/device/{button['device_id']}")
+    rec.begin()
+    press = row(rec, button["entity_id"]).locator("ha-button, mwc-button").first
+    press.scroll_into_view_if_needed()
+    rec.step("device")
+    rec.click(press)
+    rec.wait(1500)
+    rec.step("pressed")
+    row(rec, switch["entity_id"]).scroll_into_view_if_needed()
+    rec.step("switch-still-off")
+
+
 def wait_for_streaming(
     rec: Recorder, entry_id: str, channels: int | None = None
 ) -> None:
@@ -709,6 +738,7 @@ def create_loose_entry(rec: Recorder) -> None:
 # TV source and lights, a discovery its service.
 SYNCING_FLOWS = {
     "entities",
+    "test-lights",
     "screen-discovery",
     "loose-setup",
     "loose-settings",
@@ -724,6 +754,7 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "loose-setup": loose_setup,
     "loose-settings": loose_settings,
     "combined-settings": combined_settings,
+    "test-lights": test_lights,
 }
 # Flows that set Glowcast up themselves: they start without an entry.
 SETUP_FLOWS = {

@@ -18,7 +18,7 @@ Only colour lights are offered. A light set up only in YAML, without a unique id
 
 Each light gets its place, one light per page: **Left of the screen**, **Right of the screen**, **Above the screen**, **Below the screen**, or **Ambient** (the middle of the picture). Or choose **Fine-tune** and set the place with two sliders: left - right and bottom - top, from -100 % (the left or bottom edge of the picture) to 100 % (the right or top edge).
 
-A light that joins the area or group later follows the middle of the picture until you place it. A light that leaves is no longer used. The settings screen lists both before you go on, and the places of the lights that left are removed when you save. A light that is unavailable when Glowcast starts is skipped until the next start. If the area or group has no colour lights left, or was removed, Glowcast does not start and a repair says so.
+To check the places, press **Test lights** on Glowcast's device ([Test the lights](settings.md#test-lights)). A light that joins the area or group later follows the middle of the picture until you place it. A light that leaves is no longer used. The settings screen lists both before you go on, and the places of the lights that left are removed when you save. A light that is unavailable when Glowcast starts is skipped until the next start. If the area or group has no colour lights left, or was removed, Glowcast does not start and a repair says so.
 
 ## When Glowcast stops
 

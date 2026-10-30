@@ -8,6 +8,10 @@ Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stop
 
 *Glowcast's device page: the switch under Controls, the status under Sensors, the settings under Configuration.*
 
+## Check where the lights are
+
+Press **Test lights** on Glowcast's device, under **Configuration**: the lights show red on the left and blue on the right, then green at the top and white below, about 3 seconds each, and go back to how they were. A light in the wrong colour has the wrong place. See [Test the lights](../docs/settings.md#test-lights).
+
 ## Switch it on
 
 1. Turn the TV on and start something to watch.
