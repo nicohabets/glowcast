@@ -71,9 +71,11 @@ CHANNELS = [
     ("right", 0.4, 0.0),  # the strip's right side
     ("floor_lamp", -1.0, -0.5),  # the floor lamp, left of the TV
     ("light_bar", 1.0, -0.5),  # the light bar on the console, right
+    ("table_lamp", -1.0, -0.3),  # the table lamp by the sofa, left, at the back
 ]
 # Each area channel's depth (y: +1 the TV side, -1 the far side) and the light
-# it is a part of: the strip's five segments are one gradient light (#23).
+# it is a part of: the strip's five segments are one gradient light (#23); the
+# table lamp stands at the back of the room, so it follows more softly (#15).
 # Given only to a core/ whose Channel has these fields, so --compare still
 # runs an older main.
 DEPTH = {
@@ -84,6 +86,7 @@ DEPTH = {
     "right": (0.8, "strip"),
     "floor_lamp": (0.6, "floor_lamp"),
     "light_bar": (0.9, "light_bar"),
+    "table_lamp": (-0.8, "table_lamp"),
 }
 # The Home Assistant lights (#9) of "Room v2" (#196), one at every place, each with its
 # name and place: a preset of outputs/ha_lights.py or "x,z" as the sliders
