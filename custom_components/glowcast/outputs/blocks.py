@@ -16,6 +16,9 @@ from ..const import CONF_OUTPUT, CONF_TYPE
 
 OUTPUT_COMBINED = "combined"
 CONF_PARTS = "parts"
+# In the options a part of a combined output gets (`part_options`): the
+# whole combination, next to the part's own block in `options["output"]`.
+CONF_COMBINATION = "combination"
 
 
 def output_blocks(output: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -40,6 +43,25 @@ def output_block(options: Mapping[str, Any], type_id: str) -> Mapping[str, Any] 
         ),
         None,
     )
+
+
+def other_block(options: Mapping[str, Any], type_id: str) -> Mapping[str, Any] | None:
+    """Another type's block in the same combination, or None.
+
+    For the options a part gets as for the entry's own: a part hands it to
+    that type's own code only.
+    """
+    return output_block(
+        {CONF_OUTPUT: options.get(CONF_COMBINATION, options[CONF_OUTPUT])}, type_id
+    )
+
+
+def part_options(
+    options: Mapping[str, Any], block: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The options as one part of a combined output sees them: its own block,
+    and the combination it is part of."""
+    return {**options, CONF_OUTPUT: block, CONF_COMBINATION: options[CONF_OUTPUT]}
 
 
 def with_output_block(

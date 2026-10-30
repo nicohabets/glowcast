@@ -169,11 +169,16 @@ def start(
     bridge_host: str,
     glowcast: dict[str, Any],
     proxies: dict[str, dict[str, Any]] | None = None,
+    *,
+    hue_api_key: str | None = None,
 ) -> tuple[demo.Instance, str]:
     """A fresh config with the entries, Home Assistant started; returns a token.
 
     `proxies` ({"hue": block, "matter": block}, see proxy_block): proxy lights
     for loose lights under the stub `hue` entry and a stub `matter` entry.
+    `hue_api_key`: the stub `hue` entry's key (the bench's own Hue key, for
+    the combined suite: Glowcast asks the bridge through it which lights the
+    area streams to, #198); only in the instance's private storage.
     """
     inst = instance()
     stop()
@@ -205,7 +210,7 @@ def start(
         )
         hue_data: dict[str, Any] = {
             "host": bridge_host,
-            "api_key": "unused-by-glowcast",
+            "api_key": hue_api_key or "unused-by-glowcast",
             "api_version": 2,
         }
         entries = [demo._entry("hue", "Hue Bridge", BRIDGE_UNIQUE_ID, hue_data)]

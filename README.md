@@ -16,7 +16,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 
 **The full documentation is on Glowcast's website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).** This README is the short version. New to Glowcast? The [user guide](https://nicohabets.github.io/glowcast/guide/) takes you from installing to the first evening.
 
-> **Status: v0.2.0 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.2.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
+> **Status: v0.3.0 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.3.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
 
 ## How it works
 
@@ -102,6 +102,7 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 - **Streaming apps with DRM** in the TV's own apps give no picture (tested with Prime Video); the same app on a streaming stick over HDMI works.
 - **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
 - **Loose lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.
+- **A Hue light follows through the entertainment area or as a loose light, not both**: one added to the area later in the Hue app is left out of the loose lights, and a repair issue says how to fix it.
 - **The TV's capture call is undocumented** by LG and could stop working after a firmware update.
 
 More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).

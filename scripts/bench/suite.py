@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import functools
 import getpass
 import json
 import statistics
@@ -162,13 +163,16 @@ class Bench:
         # not in the bench area, beside it): the config, their labels, their
         # proxies in the local HA (index -> entity id, registry entry) and
         # the owner's token for the proxies (written into the private storage).
+        parsed = loose.parse(cfg) if suite in ("loose", "combined") else []
         self.loose: list[loose.LooseLight] = (
-            loose.parse(cfg)
-            if suite == "loose"
-            else loose.beside_area(loose.parse(cfg))
-            if suite == "combined"
-            else []
+            loose.beside_area(parsed) if suite == "combined" else parsed
         )
+        # The combined suite's loose light that is in the bench area too
+        # (#198; `in_area: true`), with a proxy of its own but not in
+        # `loose`; each camera light's bridge light from the calibration
+        # (None: not one), whose id is that proxy's unique id.
+        self.in_area = loose.in_area(parsed) if suite == "combined" else None
+        self.rid_of: dict[str, str | None] = {}
         # The helper's pattern in pattern mode (the combined suite also shows
         # one steady picture).
         self.helper_pattern = "cycle"
@@ -598,6 +602,7 @@ class Bench:
             raise CalibrationError("a light or the monitor was not found")
         self.regions.update(found_regions)
         await self.camera_command("regions " + json.dumps(self.regions), "regions")
+        self.rid_of = rid_of
         self.map_sides(rid_of, await self.bridge.entertainment())
 
     def map_sides(
@@ -991,11 +996,11 @@ class Bench:
             for kind in loose.KINDS:
                 lights = [
                     {
-                        "unique_id": light.unique_id,
+                        "unique_id": unique_id,
                         "name": light.name,
                         "source": light.entity_id,
                     }
-                    for light in self.loose
+                    for unique_id, light in self.proxied().items()
                     if light.kind == kind
                 ]
                 if lights:
@@ -1003,7 +1008,19 @@ class Bench:
                         self.cfg["home_assistant"]["url"], self.owner_token, lights
                     )
         self.ha_start = asyncio.ensure_future(
-            asyncio.to_thread(local_ha.start, self.keys["host"], entry, proxies)
+            asyncio.to_thread(
+                functools.partial(
+                    local_ha.start,
+                    self.keys["host"],
+                    entry,
+                    proxies,
+                    # Glowcast asks the bridge which lights the area streams
+                    # to through the stub hue entry's key (#198).
+                    hue_api_key=(
+                        self.keys["app_key"] if self.suite == "combined" else None
+                    ),
+                )
+            )
         )
         try:
             inst, token = await asyncio.shield(self.ha_start)
@@ -1035,11 +1052,11 @@ class Bench:
         """Find the proxy lights in the local HA's entity registry and store
         them, with their positions, as Glowcast's loose-lights output."""
         assert self.ha is not None
-        wanted = {light.unique_id: light for light in self.loose}
+        wanted = self.proxied()
         stubs = [
             local_ha.stub_entry_id(kind)
             for kind in loose.KINDS
-            if any(light.kind == kind for light in self.loose)
+            if any(light.kind == kind for light in wanted.values())
         ]
         for attempt in range(90):
             if attempt and attempt % 15 == 0:
@@ -1063,6 +1080,23 @@ class Bench:
                 "the owner's lights? see its home-assistant.log)"
             )
         self.proxies = {wanted[u].index: entry for u, entry in found.items()}
+        await self.set_loose_output(self.loose)
+
+    def proxied(self) -> dict[str, loose.LooseLight]:
+        """The loose lights with a proxy, by its unique id: `loose`, and the
+        in-area light under its bridge light's id when the calibration
+        found it (#198)."""
+        out = {light.unique_id: light for light in self.loose}
+        if self.in_area is not None:
+            unique_id = loose.area_unique_id(self.in_area, self.rid_of)
+            if unique_id is not None:
+                out[unique_id] = self.in_area
+        return out
+
+    async def set_loose_output(self, lights: list[loose.LooseLight]) -> None:
+        """Store these proxies, with their positions, as Glowcast's loose
+        lights (in the combined suite beside the bench area)."""
+        assert self.ha is not None
         output: dict[str, Any] = {
             "type": "ha_lights",
             "follow": "lights",
@@ -1072,7 +1106,7 @@ class Bench:
                     "x": light.x,
                     "z": light.z,
                 }
-                for light in self.loose
+                for light in lights
             ],
         }
         if self.suite == "combined":
@@ -1241,11 +1275,17 @@ class Bench:
         """Whether the lights' channels sit at different x (from the bridge)."""
         return self.sides is not None
 
-    def left_right_step(self, mode: str, start: float, end: float) -> None:
+    def left_right_step(
+        self,
+        mode: str,
+        start: float,
+        end: float,
+        title: str = "left-red-right-blue: each light the colour of its side",
+    ) -> None:
         if not self.positions_differ():
             self.report.add(
                 Step(
-                    "left-red-right-blue: each light the colour of its side",
+                    title,
                     mode,
                     SKIP,
                     note=self.sides_note,
@@ -1266,14 +1306,7 @@ class Bench:
             numbers[f"{self.label[name]} {self.sides[name]} seen"] = (
                 None if mean is None else rp.classify(mean, self.cal[name], self.th)
             )
-        self.report.add(
-            Step(
-                "left-red-right-blue: each light the colour of its side",
-                mode,
-                PASS if ok else FAIL,
-                numbers=numbers,
-            )
-        )
+        self.report.add(Step(title, mode, PASS if ok else FAIL, numbers=numbers))
 
     def hold_step(
         self, mode: str, label: str, ref: dict[str, rp.RGB], start: float, end: float

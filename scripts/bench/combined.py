@@ -5,6 +5,10 @@ them in CI.
 Glowcast's status sensor shows the parts of a combined output that do not run
 in its attribute `dropped_outputs` ({part type: reason}); the loose lights'
 part is `ha_lights`.
+
+A loose light that is in the entertainment area too (#198) gets no light
+command from Glowcast, and Glowcast raises the repair issue
+`loose_lights_in_area_<entry id>`.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from typing import Any
 
 PART = "ha_lights"
 ATTRIBUTE = "dropped_outputs"
+IN_AREA_ISSUE = "loose_lights_in_area"  # outputs/ha_lights.py IN_AREA
 
 
 def dropped(attributes: Mapping[str, Any] | None) -> dict[str, str]:
@@ -53,3 +58,31 @@ def one_stream(statuses: list[dict[str, Any]]) -> tuple[bool, int]:
         and len(streamers) == 1
     )
     return ok, len(statuses)
+
+
+def calls_to(
+    calls: Iterable[tuple[float, str, dict[str, Any]]],
+    entity_ids: Iterable[str],
+    after: float,
+    before: float,
+) -> int:
+    """Any light.turn_on or turn_off call (time, service, data) to these
+    lights between two times, colour or restore."""
+    wanted = set(entity_ids)
+    count = 0
+    for t, _service, data in calls:
+        ids = data.get("entity_id")
+        if after <= t <= before and any(
+            e in wanted for e in ([ids] if isinstance(ids, str) else ids or [])
+        ):
+            count += 1
+    return count
+
+
+def has_issue(issues: Iterable[Mapping[str, Any]], entry_id: str) -> bool:
+    """Whether Glowcast's repair issue for loose lights in the area is up."""
+    return any(
+        issue.get("domain") == "glowcast"
+        and issue.get("issue_id") == f"{IN_AREA_ISSUE}_{entry_id}"
+        for issue in issues
+    )

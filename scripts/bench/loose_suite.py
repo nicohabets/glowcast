@@ -263,11 +263,12 @@ def lights_back(
 
 
 def networks(bench: Any) -> dict[str, str | None]:
-    """{local entity: its network}, as Glowcast's output groups them."""
+    """{local entity: its network}, as Glowcast's output groups them; the
+    loose lights' proxies only (not one of a light in the area too, #198)."""
     sch = loose.schedule()
     return {
         entry["entity_id"]: sch.network_of(entry["platform"], entry["config_entry_id"])
-        for entry in bench.proxies.values()
+        for entry in (bench.proxies[light.index] for light in bench.loose)
     }
 
 

@@ -18,6 +18,33 @@ class FakeClock:
         return self.now
 
 
+class FakeSleep:
+    """Moves a FakeClock on instead of waiting, and stops after `wakes` sleeps.
+
+    With `early`, every sleep longer than 2 x `early` wakes that much before its
+    end, as a loop clock that runs a little faster than the cycle's does.
+    """
+
+    def __init__(self, clock: FakeClock, wakes: int, early: float = 0.0) -> None:
+        self.clock = clock
+        self.wakes = wakes
+        self.early = early
+        self.early_wakes = 0
+        self.done = asyncio.Event()
+        self._calls = 0
+
+    async def __call__(self, delay: float) -> None:
+        self._calls += 1
+        if self._calls > self.wakes:
+            self.done.set()
+            await asyncio.Event().wait()
+        if delay > 2 * self.early:
+            delay -= self.early
+            self.early_wakes += self.early > 0
+        self.clock.now += delay
+        await asyncio.sleep(0)
+
+
 def bgra_image(
     width: int, height: int, pixel: Callable[[int, int], tuple[int, int, int]]
 ) -> bytes:
