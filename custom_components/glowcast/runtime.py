@@ -12,6 +12,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.start import async_at_started
 
 from .const import (
     CONF_OUTPUT,
@@ -22,6 +23,7 @@ from .const import (
     REAUTH_SOURCE,
 )
 from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
+from .core.ports import SourceAuthFailed, SourceUnavailable
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType, part_options
 from .outputs.blocks import output_blocks, output_types
@@ -49,6 +51,11 @@ _STOP_MESSAGES = {
 }
 # Stops the user does not need to act on are logged at info level.
 _ROUTINE_STOPS = {StopReason.USER, StopReason.TV_OFF}
+# After a restart (#183): how long and how often to look for the picture
+# source, and how long one look may take.
+RESUME_WINDOW = 180.0
+RESUME_INTERVAL = 10.0
+RESUME_CHECK_TIMEOUT = 15.0
 
 
 type GlowcastConfigEntry = ConfigEntry[GlowcastData]
@@ -74,11 +81,19 @@ class GlowcastData:
         # The parts of a combined output the running pipeline dropped, with
         # the reason their follow-up (repair issue, reauth) was for.
         self._dropped: dict[str, StopReason] = {}
+        # Whether it synced when Home Assistant began to stop (#183).
+        self._stopped_by_ha = False
+        self._resume: asyncio.Task[None] | None = None
 
     @property
     def is_on(self) -> bool:
         """Whether the pipeline is running."""
         return self._pipeline is not None
+
+    @property
+    def syncing_at_stop(self) -> bool:
+        """Whether it synced when Home Assistant began to stop (#183)."""
+        return self._stopped_by_ha or (self._hass.is_stopping and self.is_on)
 
     @property
     def status(self) -> PipelineStatus | None:
@@ -108,6 +123,7 @@ class GlowcastData:
         """Start syncing, unless an integration the TV or lights use is not set up."""
         if self._pipeline is not None:
             return
+        self._cancel_resume()
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
@@ -133,8 +149,69 @@ class GlowcastData:
         )
         self._notify()
 
+    @callback
+    def async_resume(self) -> None:
+        """It synced when Home Assistant stopped: start again once Home
+        Assistant has started and the picture source is on (#183).
+
+        Looks for the source every RESUME_INTERVAL for RESUME_WINDOW; a
+        start or stop meanwhile (the switch, an automation) ends it.
+        """
+
+        @callback
+        def started(hass: HomeAssistant) -> None:
+            self._resume = self._entry.async_create_background_task(
+                hass, self._async_resume(), f"glowcast {self._entry.title} resume"
+            )
+
+        self._entry.async_on_unload(async_at_started(self._hass, started))
+
+    async def _async_resume(self) -> None:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + RESUME_WINDOW
+        while self._pipeline is None:
+            if await self._async_source_on():
+                if self._pipeline is None:
+                    _LOGGER.info(
+                        "Glowcast %s continues after Home Assistant's restart",
+                        self._entry.title,
+                    )
+                    self._resume = None
+                    await self.async_start()
+                return
+            if loop.time() + RESUME_INTERVAL > deadline:
+                _LOGGER.info(
+                    "Glowcast %s did not continue after Home Assistant's restart: "
+                    "the picture source is off",
+                    self._entry.title,
+                )
+                return
+            await asyncio.sleep(RESUME_INTERVAL)
+
+    async def _async_source_on(self) -> bool:
+        """Whether the picture source can be reached and is on, by connecting."""
+        data, options = self._entry.data, self._entry.options
+        source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
+        if source_type.is_missing(self._hass, data, options):
+            return False
+        source = source_type.create(self._hass, data, options)
+        try:
+            async with asyncio.timeout(RESUME_CHECK_TIMEOUT):
+                await source.start()
+            return source.is_on()
+        except (TimeoutError, SourceUnavailable, SourceAuthFailed):
+            return False
+        finally:
+            await source.close()
+
+    def _cancel_resume(self) -> None:
+        if self._resume is not None and asyncio.current_task() is not self._resume:
+            self._resume.cancel()
+        self._resume = None
+
     async def async_stop(self) -> None:
         """Stop syncing and wait until the lights are released."""
+        self._cancel_resume()
         # Switching off (or unloading) during a restart wins over the restart.
         self._stopped_during_restart = self._restarting
         await self._async_stop()
@@ -358,8 +435,10 @@ class GlowcastData:
         message = _STOP_MESSAGES[reason] if issue is None else issue.message
         if reason is StopReason.USER and self._hass.is_stopping:
             # HA cancels background tasks on shutdown; the pipeline then
-            # releases the lights and reports USER.
+            # releases the lights and reports USER. It starts again after
+            # the restart (#183).
             message = "Home Assistant is stopping"
+            self._stopped_by_ha = True
         log("Glowcast %s stopped: %s", self._entry.title, message)
         if reason is StopReason.AUTH_FAILED:
             # A part's own reauth started already when it was dropped.

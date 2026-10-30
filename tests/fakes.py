@@ -211,12 +211,15 @@ class FakeAdapters:
         self.log: list[str] = []
         self.source_missing = False
         self.output_missing = False
+        # Whether the sources it builds are on (the TV, after a restart).
+        self.source_on = True
         self.channels = [CHANNEL]
         self.sources: list[FakeSource] = []
         self.outputs: list[FakeOutput] = []
 
     def source(self) -> FakeSource:
         source = FakeSource(MonotonicClock(), self.log, capture_time=0)
+        source.on = self.source_on
         self.sources.append(source)
         return source
 
