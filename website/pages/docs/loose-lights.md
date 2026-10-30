@@ -1,6 +1,6 @@
-# Loose lights
+# Home Assistant lights
 
-With **Loose lights**, any colour light in Home Assistant follows the picture: Hue lights, Zigbee bulbs and strips, WLED, Matter lights and others. No Hue bridge is needed. Choose **Loose lights** when Glowcast asks which lights follow the picture, during [setup](setup.md) or later under **Configure** (see [Settings](settings.md)).
+With **Home Assistant lights**, any colour light in Home Assistant follows the picture: Hue lights, Zigbee bulbs and strips, WLED, Matter lights and others. No Hue bridge is needed. (Up to v0.3 this was called loose lights.) Choose **Home Assistant lights** when Glowcast asks which lights follow the picture, during [setup](setup.md) or later under **Configure** (see [Settings](settings.md)).
 
 ![The same room with extra lamps beside the sofa, each following its own side of the picture.](../images/illustrations/scene-4-loose-lights.svg){ width="400" loading=lazy }
 
@@ -35,23 +35,23 @@ A Hue bridge and a Thread network (Matter) handle only a few commands per second
 - A light group made in Home Assistant counts as its lights, because it sends a command to each of them.
 - Lights of other kinds (Zigbee through ZHA or Zigbee2MQTT, WLED and others) each change once per second; their limits are not measured yet.
 
-A gradient lightstrip gets one colour as a loose light. An automation that changes a loose light while Glowcast syncs is overruled at the next change of colour.
+A gradient lightstrip gets one colour as a Home Assistant light. An automation that changes a Home Assistant light while Glowcast syncs is overruled at the next change of colour.
 
 ## Hue lights: an entertainment area is smoother
 
-An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one, and a gradient lightstrip shows several colours. During setup, Glowcast tells you when some of the Hue lights you picked can join an entertainment area. Hue lights that cannot (older Hue lights, other brands' lights on a Hue bridge) work fine as loose lights.
+An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one, and a gradient lightstrip shows several colours. During setup, Glowcast tells you when some of the Hue lights you picked can join an entertainment area. Hue lights that cannot (older Hue lights, other brands' lights on a Hue bridge) work fine as Home Assistant lights.
 
 While Glowcast streams to an entertainment area, its lights only listen to Glowcast, so automations and the Hue app cannot control them until syncing stops.
 
 ## Together with an entertainment area
 
-One Glowcast can drive an entertainment area and loose lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Entertainment area and loose lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the loose lights and their places, then brightness, intensity and the update rate.
+One Glowcast can drive an entertainment area and Home Assistant lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Entertainment area and Home Assistant lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the Home Assistant lights and their places, then brightness, intensity and the update rate.
 
-- The area keeps its own pace (the update rate, up to 25 changes per second), and the loose lights theirs (about once per second); the loose lights never slow the area down.
-- A light that is in the entertainment area cannot also be a loose light: it already follows the picture through the area. The settings screen says which lights, and so does the **Lights** or **Entertainment area** entity on the device page when you pick an area, group or entertainment area that would put a light in both. Pick the other lights one by one, or a group without them.
-- If one of the two cannot start (for example another app streams to the area, or none of the loose lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the loose lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again. The log says what happened, and the status shows the lights that dropped out (see [Status](status.md)). A rejected bridge key, a removed area or a Hue integration that is not set up gets its own repair or re-pairing, as for an area alone.
+- The area keeps its own pace (the update rate, up to 25 changes per second), and the Home Assistant lights theirs (about once per second); the Home Assistant lights never slow the area down.
+- A light that is in the entertainment area cannot also be a Home Assistant light: it already follows the picture through the area. The settings screen says which lights, and so does the **Lights** or **Entertainment area** entity on the device page when you pick an area, group or entertainment area that would put a light in both. Pick the other lights one by one, or a group without them.
+- If one of the two cannot start (for example another app streams to the area, or none of the Home Assistant lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the Home Assistant lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again. The log says what happened, and the status shows the lights that dropped out (see [Status](status.md)). A rejected bridge key, a removed area or a Hue integration that is not set up gets its own repair or re-pairing, as for an area alone.
 - Only when both are lost does Glowcast stop, as it does for one.
-- Switching off (or the picture source off, or Home Assistant stopping) releases the area and puts every loose light back as it was.
+- Switching off (or the picture source off, or Home Assistant stopping) releases the area and puts every Home Assistant light back as it was.
 
 ## Make an entertainment area in the Hue app
 

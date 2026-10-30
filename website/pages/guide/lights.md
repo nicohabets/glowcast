@@ -1,8 +1,8 @@
 # Choosing your lights
 
-Glowcast sends the picture's colours to a **Hue entertainment area**, to **loose lights**, or to [both together](#both-together). You choose one of the first two during setup, and you can change it later under **Configure**, where you can also choose both.
+Glowcast sends the picture's colours to a **Hue entertainment area**, to **Home Assistant lights**, or to [both together](#both-together). You choose one of the first two during setup, and you can change it later under **Configure**, where you can also choose both.
 
-| | Hue entertainment area | Loose lights |
+| | Hue entertainment area | Home Assistant lights |
 |---|---|---|
 | Which lights | Hue colour lights that can join an entertainment area, on a Hue Bridge v2 or Bridge Pro | Any colour light in Home Assistant: Hue, Zigbee bulbs and strips, WLED, Matter and others |
 | How smooth | Up to 25 changes per second, fading between pictures | About one change per second per light, with a fade |
@@ -12,28 +12,28 @@ Glowcast sends the picture's colours to a **Hue entertainment area**, to **loose
 | While Glowcast syncs | Only Glowcast controls the lights | An automation that changes a light is overruled at the next change of colour |
 | When it stops | The area's "When syncing stops" setting in the Hue app decides | Glowcast puts each light back as it was |
 
-[Loose lights](../docs/loose-lights.md) in the documentation has all the details of loose lights.
+[Home Assistant lights](../docs/loose-lights.md) in the documentation has all the details of Home Assistant lights.
 
 ## Which one to choose
 
 - **Hue lights that can join an entertainment area:** use an entertainment area. It follows the TV much more smoothly, and each light (and each part of a gradient lightstrip) gets its own colour.
-- **Lights on a Hue bridge that cannot join an entertainment area** (older Hue lights, other brands' Zigbee lights paired to the Hue bridge): use them as loose lights.
-- **Lights of other brands** (Zigbee through ZHA or Zigbee2MQTT, WLED, Matter and others): use them as loose lights.
+- **Lights on a Hue bridge that cannot join an entertainment area** (older Hue lights, other brands' Zigbee lights paired to the Hue bridge): use them as Home Assistant lights.
+- **Lights of other brands** (Zigbee through ZHA or Zigbee2MQTT, WLED, Matter and others): use them as Home Assistant lights.
 
-When you pick loose lights and some of them are Hue lights that could join an entertainment area, setup tells you so with the page **An entertainment area is smoother**. Click **Submit** to go on with loose lights anyway.
+When you pick Home Assistant lights and some of them are Hue lights that could join an entertainment area, setup tells you so with the page **An entertainment area is smoother**. Click **Submit** to go on with Home Assistant lights anyway.
 
 ## Both together
 
-One Glowcast can drive an entertainment area and loose lights at the same time, with one switch: for example the Hue lights round the TV in an entertainment area, and a lamp of another brand beside the sofa as a loose light. The area keeps its own pace (up to 25 changes per second) and the loose lights theirs (about one per second); the loose lights never slow the area down.
+One Glowcast can drive an entertainment area and Home Assistant lights at the same time, with one switch: for example the Hue lights round the TV in an entertainment area, and a lamp of another brand beside the sofa as a Home Assistant light. The area keeps its own pace (up to 25 changes per second) and the Home Assistant lights theirs (about one per second); the Home Assistant lights never slow the area down.
 
-Set it up under **Configure**: choose **Entertainment area and loose lights**. You go through the [entertainment area's steps](setup.md#an-entertainment-area) first, then the [loose lights' steps](setup.md#loose-lights), then brightness, intensity and the update rate. See [Both together](setup.md#both-together) on the next page.
+Set it up under **Configure**: choose **Entertainment area and Home Assistant lights**. You go through the [entertainment area's steps](setup.md#an-entertainment-area) first, then the [Home Assistant lights' steps](setup.md#loose-lights), then brightness, intensity and the update rate. See [Both together](setup.md#both-together) on the next page.
 
-A light cannot be in both. If a loose light you pick is already in the entertainment area, the settings screen says so: "... already follow the TV through the entertainment area, so they cannot also be loose lights". Pick the other lights one by one, or an area or group without them.
+A light cannot be in both. If a Home Assistant light you pick is already in the entertainment area, the settings screen says so: "... already follow the TV through the entertainment area, so they cannot also be Home Assistant lights". Pick the other lights one by one, or an area or group without them.
 
 
-## How fast loose lights are
+## How fast Home Assistant lights are { #how-fast-loose-lights-are }
 
-Each loose light changes about once per second and fades in between. A Hue bridge and a Thread network (Matter) handle only a few commands per second for the whole house, so Glowcast sends at most 4 commands per second to each Hue bridge and to each Thread network. With more than 4 loose lights on one of them, they share those 4 commands and each changes less often. Setup then shows the page **Many lights on one network**, with how often these lights will change; click **Submit** to save anyway.
+Each Home Assistant light changes about once per second and fades in between. A Hue bridge and a Thread network (Matter) handle only a few commands per second for the whole house, so Glowcast sends at most 4 commands per second to each Hue bridge and to each Thread network. With more than 4 Home Assistant lights on one of them, they share those 4 commands and each changes less often. Setup then shows the page **Many lights on one network**, with how often these lights will change; click **Submit** to save anyway.
 
 - A Hue room or zone that you pick as one light counts as one: the bridge changes its lights together, and they all get the same colour.
 - A light group made in Home Assistant counts as its lights, because Home Assistant sends a command to each of them.
@@ -66,7 +66,7 @@ In an entertainment area, one light passes the stream on to the others. If the l
 ## What happens to the lights while Glowcast syncs
 
 - **In an entertainment area**, the stream takes the lights over: other automations, scenes and the Hue app cannot change them until Glowcast stops. A motion automation that turns on a light in the same area, for example, does nothing during a film. After the stop, the lights return to how they were (with **Last on-state**, see above).
-- **Loose lights** stay normal Home Assistant lights. An automation or scene that changes one while Glowcast syncs works for a moment, until Glowcast's next change of colour for that light. After the stop, Glowcast puts each light back as it was before: on or off, its brightness and its colour or colour temperature. For a light group picked as a single light, each light in it goes back to its own state.
+- **Home Assistant lights** can still be changed as usual. An automation or scene that changes one while Glowcast syncs works for a moment, until Glowcast's next change of colour for that light. After the stop, Glowcast puts each light back as it was before: on or off, its brightness and its colour or colour temperature. For a light group picked as a single light, each light in it goes back to its own state.
 - Lights that are not part of Glowcast are not touched.
 
 Next: [installing and setting up](setup.md).

@@ -165,6 +165,9 @@
           "hue_options": "Hue-entertainmentruimte - het vloeiendst",
           "ha_lights_options": "Losse lampen - elke kleurenlamp, trager",
           "combined_options": "Entertainmentruimte en losse lampen"
+        },
+        "menu_option_descriptions": {
+          "combined_options": "Kies lampen één voor één, of een hele ruimte of lampgroep uit Home Assistant; elke lamp krijgt een eigen plek."
         }
       },
       "settings": {

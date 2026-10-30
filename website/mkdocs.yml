@@ -98,7 +98,7 @@ nav:
       - docs/index.md
       - Installation: docs/installation.md
       - Setup: docs/setup.md
-      - Loose lights: docs/loose-lights.md
+      - Home Assistant lights: docs/loose-lights.md
       - Settings: docs/settings.md
       - Starting automatically: docs/starting.md
       - Status and diagnostics: docs/status.md

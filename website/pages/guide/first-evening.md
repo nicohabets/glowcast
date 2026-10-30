@@ -22,7 +22,7 @@ Brightness, intensity and the update rate change while Glowcast syncs, without i
 ## While Glowcast syncs
 
 - **Lights in an entertainment area** only listen to Glowcast. Automations, scenes and the Hue app cannot change them until Glowcast stops: a motion automation that turns on a light in the same area does nothing during a film.
-- **Loose lights** can be changed by an automation or a scene, but Glowcast overrules that at its next change of colour for that light.
+- **Home Assistant lights** can be changed by an automation or a scene, but Glowcast overrules that at its next change of colour for that light.
 - Other lights in the house are not touched.
 
 ## When it stops
@@ -30,8 +30,8 @@ Brightness, intensity and the update rate change while Glowcast syncs, without i
 Switch Glowcast off, or turn the TV off: Glowcast stops by itself when the TV turns off, and releases the lights. When Home Assistant shuts down or restarts while syncing, Glowcast releases the lights first.
 
 - **An entertainment area** returns to how it was before, if the area's **When syncing stops** setting in the Hue app is **Last on-state**. With **Pause on the last colour** the lights keep the last colour Glowcast sent; see ["When syncing stops"](lights.md#when-syncing-stops-last-on-state).
-- **Loose lights**: Glowcast puts each light back as it was before: on or off, its brightness and its colour or colour temperature.
-- **Both together**: the area follows its Hue app setting, and Glowcast puts every loose light back.
+- **Home Assistant lights**: Glowcast puts each light back as it was before: on or off, its brightness and its colour or colour temperature.
+- **Both together**: the area follows its Hue app setting, and Glowcast puts every Home Assistant light back.
 
 Glowcast does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs, Glowcast continues once Home Assistant is back, if the TV still shows a picture; otherwise the switch stays off.
 
