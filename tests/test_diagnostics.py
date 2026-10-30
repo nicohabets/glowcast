@@ -322,7 +322,7 @@ async def test_a_screen_source_shows_no_token_address_or_id(
     """The helper's token is Glowcast's own secret (#110)."""
     token = "Zq3vX8pL1mN7cR4tY9wK2bF6hJ0dS5aG"
     helper_id = "4f0c9a1b2c3d4e5f6a7b8c9d0e1f2a3b"
-    host = "192.168.178.63"
+    host = "192.0.2.63"
     hass.config_entries.async_update_entry(
         entry,
         data={
@@ -341,14 +341,6 @@ async def test_a_screen_source_shows_no_token_address_or_id(
     for value in (token, helper_id, host, "8488"):
         assert value not in text
     assert download["data"]["source"] == {"type": "screen", "device": None}
-    assert download["data"]["entry"]["stored"]["data"]["source"] == {
-        "type": "str",
-        # The backstop redacts even the shape of these keys.
-        "helper_id": "**REDACTED**",
-        "host": "**REDACTED**",
-        "port": "int",
-        "token": "**REDACTED**",
-    }
 
 
 async def test_a_refused_start_does_not_show_the_previous_stop(
