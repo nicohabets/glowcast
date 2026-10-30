@@ -404,10 +404,13 @@ async def test_the_options_screen_shows_what_an_entity_set(
     await set_number(hass, BRIGHTNESS, 33)
     await select(hass, UPDATE_RATE, "low")
     await select(hass, AREA, "Other area")
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
+    assert form_default(result, "area") == "area-other"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-other"}
+    )
     assert form_default(result, "brightness") == 33
     assert form_default(result, "update_rate") == "low"
-    assert form_default(result, "area") == "area-other"
 
 
 async def test_the_entities_show_what_the_options_screen_saved(
@@ -415,10 +418,12 @@ async def test_the_entities_show_what_the_options_screen_saved(
 ) -> None:
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-tv"}
+    )
     await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"area": "area-tv", "brightness": 45, "intensity": 90, "update_rate": "high"},
+        result["flow_id"], {"brightness": 45, "intensity": 90, "update_rate": "high"}
     )
     await settle(hass)
     assert state(hass, BRIGHTNESS) == "45"
@@ -624,7 +629,7 @@ async def test_a_list_from_the_options_screen_cancels_a_pending_retry(
     entry = await setup(hass)
     assert len(timers.pending) == 1
     bridge.reachable = True
-    await hass.config_entries.options.async_init(entry.entry_id)
+    await open_area_options(hass, entry)
     await settle(hass)
     assert timers.pending == []
     assert state(hass, AREA) == "TV area"
@@ -676,9 +681,19 @@ async def test_opening_the_options_screen_refreshes_the_list(
 ) -> None:
     entry = await setup(hass)
     bridge.areas = [*bridge.areas, area("area-new", "New area")]
-    await hass.config_entries.options.async_init(entry.entry_id)
+    await open_area_options(hass, entry)
     await settle(hass)
     assert "New area" in hass.states.get(AREA).attributes["options"]
+
+
+async def open_area_options(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> dict[str, Any]:
+    """Open the settings screen and choose the entertainment area (#9)."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "hue_options"}
+    )
 
 
 # The output type decides what follows the TV

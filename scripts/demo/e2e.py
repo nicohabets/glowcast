@@ -569,6 +569,8 @@ def setup_flow(
     flow = ha.request("POST", path, {"host": "127.0.0.1", "port": helper.port})
     expect(flow, "form", "screen_code")
     flow = ha.request("POST", path, {"code": PAIRING_CODE})
+    expect(flow, "menu", "output")
+    flow = ha.request("POST", path, {"next_step_id": "bridge"})
     expect(flow, "form", "bridge")
     flow = ha.request("POST", path, {"bridge": "demo-bridge"})
     expect(flow, "form", "link")

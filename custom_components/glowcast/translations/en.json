@@ -60,6 +60,69 @@
         "data": {
           "code": "Pairing code"
         }
+      },
+      "output": {
+        "title": "Which lights should follow the picture?",
+        "description": "You can change this later in Glowcast's settings.",
+        "menu_options": {
+          "bridge": "Hue entertainment area - the smoothest, for Hue lights in an entertainment area",
+          "ha_lights": "Loose lights - any colour light in Home Assistant, about one change per second"
+        }
+      },
+      "ha_lights": {
+        "title": "Choose the loose lights",
+        "description": "Glowcast can follow single lights, the lights of a Home Assistant area, or the lights of a light group (for example a Hue room or zone). Each light gets its own place next to the screen.",
+        "data": {
+          "follow": "Follow"
+        }
+      },
+      "ha_lights_lights": {
+        "title": "Choose the lights",
+        "description": "Only colour lights are listed. A light group (for example a Hue room) chosen here gets one colour for all its lights.",
+        "data": {
+          "lights": "Lights"
+        }
+      },
+      "ha_lights_area": {
+        "title": "Choose the area",
+        "description": "Every colour light in this area follows the picture, each at its own place. Lights that join the area later follow the middle of the picture until you place them.",
+        "data": {
+          "area": "Area"
+        }
+      },
+      "ha_lights_group": {
+        "title": "Choose the light group",
+        "description": "Every colour light in this group follows the picture, each at its own place. Lights that join the group later follow the middle of the picture until you place them.",
+        "data": {
+          "group": "Light group"
+        }
+      },
+      "ha_lights_hue_hint": {
+        "title": "An entertainment area is smoother",
+        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
+      },
+      "ha_lights_hue_no_area": {
+        "title": "An entertainment area is smoother",
+        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
+      },
+      "ha_lights_position": {
+        "title": "Where is {light}?",
+        "description": "Light {number} of {total}. The light follows this part of the picture. Choose Fine-tune to set the place yourself.",
+        "data": {
+          "position": "Place"
+        }
+      },
+      "ha_lights_fine_tune": {
+        "title": "Fine-tune {light}",
+        "description": "Light {number} of {total}. -100% is the left or bottom edge of the picture, 100% the right or top edge, 0% the middle.",
+        "data": {
+          "x": "Left - right",
+          "z": "Bottom - top"
+        }
+      },
+      "ha_lights_rate": {
+        "title": "Many lights on one network",
+        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the TV much more smoothly. Click Submit to save anyway."
       }
     },
     "progress": {
@@ -73,7 +136,11 @@
       "screen_wrong_code": "The code is not correct; check the code the helper shows.",
       "screen_pairing_unavailable": "The screen helper shows no pairing code. Start it without --non-interactive, or with --pairing-code, then try again.",
       "screen_other_helper": "Another screen helper answers at this address. Check the address.",
-      "screen_unsupported": "This screen helper speaks another version of the protocol. Update Glowcast and the helper."
+      "screen_unsupported": "This screen helper speaks another version of the protocol. Update Glowcast and the helper.",
+      "ha_lights_no_lights": "Home Assistant has no colour lights yet.",
+      "ha_lights_no_area": "No area in Home Assistant has colour lights. Assign lights to an area first.",
+      "ha_lights_no_group": "Home Assistant has no light groups with colour lights.",
+      "ha_lights_none_chosen": "Choose at least one colour light."
     },
     "abort": {
       "no_tv": "No LG webOS TV found. Set up your TV with the LG webOS Smart TV integration first.",
@@ -92,26 +159,122 @@
   "options": {
     "step": {
       "init": {
+        "title": "Which lights should follow the picture?",
+        "description": "First the lights and their own settings, then brightness, intensity and the update rate.",
+        "menu_options": {
+          "hue_options": "Hue entertainment area - the smoothest, for Hue lights in an entertainment area",
+          "ha_lights_options": "Loose lights - any colour light in Home Assistant, about one change per second"
+        }
+      },
+      "settings": {
         "title": "Glowcast settings",
         "description": "These settings are also on Glowcast's device page, under Configuration, where you can change them while syncing and use them in automations.",
         "data": {
-          "area": "Entertainment area",
           "brightness": "Brightness",
           "intensity": "Intensity",
           "update_rate": "Update rate"
         },
         "data_description": {
-          "area": "The lights in this area follow the picture.",
           "brightness": "How bright the lights are at most.",
           "intensity": "How vivid the colours are: 0% is almost white, 100% is as on screen, 200% is extra vivid.",
           "update_rate": "How often the picture is read. The lights always fade smoothly in between."
         }
+      },
+      "bridge": {
+        "title": "Choose the Hue bridge",
+        "description": "Glowcast streams colours to a Hue bridge that is set up in the Philips Hue integration.",
+        "data": {
+          "bridge": "Hue bridge"
+        }
+      },
+      "link": {
+        "title": "Pair with the Hue bridge",
+        "description": "Streaming needs its own key from the bridge. Press the link button on your bridge, then click Submit. You then have 30 seconds."
+      },
+      "area": {
+        "title": "Choose the entertainment area",
+        "description": "The lights in this area follow the picture. Which lights take part, and where they stand, is set up in the Hue app.",
+        "data": {
+          "area": "Entertainment area"
+        }
+      },
+      "ha_lights": {
+        "title": "Choose the loose lights",
+        "description": "Glowcast can follow single lights, the lights of a Home Assistant area, or the lights of a light group (for example a Hue room or zone). Each light gets its own place next to the screen.",
+        "data": {
+          "follow": "Follow"
+        }
+      },
+      "ha_lights_lights": {
+        "title": "Choose the lights",
+        "description": "Only colour lights are listed. A light group (for example a Hue room) chosen here gets one colour for all its lights.",
+        "data": {
+          "lights": "Lights"
+        }
+      },
+      "ha_lights_area": {
+        "title": "Choose the area",
+        "description": "Every colour light in this area follows the picture, each at its own place. Lights that join the area later follow the middle of the picture until you place them.",
+        "data": {
+          "area": "Area"
+        }
+      },
+      "ha_lights_group": {
+        "title": "Choose the light group",
+        "description": "Every colour light in this group follows the picture, each at its own place. Lights that join the group later follow the middle of the picture until you place them.",
+        "data": {
+          "group": "Light group"
+        }
+      },
+      "ha_lights_hue_hint": {
+        "title": "An entertainment area is smoother",
+        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
+      },
+      "ha_lights_hue_no_area": {
+        "title": "An entertainment area is smoother",
+        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
+      },
+      "ha_lights_position": {
+        "title": "Where is {light}?",
+        "description": "Light {number} of {total}. The light follows this part of the picture. Choose Fine-tune to set the place yourself.",
+        "data": {
+          "position": "Place"
+        }
+      },
+      "ha_lights_fine_tune": {
+        "title": "Fine-tune {light}",
+        "description": "Light {number} of {total}. -100% is the left or bottom edge of the picture, 100% the right or top edge, 0% the middle.",
+        "data": {
+          "x": "Left - right",
+          "z": "Bottom - top"
+        }
+      },
+      "ha_lights_rate": {
+        "title": "Many lights on one network",
+        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the TV much more smoothly. Click Submit to save anyway."
+      },
+      "ha_lights_changes": {
+        "title": "The lights have changed",
+        "description": "Lights that joined since you placed them, which follow the middle of the picture until you place them: {joined}.\n\nLights that left, which are no longer used: {left}. Their places are removed when you save."
       }
     },
     "abort": {
       "cannot_connect": "Could not reach the Hue bridge. Check that it is on and set up in the Philips Hue integration.",
       "no_areas": "This Hue bridge has no entertainment areas. Create one in the Hue app (Settings, Entertainment areas).",
-      "reauth_required": "The Hue bridge no longer accepts Glowcast's key. Home Assistant asks you to pair again."
+      "reauth_required": "The Hue bridge no longer accepts Glowcast's key. Home Assistant asks you to pair again.",
+      "no_bridge": "No Hue bridge that can stream found. Set up a Hue Bridge v2 or Hue Bridge Pro with the Philips Hue integration first."
+    },
+    "progress": {
+      "pair": "Waiting for the link button on the Hue bridge (up to 30 seconds)."
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
+      "button_not_pressed": "The link button was not pressed in time. Press it, then click Submit again.",
+      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then click Submit.",
+      "ha_lights_no_lights": "Home Assistant has no colour lights yet.",
+      "ha_lights_no_area": "No area in Home Assistant has colour lights. Assign lights to an area first.",
+      "ha_lights_no_group": "Home Assistant has no light groups with colour lights.",
+      "ha_lights_none_chosen": "Choose at least one colour light."
     }
   },
   "selector": {
@@ -121,6 +284,23 @@
         "medium": "Medium (2 per second)",
         "high": "High (3 per second)",
         "maximum": "Maximum (as fast as the TV allows)"
+      }
+    },
+    "ha_lights_follow": {
+      "options": {
+        "lights": "Single lights",
+        "area": "A Home Assistant area",
+        "group": "A light group"
+      }
+    },
+    "ha_lights_position": {
+      "options": {
+        "left": "Left of the screen",
+        "right": "Right of the screen",
+        "top": "Above the screen",
+        "bottom": "Below the screen",
+        "ambient": "Ambient (the middle of the picture)",
+        "custom": "Fine-tune"
       }
     }
   },
@@ -145,6 +325,12 @@
       },
       "entertainment_area": {
         "name": "Entertainment area"
+      },
+      "loose_lights": {
+        "name": "Lights",
+        "state": {
+          "chosen_lights": "Chosen lights"
+        }
       }
     },
     "sensor": {
@@ -203,6 +389,10 @@
     "hue_entertainment_bridge_app_left": {
       "title": "Glowcast {name}: remove its app from the Hue bridge",
       "description": "Glowcast is removed from Home Assistant, but its app is still on the Hue bridge. That app's key gives full access to the bridge. To remove it, open the Hue app and go to **Settings → Apps → Network-based**, tap the info button next to **glowcast** and remove it."
+    },
+    "ha_lights_not_found": {
+      "title": "Glowcast {name}: no colour lights to follow",
+      "description": "Glowcast cannot sync because the lights it follows are gone: the area or light group was removed, or it has no colour lights left. Choose other lights in Glowcast's settings, then switch Glowcast on again."
     }
   }
 }

@@ -1,0 +1,529 @@
+"""Light output for loose lights: any colour light through Home Assistant (#9).
+
+Architecture 8.1. Every light gets its own position, so it becomes a channel
+for the colour engine. Colours go out with `light.turn_on`, within the rate
+limits of `ha_lights_schedule.py`; each light's state is saved when the lights
+are claimed and restored when they are released.
+
+The lights follow single lights, a Home Assistant area, or a light group. They
+are referenced by entity registry id (stable when the user renames the entity
+id), areas by area id. An area's or group's lights are resolved at every
+start, so lights that joined follow "ambient" until placed, and lights that
+left are no longer used.
+"""
+
+import asyncio
+import logging
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from homeassistant.components.light import color_supported, get_supported_color_modes
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.state import async_reproduce_state
+
+from ..const import CONF_OUTPUT
+from ..core.models import Channel, ChannelColor
+from ..core.ports import OutputLost, OutputNotFound, OutputUnavailable
+from ..issues import Issue
+from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
+
+_LOGGER = logging.getLogger(__name__)
+
+LIGHT_DOMAIN = "light"
+
+# The output type and its keys in `options["output"]` (architecture 5).
+OUTPUT_HA_LIGHTS = "ha_lights"
+CONF_FOLLOW = "follow"
+FOLLOW_LIGHTS = "lights"
+FOLLOW_AREA = "area"
+FOLLOW_GROUP = "group"
+FOLLOWS = [FOLLOW_LIGHTS, FOLLOW_AREA, FOLLOW_GROUP]
+CONF_AREA_ID = "area_id"
+CONF_GROUP = "group"
+CONF_LIGHTS = "lights"
+CONF_ENTITY = "entity"
+CONF_X = "x"
+CONF_Z = "z"
+
+# Where a light stands: the presets fill in x (-1 left, +1 right) and z (-1
+# bottom, +1 top), as the colour engine reads them (architecture 3.1).
+# "Ambient" is the middle of the picture.
+PRESETS: dict[str, tuple[float, float]] = {
+    "left": (-1.0, 0.0),
+    "right": (1.0, 0.0),
+    "top": (0.0, 1.0),
+    "bottom": (0.0, -1.0),
+    "ambient": (0.0, 0.0),
+}
+AMBIENT = PRESETS["ambient"]
+
+ISSUE_NO_LIGHTS = "loose_lights_not_found"
+NO_LIGHTS = Issue(
+    ISSUE_NO_LIGHTS,
+    "ha_lights_not_found",
+    "there are no colour lights to follow",
+)
+
+# The send loop's rhythm: one command per network per tick at most, so never
+# more than 4 per second per network (the schedule checks that too).
+MAX_RATE_HZ = float(NETWORK_COMMANDS_PER_SECOND)
+CHECK_INTERVAL = 5.0
+COMMAND_TIMEOUT = 5.0
+RESTORE_TIMEOUT = 10.0
+# Home Assistant's own light groups, whose members follow their commands.
+GROUP_PLATFORM = "group"
+
+
+@dataclass(frozen=True)
+class Light:
+    """One light Glowcast drives: a channel of its own."""
+
+    registry_id: str
+    entity_id: str
+    name: str
+
+
+class HaLightsOutput:
+    """Drives loose lights with light.turn_on, each at its own position."""
+
+    max_rate_hz = MAX_RATE_HZ
+
+    def __init__(self, hass: HomeAssistant, output: Mapping[str, Any]) -> None:
+        """Initialize for the output block in the entry's options."""
+        self._hass = hass
+        self._output = dict(output)
+        self._lights: dict[str, Light] = {}
+        self._schedule: Schedule | None = None
+        self._colors: dict[str, tuple[int, int, int, int]] = {}
+        self._sent: dict[str, tuple[int, int, int, int]] = {}
+        self._in_flight: dict[str, asyncio.Task[None]] = {}
+        # Each light's state from before Glowcast claimed it; None once restored.
+        self._saved: list[State] | None = None
+        self._next_check = 0.0
+        self._release: asyncio.Task[None] | None = None
+
+    async def start(self) -> list[Channel]:
+        """Resolve the lights, save their state and return them as channels.
+
+        Unavailable lights are skipped for this run and keep their position.
+        Raises OutputNotFound when there are no colour lights to follow (the
+        area or group was removed, or has none), OutputUnavailable when every
+        one of them is unavailable.
+        """
+        if self._saved is not None:
+            await self.stop()
+        candidates = resolve(self._hass, self._output)
+        lights: list[Light] = []
+        unavailable = 0
+        for light in candidates:
+            if _available(self._hass, light.entity_id):
+                lights.append(light)
+            else:
+                unavailable += 1
+        if not lights:
+            if unavailable:
+                raise OutputUnavailable("None of the lights is available")
+            raise OutputNotFound("There are no colour lights to follow")
+        if unavailable:
+            _LOGGER.info("%d of the lights are unavailable; skipped", unavailable)
+
+        networks = {
+            light.registry_id: light_networks(self._hass, light.entity_id)
+            for light in lights
+        }
+        crowded = {
+            network: count
+            for network, count in _count(networks.values()).items()
+            if count > NETWORK_COMMANDS_PER_SECOND
+        }
+        if crowded:
+            _LOGGER.warning(
+                "%d lights share one Hue bridge or Thread network; each changes "
+                "less often than once per second (an entertainment area works "
+                "better for Hue lights)",
+                max(crowded.values()),
+            )
+        self._saved = [
+            state
+            for light in lights
+            if (state := self._hass.states.get(light.entity_id)) is not None
+        ]
+        self._lights = {light.registry_id: light for light in lights}
+        self._schedule = Schedule(networks)
+        self._colors = {}
+        self._sent = {}
+        self._next_check = _now() + CHECK_INTERVAL
+        positions = _positions(self._output)
+        return [
+            Channel(
+                id=light.registry_id,
+                name=light.name,
+                x=positions.get(light.registry_id, AMBIENT)[0],
+                z=positions.get(light.registry_id, AMBIENT)[1],
+            )
+            for light in lights
+        ]
+
+    def send(self, colors: list[ChannelColor]) -> None:
+        """Keep the colours; send them to the lights whose turn it is."""
+        schedule = self._schedule
+        if schedule is None:
+            return
+        for color in colors:
+            if color.channel_id in self._lights:
+                self._colors[color.channel_id] = _command(color.rgb)
+        for registry_id in schedule.due(_now(), self._ready):
+            self._async_send(registry_id, schedule.interval(registry_id))
+
+    async def check(self) -> None:
+        """Raise OutputLost when every light has gone; throttled to every 5 s."""
+        if self._schedule is None:
+            raise OutputLost("The lights are released")
+        now = _now()
+        if now < self._next_check:
+            return
+        self._next_check = now + CHECK_INTERVAL
+        if not any(
+            _available(self._hass, light.entity_id) for light in self._lights.values()
+        ):
+            raise OutputLost("None of the lights is available any more")
+
+    async def stop(self) -> None:
+        """Restore every light's state; shielded and safe to call twice."""
+        if self._release is None or self._release.done():
+            self._release = asyncio.ensure_future(self._async_release())
+        await asyncio.shield(self._release)
+
+    async def close(self) -> None:
+        """Nothing to close: Home Assistant owns the lights' connections."""
+
+    def _ready(self, registry_id: str) -> bool:
+        """A light gets a command for a new colour, one at a time, if available."""
+        color = self._colors.get(registry_id)
+        return (
+            color is not None
+            and color != self._sent.get(registry_id)
+            and registry_id not in self._in_flight
+            and _available(self._hass, self._lights[registry_id].entity_id)
+        )
+
+    def _async_send(self, registry_id: str, transition: float) -> None:
+        color = self._colors[registry_id]
+        self._sent[registry_id] = color
+        task = self._hass.async_create_task(
+            self._async_turn_on(self._lights[registry_id].entity_id, color, transition),
+            "glowcast light command",
+            eager_start=False,
+        )
+        self._in_flight[registry_id] = task
+        task.add_done_callback(lambda _: self._in_flight.pop(registry_id, None))
+
+    async def _async_turn_on(
+        self, entity_id: str, color: tuple[int, int, int, int], transition: float
+    ) -> None:
+        *rgb, brightness = color
+        try:
+            async with asyncio.timeout(COMMAND_TIMEOUT):
+                await self._hass.services.async_call(
+                    LIGHT_DOMAIN,
+                    "turn_on",
+                    {
+                        "entity_id": entity_id,
+                        "rgb_color": rgb,
+                        "brightness": brightness,
+                        # Equal to the light's interval, so a change fades.
+                        "transition": transition,
+                    },
+                    blocking=True,
+                )
+        except (HomeAssistantError, TimeoutError, ValueError) as err:
+            # One lost colour; the next one follows within seconds.
+            _LOGGER.debug("A light did not take its colour: %s", err)
+
+    async def _async_release(self) -> None:
+        self._schedule = None
+        tasks = list(self._in_flight.values())
+        for task in tasks:
+            task.cancel()
+        # A colour that arrives after the restore would undo it.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._in_flight.clear()
+        saved, self._saved = self._saved, None
+        if not saved:
+            return
+        try:
+            async with asyncio.timeout(RESTORE_TIMEOUT):
+                await async_reproduce_state(self._hass, saved)
+        except (HomeAssistantError, TimeoutError) as err:
+            _LOGGER.warning("Could not restore the lights' state: %s", err)
+
+
+def create(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> HaLightsOutput:
+    """Build the output from a Glowcast entry's options (architecture 5)."""
+    return HaLightsOutput(hass, options[CONF_OUTPUT])
+
+
+def is_missing(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> bool:
+    """Never: no other integration's entry is referenced.
+
+    A removed area, group or light shows at the start, as OutputNotFound.
+    """
+    return False
+
+
+def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
+    """No device of another integration: the lights each have their own."""
+    return None
+
+
+def resolve(hass: HomeAssistant, output: Mapping[str, Any]) -> list[Light]:
+    """The colour lights the output follows now, whether available or not.
+
+    Single lights: the chosen ones that still exist. An area: its colour
+    lights, without the light groups in it (their members are in it already).
+    A group: its colour members; groups in it are expanded too. Raises
+    OutputNotFound when the area or the group no longer exists.
+    """
+    registry = er.async_get(hass)
+    follow = output.get(CONF_FOLLOW, FOLLOW_LIGHTS)
+    if follow == FOLLOW_AREA:
+        area_id = output.get(CONF_AREA_ID)
+        if area_id is None or ar.async_get(hass).async_get_area(area_id) is None:
+            raise OutputNotFound("The area no longer exists")
+        entity_ids = area_lights(hass, area_id)
+    elif follow == FOLLOW_GROUP:
+        group = er.async_resolve_entity_id(registry, output.get(CONF_GROUP) or "")
+        if group is None:
+            raise OutputNotFound("The light group no longer exists")
+        state = hass.states.get(group)
+        if state is None or state.state == STATE_UNAVAILABLE:
+            raise OutputUnavailable("The light group is unavailable")
+        entity_ids = group_lights(hass, group)
+    else:
+        entity_ids = [
+            entity_id
+            for light in output.get(CONF_LIGHTS, [])
+            if (entity_id := er.async_resolve_entity_id(registry, light[CONF_ENTITY]))
+        ]
+    return [
+        light
+        for entity_id in dict.fromkeys(entity_ids)
+        if (light := _light(hass, registry, entity_id)) is not None
+    ]
+
+
+def colour_lights(hass: HomeAssistant) -> dict[str, str]:
+    """{entity id: name} of every colour light in the entity registry.
+
+    Lights without a unique id (only in YAML) cannot be referenced by
+    registry id, so they are not offered.
+    """
+    registry = er.async_get(hass)
+    return {
+        entry.entity_id: _name(hass, entry)
+        for entry in registry.entities.values()
+        if entry.domain == LIGHT_DOMAIN
+        and not entry.disabled
+        and is_colour(hass, entry.entity_id)
+    }
+
+
+def areas_with_lights(hass: HomeAssistant) -> dict[str, str]:
+    """{area id: name} of the areas that have colour lights."""
+    return {
+        area.id: area.name
+        for area in ar.async_get(hass).async_list_areas()
+        if any(is_colour(hass, entity_id) for entity_id in area_lights(hass, area.id))
+    }
+
+
+def groups_with_lights(hass: HomeAssistant) -> dict[str, str]:
+    """{registry id: name} of the light groups that have colour lights.
+
+    Home Assistant's light groups and groups of other integrations (a Hue room
+    or zone) list their members in the `entity_id` attribute.
+    """
+    registry = er.async_get(hass)
+    groups: dict[str, str] = {}
+    for state in hass.states.async_all(LIGHT_DOMAIN):
+        if _members(state) is None:
+            continue
+        entry = registry.async_get(state.entity_id)
+        if entry is None or entry.disabled:
+            continue
+        if any(
+            is_colour(hass, member) for member in group_lights(hass, state.entity_id)
+        ):
+            groups[entry.id] = _name(hass, entry)
+    return groups
+
+
+def area_lights(hass: HomeAssistant, area_id: str) -> list[str]:
+    """The light entities in the area: their own area, or their device's.
+
+    Light groups are left out: their members are lights of their own.
+    """
+    registry = er.async_get(hass)
+    devices = dr.async_get(hass)
+    lights = []
+    for entry in registry.entities.values():
+        if entry.domain != LIGHT_DOMAIN or entry.disabled:
+            continue
+        area = entry.area_id
+        if area is None and entry.device_id is not None:
+            device = devices.async_get(entry.device_id)
+            area = None if device is None else device.area_id
+        if area != area_id or _is_group(hass, entry):
+            continue
+        lights.append(entry.entity_id)
+    return sorted(lights)
+
+
+def group_lights(hass: HomeAssistant, entity_id: str) -> list[str]:
+    """The group's member lights; a group in the group is expanded as well."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def expand(group: str) -> None:
+        seen.add(group)
+        state = hass.states.get(group)
+        for member in (_members(state) if state is not None else None) or []:
+            if member in seen or not member.startswith(f"{LIGHT_DOMAIN}."):
+                continue
+            member_state = hass.states.get(member)
+            if member_state is not None and _members(member_state) is not None:
+                expand(member)
+            else:
+                seen.add(member)
+                found.append(member)
+
+    expand(entity_id)
+    return found
+
+
+def is_colour(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether the light can show colours (from its state or its registry entry)."""
+    try:
+        return color_supported(get_supported_color_modes(hass, entity_id))
+    except HomeAssistantError:
+        return False  # not a known entity
+
+
+def light_networks(hass: HomeAssistant, entity_id: str) -> tuple[str, ...]:
+    """The networks a light's commands go through (ha_lights_schedule.py).
+
+    A Hue room or zone is one command on its bridge. A light group of Home
+    Assistant sends a command to each member, so it goes through theirs.
+    """
+    registry = er.async_get(hass)
+    entry = registry.async_get(entity_id)
+    if entry is None:
+        return ()
+    if (network := network_of(entry.platform, entry.config_entry_id)) is not None:
+        return (network,)
+    if entry.platform != GROUP_PLATFORM:
+        return ()
+    networks: list[str] = []
+    for member in group_lights(hass, entity_id):
+        member_entry = registry.async_get(member)
+        if member_entry is not None and (
+            network := network_of(member_entry.platform, member_entry.config_entry_id)
+        ):
+            networks.append(network)
+    return tuple(dict.fromkeys(networks))
+
+
+def crowded_networks(hass: HomeAssistant, entity_ids: Iterable[str]) -> int:
+    """The most lights on one network, if more than it takes per second; else 0."""
+    counts = _count(light_networks(hass, entity_id) for entity_id in entity_ids)
+    most = max(counts.values(), default=0)
+    return most if most > NETWORK_COMMANDS_PER_SECOND else 0
+
+
+def registry_id(hass: HomeAssistant, entity_id: str) -> str | None:
+    """The entity registry id of a light, to store it by."""
+    entry = er.async_get(hass).async_get(entity_id)
+    return None if entry is None else entry.id
+
+
+def _light(
+    hass: HomeAssistant, registry: er.EntityRegistry, entity_id: str
+) -> Light | None:
+    entry = registry.async_get(entity_id)
+    if entry is None or entry.disabled or not is_colour(hass, entity_id):
+        return None
+    return Light(entry.id, entity_id, _name(hass, entry))
+
+
+def _name(hass: HomeAssistant, entry: er.RegistryEntry) -> str:
+    if (state := hass.states.get(entry.entity_id)) is not None and (
+        name := state.attributes.get("friendly_name")
+    ):
+        return str(name)
+    return entry.name or entry.original_name or entry.entity_id
+
+
+def _members(state: State) -> list[str] | None:
+    """A group's member entity ids, from its `entity_id` attribute."""
+    members = state.attributes.get("entity_id")
+    if isinstance(members, (list, tuple, set)) and all(
+        isinstance(member, str) for member in members
+    ):
+        return sorted(members)
+    return None
+
+
+def _is_group(hass: HomeAssistant, entry: er.RegistryEntry) -> bool:
+    if entry.platform == GROUP_PLATFORM:
+        return True
+    state = hass.states.get(entry.entity_id)
+    return state is not None and _members(state) is not None
+
+
+def _available(hass: HomeAssistant, entity_id: str) -> bool:
+    state = hass.states.get(entity_id)
+    return state is not None and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+
+def _positions(output: Mapping[str, Any]) -> dict[str, tuple[float, float]]:
+    """{registry id: (x, z)} of the lights placed so far."""
+    return {
+        light[CONF_ENTITY]: (float(light[CONF_X]), float(light[CONF_Z]))
+        for light in output.get(CONF_LIGHTS, [])
+    }
+
+
+def _count(networks: Iterable[tuple[str, ...]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for light_networks_ in networks:
+        for network in light_networks_:
+            counts[network] = counts.get(network, 0) + 1
+    return counts
+
+
+def _command(rgb: tuple[float, float, float]) -> tuple[int, int, int, int]:
+    """A colour in 0-1 as (r, g, b, brightness) for light.turn_on.
+
+    Lights take `rgb_color` as the colour only, so the brightness that
+    Glowcast's settings and the glow put into the colour goes into
+    `brightness`, and the colour is scaled up to full.
+    """
+    peak = max(rgb)
+    if peak <= 0:
+        return (255, 255, 255, 1)
+    r, g, b = (min(255, max(0, round(value / peak * 255))) for value in rgb)
+    return (r, g, b, min(255, max(1, round(peak * 255))))
+
+
+def _now() -> float:
+    return asyncio.get_running_loop().time()

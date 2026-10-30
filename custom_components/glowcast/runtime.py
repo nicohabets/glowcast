@@ -149,23 +149,44 @@ class GlowcastData:
 
         Only a change of what follows the TV (the output block, compared as a
         whole) restarts it; that change also clears the repair issues about
-        the previous choice. Not running: the next start reads the options.
+        the previous choice. A change of the output type reloads the entry,
+        so its entities change too. Not running: the next start reads the
+        options.
         """
         options = self._entry.options
+        if options[CONF_OUTPUT][CONF_TYPE] != self._output[CONF_TYPE]:
+            # Another output type has other entities: reload the entry, which
+            # stops syncing and adds the new type's entities; the previous
+            # type's entities are removed at setup (__init__.py).
+            self._output = options[CONF_OUTPUT]
+            self._delete_output_issues(missing=True)
+            self._hass.config_entries.async_schedule_reload(self._entry.entry_id)
+            return
         self._notify()  # the entities show the new values
         if options[CONF_OUTPUT] != self._output:
             self._output = options[CONF_OUTPUT]
-            for key in _keys(
-                issue
-                for output_type in OUTPUTS.values()
-                for issue in output_type.stop_issues.values()
-            ):
-                ir.async_delete_issue(
-                    self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
-                )
+            self._delete_output_issues()
             await self.async_restart()
         elif self._pipeline is not None:
             self._pipeline.update_settings(read_settings(options))
+
+    def _delete_output_issues(self, *, missing: bool = False) -> None:
+        """Remove the repair issues about the previous choice of lights.
+
+        Also the one about a missing integration entry when the type changed.
+        """
+        issues = [
+            issue
+            for output_type in OUTPUTS.values()
+            for issue in (
+                *output_type.stop_issues.values(),
+                *((output_type.missing,) if missing else ()),
+            )
+        ]
+        for key in _keys(issues):
+            ir.async_delete_issue(
+                self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
+            )
 
     async def async_restart(self) -> None:
         """Restart a running pipeline with the new settings; the switch stays on."""

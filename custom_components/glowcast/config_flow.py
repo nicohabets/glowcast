@@ -36,7 +36,7 @@ from .const import (
     REAUTH_SOURCE,
     UPDATE_RATES,
 )
-from .outputs import OUTPUT_STEPS, OUTPUTS, OutputType
+from .outputs import OUTPUT_OPTIONS_STEPS, OUTPUT_STEPS, OUTPUTS
 from .settings import read_settings, write_settings
 from .sources import SOURCE_STEPS, SOURCES
 
@@ -85,9 +85,24 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
         """The source's steps are done; go on with the output's."""
         self._source = source
         self._title = title
-        # One output type is used without a choice (#9 adds the choice).
-        (output_type,) = OUTPUTS.values()
-        return await self._async_step(output_type.setup_step)
+        return await self.async_step_output()
+
+    async def async_step_output(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the output type; one is used without a choice.
+
+        The menu shows each type's first step, labelled by the type's texts
+        (menu_options).
+        """
+        setup_steps = [
+            output_type.setup_step
+            for output_type in OUTPUTS.values()
+            if output_type.setup_step
+        ]
+        if len(setup_steps) == 1:
+            return await self._async_step(setup_steps[0], user_input)
+        return self.async_show_menu(step_id="output", menu_options=setup_steps)
 
     async def async_output_chosen(
         self, data: dict[str, Any], output: dict[str, Any]
@@ -121,58 +136,98 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
         return await getattr(self, f"async_step_{step_id}")(user_input)
 
 
-class GlowcastOptionsFlow(OptionsFlow):
-    """What follows the TV (the output type's part), then the common settings."""
+class GlowcastOptionsFlow(*OUTPUT_OPTIONS_STEPS, OptionsFlow):
+    """The settings screen: what follows the TV, then the common settings.
+
+    First the choice of output type, then that type's own steps (which may
+    pair with the device the lights are on), then brightness, intensity and the
+    update rate (architecture 4.2).
+    """
+
+    def __init__(self) -> None:
+        """Initialize the flow."""
+        self._data: dict[str, Any] = {}
+        self._output: dict[str, Any] = {}
+
+    @property
+    def entry_title(self) -> str:
+        """The entry's name, which the steps may use (flow.py)."""
+        return self.config_entry.title
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the settings screen."""
-        options = self.config_entry.options
-        output_type = OUTPUTS.get(options[CONF_OUTPUT][CONF_TYPE])
+        """Choose the output type; one is used without a choice.
+
+        The menu shows each type's first step, labelled by the type's texts.
+        Without a type that has steps, the stored output is kept.
+        """
+        options_steps = [
+            output_type.options_step
+            for output_type in OUTPUTS.values()
+            if output_type.options_step
+        ]
+        if not options_steps:
+            self._output = dict(self.config_entry.options[CONF_OUTPUT])
+            return await self.async_step_settings()
+        if len(options_steps) == 1:
+            return await getattr(self, f"async_step_{options_steps[0]}")()
+        return self.async_show_menu(step_id="init", menu_options=options_steps)
+
+    async def async_output_chosen(
+        self, data: dict[str, Any], output: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """The output's steps are done; go on with the common settings.
+
+        `data` is what the output stores in the entry's data, for example the
+        keys of a pairing; it is stored when the settings are saved.
+        """
+        self._data = data
+        self._output = output
+        return await self.async_step_settings()
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Brightness, intensity and the update rate; then store everything."""
+        entry = self.config_entry
         if user_input is not None:
+            if self._data and {**entry.data, **self._data} != entry.data:
+                # Before the options, so the output finds its data when the
+                # options change starts it.
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, **self._data}
+                )
             return self.async_create_entry(
                 data={
-                    CONF_OUTPUT: _output(output_type, options, user_input),
+                    **entry.options,
+                    CONF_OUTPUT: self._output,
                     **write_settings(read_settings(user_input)),
                 }
             )
-
-        fields: dict[vol.Marker, Any] = {}
-        if output_type is not None and output_type.options_fields is not None:
-            fields.update(await output_type.options_fields(self))
-        settings = read_settings(options)
-        fields.update(
-            {
-                vol.Required(CONF_BRIGHTNESS, default=settings.brightness): (
-                    _percentage(1, 100)
-                ),
-                vol.Required(CONF_INTENSITY, default=settings.intensity): (
-                    _percentage(0, 200)
-                ),
-                vol.Required(
-                    CONF_UPDATE_RATE, default=settings.update_rate.value
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=UPDATE_RATES,
-                        translation_key=CONF_UPDATE_RATE,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-            }
+        settings = read_settings(entry.options)
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_BRIGHTNESS, default=settings.brightness): (
+                        _percentage(1, 100)
+                    ),
+                    vol.Required(CONF_INTENSITY, default=settings.intensity): (
+                        _percentage(0, 200)
+                    ),
+                    vol.Required(
+                        CONF_UPDATE_RATE, default=settings.update_rate.value
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=UPDATE_RATES,
+                            translation_key=CONF_UPDATE_RATE,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
         )
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields))
-
-
-def _output(
-    output_type: OutputType | None,
-    options: Mapping[str, Any],
-    user_input: Mapping[str, Any],
-) -> dict[str, Any]:
-    """The output's block from the options screen; kept if it has no part."""
-    if output_type is None or output_type.options_output is None:
-        return dict(options[CONF_OUTPUT])
-    return output_type.options_output(user_input)
 
 
 def _percentage(minimum: int, maximum: int) -> NumberSelector:

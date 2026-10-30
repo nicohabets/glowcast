@@ -232,8 +232,13 @@ def menu_item(rec: Recorder, step: str) -> Locator:
 
 
 def hue_steps(rec: Recorder) -> None:
-    """The output's steps, after the source's: bridge, link, area, done."""
+    """The output's steps, after the source's: the output menu, bridge, link,
+    area, done."""
     page = rec.page
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "bridge"))
+    page.locator(PRIMARY).wait_for()
     rec.step("bridge")
     rec.submit()
     rec.step("link")
@@ -406,6 +411,12 @@ def settings(rec: Recorder) -> None:
     rec.begin()
     configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
     rec.click(page.get_by_role("button", name=configure).first)
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "hue_options"))
+    page.locator(PRIMARY).wait_for()
+    rec.step("area")
+    rec.submit()
     page.locator(PRIMARY).wait_for()
     rec.step("settings")
     rec.click(page.locator(f"{DIALOG} ha-picker-field").last)

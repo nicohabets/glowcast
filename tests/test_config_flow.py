@@ -207,14 +207,30 @@ async def start_tv(hass: HomeAssistant) -> dict[str, Any]:
     )
 
 
+async def choose_output(
+    hass: HomeAssistant, result: dict[str, Any], step: str = "bridge"
+) -> dict[str, Any]:
+    """Choose the output type in its menu (#9): the entertainment area."""
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "output"
+    assert result["menu_options"] == ["bridge", "ha_lights"]
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": step}
+    )
+
+
+async def pick_tv(hass: HomeAssistant, flow_id: str) -> dict[str, Any]:
+    """Pick the TV, then the entertainment area in the output menu."""
+    result = await hass.config_entries.flow.async_configure(flow_id, {"tv": TV_ID})
+    return await choose_output(hass, result)
+
+
 async def start_to_link(hass: HomeAssistant) -> str:
     """Pick the TV and the bridge; return the flow id at the link step."""
     result = await start_tv(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "tv"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"tv": TV_ID}
-    )
+    result = await pick_tv(hass, result["flow_id"])
     assert result["step_id"] == "bridge"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"bridge": BRIDGE_ID}
@@ -333,9 +349,7 @@ async def test_no_api_v2_bridge(hass: HomeAssistant) -> None:
         bridge, data={**bridge.data, "api_version": 1}
     )
     result = await start_tv(hass)
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"tv": TV_ID}
-    )
+    result = await pick_tv(hass, result["flow_id"])
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "no_bridge"
@@ -345,9 +359,7 @@ async def test_bridge_unreachable(hass: HomeAssistant, bridge: FakeBridge) -> No
     """An unreachable bridge is reported before pairing starts."""
     bridge.reachable = False
     result = await start_tv(hass)
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"tv": TV_ID}
-    )
+    result = await pick_tv(hass, result["flow_id"])
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"bridge": BRIDGE_ID}
     )
@@ -557,29 +569,43 @@ async def test_reauth(hass: HomeAssistant) -> None:
     assert FakeHueAPI.instances[-1].device_type == "glowcast#Living room TV"
 
 
+async def open_area_options(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> dict[str, Any]:
+    """Open the settings screen and choose the entertainment area."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "init"
+    assert result["menu_options"] == ["hue_options", "ha_lights_options"]
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "hue_options"}
+    )
+
+
 async def test_options_flow(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     """The settings screen shows the current values and stores whole numbers."""
     entry = glowcast_entry(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
 
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "area"
     schema = {str(key): key for key in result["data_schema"].schema}
     assert schema["area"].default() == "area-tv"
+    assert area_list_keys(aioclient_mock) == ["old-app-key"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-other"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "settings"
+    schema = {str(key): key for key in result["data_schema"].schema}
     assert schema["brightness"].default() == 50
     assert schema["update_rate"].default() == "low"
-    assert area_list_keys(aioclient_mock) == ["old-app-key"]
-
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {
-            "area": "area-other",
-            "brightness": 30.0,
-            "intensity": 0.0,
-            "update_rate": "maximum",
-        },
+        {"brightness": 30.0, "intensity": 0.0, "update_rate": "maximum"},
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -590,12 +616,17 @@ async def test_options_flow(
         "update_rate": "maximum",
     }
     assert isinstance(entry.options["brightness"], int)
+    # The same bridge: its keys stay as they are.
+    assert entry.data["bridge"]["app_key"] == "old-app-key"
 
 
 async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
     """Missing settings and an unknown update rate show their defaults."""
     entry = glowcast_entry(hass, {"brightness": 50, "update_rate": "turbo"})
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-tv"}
+    )
 
     assert result["type"] is FlowResultType.FORM
     schema = {str(key): key for key in result["data_schema"].schema}
@@ -605,7 +636,7 @@ async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {"area": "area-tv", "brightness": 50, "intensity": 100, "update_rate": "high"},
+        {"brightness": 50, "intensity": 100, "update_rate": "high"},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options["intensity"] == 100
@@ -615,18 +646,15 @@ async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
 async def test_options_flow_rejects_out_of_range(hass: HomeAssistant) -> None:
     """Brightness stays within 1-100 % and intensity within 0-200 %."""
     entry = glowcast_entry(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-tv"}
+    )
     for bad in ({"brightness": 0}, {"intensity": 201}):
         with pytest.raises(InvalidData):
             await hass.config_entries.options.async_configure(
                 result["flow_id"],
-                {
-                    "area": "area-tv",
-                    "brightness": 80,
-                    "intensity": 100,
-                    "update_rate": "high",
-                }
-                | bad,
+                {"brightness": 80, "intensity": 100, "update_rate": "high"} | bad,
             )
 
 
@@ -636,7 +664,7 @@ async def test_options_flow_key_revoked(
     """A revoked key says so and starts the reauth flow."""
     entry = glowcast_entry(hass)
     bridge.areas_status = 403
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
@@ -652,7 +680,7 @@ async def test_options_flow_bridge_unreachable(
     """Without the bridge the area list cannot be shown."""
     entry = glowcast_entry(hass)
     bridge.reachable = False
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_area_options(hass, entry)
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "cannot_connect"
@@ -824,7 +852,8 @@ async def code(hass: HomeAssistant, flow_id: str, value: str) -> dict[str, Any]:
 
 
 async def through_the_output(hass: HomeAssistant, result: dict[str, Any]) -> Any:
-    """From the bridge step to the created entry, as for a TV."""
+    """From the output menu to the created entry, as for a TV."""
+    result = await choose_output(hass, result)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "bridge"
     flow_id = result["flow_id"]
@@ -936,7 +965,7 @@ async def test_pairing_problems_keep_the_form_open(
     for name, value in vars(FakeHelperHTTP()).items():
         setattr(screen_helper, name, value)
     result = await code(hass, flow_id, PAIRING_CODE)
-    assert result["step_id"] == "bridge"
+    assert result["step_id"] == "output"
 
 
 @pytest.mark.parametrize(

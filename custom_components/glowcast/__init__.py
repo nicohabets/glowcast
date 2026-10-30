@@ -2,8 +2,9 @@
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_OUTPUT, CONF_TYPE
+from .const import CONF_OUTPUT, CONF_TYPE, DOMAIN
 from .outputs import OUTPUTS
 from .runtime import GlowcastConfigEntry, GlowcastData, async_remove_issues
 
@@ -12,6 +13,7 @@ PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
     """Set up Glowcast from a config entry; syncing is off until switched on."""
+    _remove_other_output_entities(hass, entry)
     entry.runtime_data = data = GlowcastData(hass, entry)
 
     async def _async_ha_stop(event: Event) -> None:
@@ -38,9 +40,32 @@ async def async_remove_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) ->
     """Remove the entry's repair issues; the output says what the user cleans up."""
     async_remove_issues(hass, entry.entry_id)
     # For example an app that stays on the device the lights are paired with.
-    output_type = OUTPUTS.get(entry.options[CONF_OUTPUT][CONF_TYPE])
-    if output_type is not None and output_type.async_removed is not None:
-        await output_type.async_removed(hass, entry)
+    # Every type: the entry may have paired with one before it changed type.
+    for output_type in OUTPUTS.values():
+        if output_type.async_removed is not None:
+            await output_type.async_removed(hass, entry)
+
+
+def _remove_other_output_entities(
+    hass: HomeAssistant, entry: GlowcastConfigEntry
+) -> None:
+    """Remove the entities of output types the entry no longer uses.
+
+    After a change of output type (architecture 4.2) the previous type's
+    entities would otherwise stay as orphans in the entity registry.
+    """
+    current = entry.options[CONF_OUTPUT][CONF_TYPE]
+    registry = er.async_get(hass)
+    for type_id, output_type in OUTPUTS.items():
+        if type_id == current:
+            continue
+        for key in output_type.entity_keys:
+            for platform in output_type.entities:
+                entity_id = registry.async_get_entity_id(
+                    platform, DOMAIN, f"{entry.entry_id}_{key}"
+                )
+                if entity_id is not None:
+                    registry.async_remove(entity_id)
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: GlowcastConfigEntry) -> None:
