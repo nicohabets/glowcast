@@ -86,9 +86,10 @@ CAPTURE_TIMEOUT = 5.0
 
 # The hardware check (#115): at most this many captures, started within this
 # window; it ends after this many failed captures in a row. With the connect
-# (START_TIMEOUT) and one capture (CAPTURE_TIMEOUT) it stays within 25 s.
+# (START_TIMEOUT) and one capture (CAPTURE_TIMEOUT) it stays near 22 s, well
+# within the 25 s each probe has (probes.py), so slow TVs keep their facts.
 PROBE_CAPTURES = 10
-PROBE_WINDOW = 12.0
+PROBE_WINDOW = 9.0
 PROBE_FAILURES = 3
 
 CAPTURE_URI = "tv/executeOneShot"
