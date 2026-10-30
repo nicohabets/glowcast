@@ -1,0 +1,74 @@
+# The test bench's configuration (#134). Copy this file to config.local.yaml
+# next to it (git ignores that name) or to ~/.config/glowcast-bench/config.local.yaml
+# (shared by all working copies), and fill in your own values. Never commit
+# the local file: it names your lights and your network.
+
+# The Hue bridge, with the bench's OWN key (pair it once with the bridge's
+# button; not the key of the Glowcast that runs the TV). A JSON file with
+# {"host", "app_key", "client_key"}, mode 600, written by
+# `python3 scripts/bench/run.py pair-bridge --host <the bridge's address>`.
+bridge_keys: ~/.config/glowcast-bench/bridge.json
+# The bench's entertainment area (its own, on the same bridge).
+bench_area_id: 00000000-0000-0000-0000-000000000000
+# The TV's entertainment area: the bench may stop its stream, never another's.
+tv_area_id: 11111111-1111-1111-1111-111111111111
+
+# The Home Assistant that has the bench lights and the TV's Glowcast switch.
+# The bench only calls light.turn_on/turn_off on the lights below and
+# switch.turn_on/turn_off on tv_switch, and reads their states.
+home_assistant:
+  url: http://192.0.2.10:8123
+  token_file: ~/.config/glowcast-bench/ha_token  # a long-lived token, mode 600
+  tv_switch: switch.glowcast_living_room_tv
+
+# The bench lights: their entity in that Home Assistant and the camera region
+# [x, y, w, h] (in camera pixels, from `run.py snapshot`) that it lights.
+# Measure what a light lights, or include a spot's rim (spike #133).
+# Every run finds the regions itself (calibration); these are the starting
+# point and the sizes. Left and right come from the bridge.
+# `pure: true` on a light whose region shows clean colours (a lit wall, not a
+# clipped spot): the extended suite checks red and blue purity there.
+lights:
+  wall:
+    entity_id: light.desk_uplight
+    region: [434, 2, 32, 34]
+    pure: true  # judge colour purity here (extended suite)
+  spot:
+    entity_id: light.desk_spot
+    region: [462, 142, 48, 34]
+# A region on the monitor that shows the test picture (screen mode delay).
+monitor_region: [220, 540, 180, 120]
+# The camera's references, the lights at full brightness: a warm white (the
+# colour rule of spike #133) and a cool white (Glowcast's sRGB white reads
+# blue against the warm one).
+calibration_kelvin: 2242
+cool_kelvin: 6500
+# Pattern mode: how many whole cycles of the helper's patterns to judge.
+pattern_cycles: 2
+
+# The webcam, read on Windows (OpenCV, DirectShow). Settings of spike #133.
+camera:
+  index: 0
+  width: 1280
+  height: 720
+  fps: 60
+  exposure: -8
+  wb_temperature: 4000
+
+# The monitor the camera sees, in physical pixels (left, top, width, height)
+# as Windows lists it (EnumDisplayMonitors); the screen window covers it and
+# the helper captures it.
+monitor: [1920, 0, 1920, 1080]
+
+# The screen helper, run on Windows by the bench.
+helper:
+  port: 8489
+  pairing_code: "135790"
+
+# Windows' uv.exe as a WSL path; empty: found with `where.exe uv`.
+uv: ""
+
+# Overrides of the tolerances in report.py (Thresholds), for example:
+# thresholds:
+#   max_delay_ms: 1500
+thresholds: {}
