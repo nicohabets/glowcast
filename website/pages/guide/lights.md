@@ -45,7 +45,7 @@ See [How fast](../docs/home-assistant-lights.md#how-fast) for the details.
 
 1. Open the Hue app, go to **Settings → Entertainment areas** and tap **Create entertainment area** (or **+**).
 2. Choose **TV**, pick the colour lights around the TV and tap **Continue**.
-3. Place each light on the map where it stands, and run the test the app offers. Glowcast uses these places: each light gets the colour of the part of the picture on its side (left or right, near the floor or the ceiling).
+3. Place each light on the map where it stands, and run the test the app offers. Glowcast uses these places: each light gets the colour of the part of the picture on its side (left or right, near the floor or the ceiling). Lights towards the back of the room (further from the TV on the map) follow more softly: their colour is partly blended with the colour of the whole picture.
 4. In Glowcast's setup choose **Hue entertainment area**, or later in Glowcast's settings (**Configure**), and pick the new area.
 
 An area can have up to 20 channels (a gradient TV lightstrip counts as 4). With more, Glowcast cannot stream to it and Home Assistant shows a repair; make a smaller area.
