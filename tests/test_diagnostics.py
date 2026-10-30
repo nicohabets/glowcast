@@ -38,10 +38,15 @@ TV_NAME = "Annas woonkamer TV"
 TV_HOST = "192.168.178.42"
 TV_CLIENT_SECRET = "a3f1c9e07b2d4e5f8a6b1c2d3e4f5a6b"
 TV_SERIAL = "305KRAB1C234"
+# The bridge id as the bridge reports it, and as the hue integration
+# normalises it into its entry's unique id (and so Glowcast's data).
 BRIDGE_ID = "ecb5fafffe0a1b2c"
+BRIDGE_UNIQUE_ID = "ecb5fa0a1b2c"
+BRIDGE_RESOURCE_ID = "6c0b2f7a-3d1e-4a5b-9c8d-7e6f5a4b3c2d"
 BRIDGE_HOST = "192.168.178.57"
 BRIDGE_API_KEY = "Xz7pQ2mL9vR4tY8wK3nB6cF1hJ5dS0aG-eUoIi"
 BRIDGE_SERIAL = "C42B1A0B2C3D"
+BRIDGE_NAME = "Bridge in the cupboard"
 APP_KEY = "kq9VbN2xM7cL4pR8tW1yZ6sD3fG0hJ5aE-uIoPq"
 CLIENT_KEY = "0F1E2D3C4B5A69788796A5B4C3D2E1F0"
 AREA_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
@@ -53,9 +58,12 @@ SECRETS = [
     TV_CLIENT_SECRET,
     TV_SERIAL,
     BRIDGE_ID,
+    BRIDGE_UNIQUE_ID,
+    BRIDGE_RESOURCE_ID,
     BRIDGE_HOST,
     BRIDGE_API_KEY,
     BRIDGE_SERIAL,
+    BRIDGE_NAME,
     APP_KEY,
     CLIENT_KEY,
     AREA_ID,
@@ -78,10 +86,11 @@ async def entry(
     )
     registry = dr.async_get(hass)
     others = []
-    for domain, unique_id, data, device in (
+    for domain, unique_id, identifiers, data, device in (
         (
             "webostv",
             TV_ID,
+            {TV_ID},
             {"host": TV_HOST, "client_secret": TV_CLIENT_SECRET},
             {
                 "manufacturer": "LG",
@@ -93,14 +102,16 @@ async def entry(
         ),
         (
             "hue",
-            BRIDGE_ID,
+            BRIDGE_UNIQUE_ID,
+            # As the hue integration registers a v2 bridge.
+            {BRIDGE_ID, BRIDGE_RESOURCE_ID},
             {"host": BRIDGE_HOST, "api_key": BRIDGE_API_KEY, "api_version": 2},
             {
                 "manufacturer": "Signify Netherlands B.V.",
                 "model": "Hue Bridge Pro",
                 "sw_version": "1.72.2072152000",
                 "serial_number": BRIDGE_SERIAL,
-                "name": "Hue Bridge Pro",
+                "name": BRIDGE_NAME,
             },
         ),
     ):
@@ -113,11 +124,20 @@ async def entry(
         )
         other.add_to_hass(hass)
         others.append(other)
-        registry.async_get_or_create(
+        bridge = registry.async_get_or_create(
             config_entry_id=other.entry_id,
-            identifiers={(domain, unique_id)},
+            identifiers={(domain, identifier) for identifier in identifiers},
             **device,
         )
+    # `bridge` is the hue entry's device, the loop's last; a light is linked
+    # through it, as the hue integration does.
+    light = registry.async_get_or_create(
+        config_entry_id=others[1].entry_id,
+        identifiers={("hue", "light-resource-id")},
+        model="Hue gradient lightstrip",
+    )
+    # Both Home Assistant versions accept it here, not in async_get_or_create.
+    registry.async_update_device(light.id, via_device_id=bridge.id)
     entry = MockConfigEntry(
         domain=DOMAIN,
         title=TV_NAME,
@@ -125,7 +145,7 @@ async def entry(
         data={
             "source": {"type": "webos", "unique_id": TV_ID},
             "bridge": {
-                "unique_id": BRIDGE_ID,
+                "unique_id": BRIDGE_UNIQUE_ID,
                 "app_key": APP_KEY,
                 "client_key": CLIENT_KEY,
             },
@@ -366,35 +386,112 @@ async def test_a_refused_start_does_not_show_the_previous_stop(
     assert diagnostics["repair_issues"] == ["output_missing"]
 
 
+def _remove_hue_devices(hass: HomeAssistant) -> str:
+    """Remove the hue entry's devices; the entry's id."""
+    registry = dr.async_get(hass)
+    hue_entry_id = hass.config_entries.async_entry_for_domain_unique_id(
+        "hue", BRIDGE_UNIQUE_ID
+    ).entry_id
+    for device in dr.async_entries_for_config_entry(registry, hue_entry_id):
+        registry.async_remove_device(device.id)
+    return hue_entry_id
+
+
 @pytest.mark.parametrize(
-    "identifier",
-    [BRIDGE_ID.upper(), "6c0b2f7a-3d1e-4a5b-9c8d-7e6f5a4b3c2d"],
-    ids=["in other case", "another identifier"],
+    ("identifiers", "bridge_via_light"),
+    [
+        ({BRIDGE_ID, BRIDGE_RESOURCE_ID}, False),
+        ({BRIDGE_ID, BRIDGE_RESOURCE_ID}, True),
+        ({BRIDGE_ID.upper()}, True),
+        ({BRIDGE_UNIQUE_ID}, False),
+        ({BRIDGE_UNIQUE_ID.upper()}, True),
+        ({BRIDGE_RESOURCE_ID}, False),
+        ({BRIDGE_RESOURCE_ID}, True),
+    ],
+    ids=[
+        "16 characters",
+        "16 characters, every device linked",
+        "16 characters in other case",
+        "12 characters",
+        "12 characters in other case, every device linked",
+        "another identifier",
+        "another identifier, every device linked",
+    ],
 )
 async def test_the_bridge_is_found_however_hue_names_it(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,
     entry: Any,
-    identifier: str,
+    identifiers: set[str],
+    bridge_via_light: bool,
 ) -> None:
+    """Every light is linked through the bridge, as the hue integration does.
+
+    With `bridge_via_light` the bridge is linked through a light too, so every
+    device has a `via_device_id`, as on Home Assistant 2026.10 (#163).
+    """
     registry = dr.async_get(hass)
-    bridge = registry.async_get(
-        OUTPUTS["hue_entertainment"].device_id(hass, entry.data)
-    )
-    hue_entry_id = hass.config_entries.async_entry_for_domain_unique_id(
-        "hue", BRIDGE_ID
-    ).entry_id
-    registry.async_remove_device(bridge.id)
+    hue_entry_id = _remove_hue_devices(hass)
     bridge = registry.async_get_or_create(
         config_entry_id=hue_entry_id,
-        identifiers={("hue", identifier)},
+        identifiers={("hue", identifier) for identifier in identifiers},
         model="Hue Bridge Pro",
     )
-    light = registry.async_get_or_create(
-        config_entry_id=hue_entry_id,
-        identifiers={("hue", "light-resource-id")},
-        model="Hue gradient lightstrip",
-    )
-    registry.async_update_device(light.id, via_device_id=bridge.id)
+    lights = [
+        registry.async_get_or_create(
+            config_entry_id=hue_entry_id,
+            identifiers={("hue", f"light-resource-id-{n}")},
+            model="Hue gradient lightstrip",
+        )
+        for n in range(2)
+    ]
+    for light in lights:
+        registry.async_update_device(light.id, via_device_id=bridge.id)
+    if bridge_via_light:
+        registry.async_update_device(bridge.id, via_device_id=lights[0].id)
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     assert diagnostics["output"]["device"]["model"] == "Hue Bridge Pro"
+
+
+async def test_the_identifier_wins_over_a_busier_device(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    """The bridge is found by its identifier, also when another device of the
+    entry has more devices linked through it: the links are only a fallback."""
+    registry = dr.async_get(hass)
+    hue_entry_id = _remove_hue_devices(hass)
+    registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", BRIDGE_ID), ("hue", BRIDGE_RESOURCE_ID)},
+        model="Hue Bridge Pro",
+    )
+    room = registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", "room-resource-id")},
+        model="Room",
+    )
+    for n in range(2):
+        light = registry.async_get_or_create(
+            config_entry_id=hue_entry_id,
+            identifiers={("hue", f"light-resource-id-{n}")},
+            model="Hue gradient lightstrip",
+        )
+        registry.async_update_device(light.id, via_device_id=room.id)
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["output"]["device"]["model"] == "Hue Bridge Pro"
+
+
+async def test_no_bridge_among_the_hue_devices(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    """No identifier matches and no device is linked through another."""
+    registry = dr.async_get(hass)
+    hue_entry_id = _remove_hue_devices(hass)
+    for n in range(2):
+        registry.async_get_or_create(
+            config_entry_id=hue_entry_id,
+            identifiers={("hue", f"light-resource-id-{n}")},
+            model="Hue gradient lightstrip",
+        )
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["output"] == {"type": "hue_entertainment", "device": None}

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 
@@ -294,21 +295,47 @@ def is_missing(
 def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     """The bridge's device id in Home Assistant's device registry, if it exists.
 
-    The hue integration gives the bridge's device the bridge id, which is also
-    its entry's unique id, as an identifier (compared without case). If that
-    ever differs, the bridge is the entry's one device that is not linked
-    through another device: every light and sensor is linked through it.
+    The hue integration gives the bridge's device the bridge id as the bridge
+    reports it (16 characters on a v2 bridge, with `fffe` in the middle) and
+    normalises it into the entry's unique id (12 characters), so both are
+    compared normalised. If no identifier matches, the bridge is the device
+    that most of the entry's other devices are linked through: the hue
+    integration links every light, sensor, room and zone through it. Not "the
+    one device without a `via_device_id`": on Home Assistant 2026.10 the
+    bridge may have one too (#163).
     """
-    bridge_unique_id = data[CONF_BRIDGE][CONF_UNIQUE_ID]
-    devices = entry_devices(hass, HUE_DOMAIN, bridge_unique_id)
+    bridge_id = _normalize_bridge_id(data[CONF_BRIDGE][CONF_UNIQUE_ID])
+    devices = entry_devices(hass, HUE_DOMAIN, data[CONF_BRIDGE][CONF_UNIQUE_ID])
     for device in devices:
         if any(
-            domain == HUE_DOMAIN and identifier.lower() == bridge_unique_id.lower()
+            domain == HUE_DOMAIN and _normalize_bridge_id(identifier) == bridge_id
             for domain, identifier in device.identifiers
         ):
             return device.id
-    roots = [device for device in devices if device.via_device_id is None]
-    return roots[0].id if len(roots) == 1 else None
+    own = {device.id for device in devices}
+    parents = Counter(
+        device.via_device_id
+        for device in devices
+        if device.via_device_id in own and device.via_device_id != device.id
+    ).most_common(2)
+    if not parents or (len(parents) == 2 and parents[0][1] == parents[1][1]):
+        return None
+    return parents[0][0]
+
+
+def _normalize_bridge_id(bridge_id: str) -> str:
+    """The bridge id as the hue integration makes its entry's unique id from it.
+
+    The same as `normalize_bridge_id` in `aiohue` (the hue integration's
+    library, not one of Glowcast's requirements): lowercase, without colons,
+    and without the `fffe` that the bridge's API puts in the middle.
+    """
+    bridge_id = bridge_id.lower()
+    if len(bridge_id) == 17 and bridge_id.count(":") == 5:
+        return bridge_id.replace(":", "")
+    if len(bridge_id) == 16 and bridge_id[6:10] == "fffe":
+        return bridge_id[0:6] + bridge_id[-6:]
+    return bridge_id
 
 
 async def async_removed(hass: HomeAssistant, entry: ConfigEntry) -> None:
