@@ -111,7 +111,7 @@ class GlowcastData:
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
-        if self._missing_reference(source_type, output_type):
+        if self._missing_reference(source_type, starting=True):
             # No pipeline ran; the repair issue says why. An earlier stop
             # reason would be misleading now.
             self._status = None
@@ -214,18 +214,18 @@ class GlowcastData:
         """Remove this entry's repair issues."""
         async_remove_issues(self._hass, self._entry.entry_id)
 
-    def _missing_reference(
-        self, source_type: SourceType, output_type: OutputType
-    ) -> bool:
+    def _missing_reference(self, source_type: SourceType, *, starting: bool) -> bool:
         """Raise the type's repair issue if an entry it uses is gone or not loaded.
 
         True when Glowcast cannot sync: the source's entry is missing, or the
         entry of every output part. A part of a combined output whose entry
-        is missing gets its repair issue, and the other parts start without it.
+        is missing gets its repair issue, and the other parts start without it
+        (said in the log only when `starting`; after a stop the stop is
+        logged already).
         """
         data, options = self._entry.data, self._entry.options
         if source_type.is_missing(self._hass, data, options):
-            self._log_missing(source_type.missing, cannot_sync=True)
+            self._log_missing(source_type.missing, log="cannot")
             return True
         parts = self._parts()
         missing = [
@@ -233,20 +233,24 @@ class GlowcastData:
             for _, part, part_opts in parts
             if part.is_missing(self._hass, data, part_opts)
         ]
+        cannot_sync = bool(parts) and len(missing) == len(parts)
         for part in missing:
-            self._log_missing(part.missing, cannot_sync=len(missing) == len(parts))
-        return bool(parts) and len(missing) == len(parts)
+            log = "cannot" if cannot_sync else "without" if starting else None
+            self._log_missing(part.missing, log=log)
+        return cannot_sync
 
-    def _log_missing(self, issue: Issue | None, *, cannot_sync: bool) -> None:
-        """Log and raise the repair issue of a part whose entry is missing."""
+    def _log_missing(self, issue: Issue | None, *, log: str | None) -> None:
+        """Raise the repair issue of a part whose entry is missing, and log it:
+        "cannot" (Glowcast cannot sync), "without" (it syncs without the
+        part) or None (not at all)."""
         if issue is None:
             message = "an integration it uses is not set up"
         else:
             message = issue.message
             self._raise_issue(issue.key)
-        if cannot_sync:
+        if log == "cannot":
             _LOGGER.warning("Glowcast %s cannot sync: %s", self._entry.title, message)
-        else:
+        elif log == "without":
             _LOGGER.warning(
                 "Glowcast %s syncs without some of its lights: %s",
                 self._entry.title,
@@ -373,7 +377,7 @@ class GlowcastData:
             StopReason.OUTPUT_UNAVAILABLE,
         ):
             # The TV or the lights may have been removed from HA while syncing.
-            self._missing_reference(source_type, output_type)
+            self._missing_reference(source_type, starting=False)
         self._notify()
 
     def _raise_issue(self, key: str) -> None:

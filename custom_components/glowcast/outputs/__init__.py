@@ -103,9 +103,8 @@ OUTPUTS = {
     # each with its own block, issues and entities. Chosen in the settings.
     OUTPUT_COMBINED: OutputType(
         lambda hass, data, options: create_combined(hass, data, options),
-        lambda hass, data, options: all(
-            missing for _, missing in parts_missing(hass, data, options)
-        ),
+        # Never missing as a whole: the runtime checks each part (4.4).
+        lambda hass, data, options: False,
         lambda hass, data: None,
         options_steps=composite_flow.CombinedOptionsSteps,
         options_step="combined_options",
@@ -146,21 +145,6 @@ def part_options(
 ) -> dict[str, Any]:
     """The options as one part of a combined output sees them: its own block."""
     return {**options, CONF_OUTPUT: block}
-
-
-def parts_missing(
-    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
-) -> list[tuple[str, bool]]:
-    """Each output type the entry uses, and whether the entry it uses is missing."""
-    return [
-        (
-            block[CONF_TYPE],
-            OUTPUTS[block[CONF_TYPE]].is_missing(
-                hass, data, part_options(options, block)
-            ),
-        )
-        for block in output_blocks(options[CONF_OUTPUT])
-    ]
 
 
 def create_combined(

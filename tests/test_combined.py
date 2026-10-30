@@ -621,3 +621,23 @@ async def test_diagnostics_show_each_part(
         "ha_lights",
     ]
     assert HOST not in str(diagnostics)
+
+
+async def test_a_missing_part_is_logged_only_while_syncing(
+    hass: HomeAssistant,
+    parts: Parts,
+    fake_pipeline: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lamp = add_light(hass, "floor_lamp")
+    parts.area_missing = True
+    entry = combined_entry(hass, combined(lamp))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await switch(hass, SERVICE_TURN_ON)
+    assert caplog.text.count("syncs without some of its lights") == 1
+    FakePipeline.instances[-1].finish(StopReason.OUTPUT_UNAVAILABLE)
+    await settle(hass)
+    assert hass.states.get(SWITCH).state == "off"
+    # Stopped: the stop is logged, not "syncs without" again.
+    assert caplog.text.count("syncs without some of its lights") == 1
+    assert issues(hass, entry) == {"output_missing"}
