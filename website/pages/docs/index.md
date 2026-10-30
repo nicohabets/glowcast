@@ -7,6 +7,8 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 
 ## Getting started
 
+New to Glowcast? The [user guide](../guide/index.md) takes you from installing to the first evening, step by step.
+
 1. [Installation](installation.md): what you need, and installing Glowcast with HACS
 2. [Setup](setup.md): choosing the TV, then an entertainment area on the Hue bridge or loose lights
 3. [Starting automatically](starting.md): the switch, and the blueprint that starts Glowcast with the TV

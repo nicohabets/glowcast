@@ -107,7 +107,10 @@ nav:
       - A computer screen: docs/computer-screen.md
       - Uninstalling: docs/uninstalling.md
       - Privacy: docs/privacy.md
-  # The user guide (#20) adds its section here, as
-  #   - User guide:
-  #       - <its pages under guide/>
+  - User guide:
+      - guide/index.md
+      - Choosing your lights: guide/lights.md
+      - Installing and setting up: guide/setup.md
+      - The first evening: guide/first-evening.md
+      - When something is wrong: guide/problems.md
   - Releases: https://github.com/nicohabets/glowcast/releases
