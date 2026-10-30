@@ -12,8 +12,6 @@
 
 *The picture changes; a moment later the lights around the TV and in the room follow it.*
 
-<!-- PHOTO OF THE LIGHTS (#87): the product owner adds a photo or short animation here of a TV with the lights following the picture, as docs/images/lights.jpg (or .gif / .webp, under about 5 MB), in the same form as the images below: an img with width="400", alt text and an absolute raw.githubusercontent.com URL, then a one-line caption in italics. -->
-
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
 **The full documentation is on Glowcast's website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).** This README is the short version.
