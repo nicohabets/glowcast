@@ -118,7 +118,7 @@ More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).
 
 ## Reporting a problem
 
-Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and attach Glowcast's diagnostics: **Settings → Devices & services → Glowcast → ⋮ → Download diagnostics**. Keys, addresses, ids, serial numbers and names are left out, but have a look before you post it: issues on GitHub are public. **Tried it on your TV?** Please [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md), also when it just works.
+Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and attach Glowcast's diagnostics: **Settings → Devices & services → Glowcast → ⋮ → Download diagnostics**. Keys, addresses, ids, serial numbers and names are left out, but have a look before you post it: issues on GitHub are public. **Tried it on your TV?** Press **Run hardware check** on Glowcast's device page, then [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with the diagnostics, also when it just works.
 
 More: [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
 

@@ -34,4 +34,4 @@ Thanks for trying Glowcast! Reports from TV models we have not tested are the mo
 
 ## Diagnostics
 
-<!-- Once Glowcast can download diagnostics (#21), please attach that file here. Check it for personal details before attaching. -->
+<!-- Please run the hardware check first: turn the TV on with a picture, press "Run hardware check" on Glowcast's device page (Settings → Devices & services → Glowcast → the device, under Diagnostic) and wait for the notification that it is done (up to about 30 s). Then download the diagnostics (Settings → Devices & services → Glowcast → ⋮ → Download diagnostics) and attach the file here. It has your TV's and bridge's model and versions and how the TV answers screenshots, without names, addresses or keys; have a look before you attach it. More: https://nicohabets.github.io/glowcast/docs/troubleshooting/#the-hardware-check -->
