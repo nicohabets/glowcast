@@ -275,7 +275,7 @@ class GlowcastData:
             for output_type in OUTPUTS.values()
             for issue in (
                 *output_type.stop_issues.values(),
-                output_type.notice,
+                *(notice.issue for notice in output_type.notices),
                 *((output_type.missing,) if missing else ()),
             )
         ]
@@ -383,27 +383,26 @@ class GlowcastData:
             update()
 
     async def _async_check_notices(self, pipeline: Pipeline) -> None:
-        """Raise or remove each output part's notice, now the lights are claimed."""
+        """Raise or remove each output part's notices, now the lights are claimed."""
         output = self._entry.options[CONF_OUTPUT]
         for _, output_type, part_opts in self._parts():
-            if output_type.notice is None or output_type.async_notice is None:
-                continue
-            placeholders = await output_type.async_notice(
-                self._hass, self._entry.data, part_opts
-            )
-            if (
-                pipeline is not self._pipeline
-                or self._entry.options[CONF_OUTPUT] != output
-            ):
-                return  # stopped or changed meanwhile; the next claim checks
-            if placeholders is None:
-                ir.async_delete_issue(
-                    self._hass,
-                    DOMAIN,
-                    issue_id(self._entry.entry_id, output_type.notice.key),
+            for notice in output_type.notices:
+                placeholders = await notice.check(
+                    self._hass, self._entry.data, part_opts
                 )
-            else:
-                self._raise_issue(output_type.notice.key, placeholders)
+                if (
+                    pipeline is not self._pipeline
+                    or self._entry.options[CONF_OUTPUT] != output
+                ):
+                    return  # stopped or changed meanwhile; the next claim checks
+                if placeholders is None:
+                    ir.async_delete_issue(
+                        self._hass,
+                        DOMAIN,
+                        issue_id(self._entry.entry_id, notice.issue.key),
+                    )
+                else:
+                    self._raise_issue(notice.issue.key, placeholders)
 
     def _remove_issues_except(self, dropped: Mapping[str, StopReason]) -> None:
         """Remove the entry's repair issues, but not those of dropped parts.
@@ -417,9 +416,9 @@ class GlowcastData:
             for issue in (output_type.missing, output_type.stop_issues.get(reason))
             if issue is not None
         } | {
-            output_type.notice.key
+            notice.issue.key
             for output_type in OUTPUTS.values()
-            if output_type.notice is not None
+            for notice in output_type.notices
         }
         for key in issue_keys():
             if key not in keep:
@@ -518,7 +517,7 @@ class GlowcastData:
                 (
                     output_type.missing,
                     *output_type.stop_issues.values(),
-                    output_type.notice,
+                    *(notice.issue for notice in output_type.notices),
                 )
             )
         issue = next(
@@ -558,7 +557,11 @@ def issue_keys() -> list[str]:
                 for output_type in OUTPUTS.values()
                 for issue in output_type.stop_issues.values()
             ),
-            *(output_type.notice for output_type in OUTPUTS.values()),
+            *(
+                notice.issue
+                for output_type in OUTPUTS.values()
+                for notice in output_type.notices
+            ),
         ]
     )
 

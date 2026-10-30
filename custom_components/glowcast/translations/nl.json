@@ -409,6 +409,10 @@
     "loose_lights_in_area": {
       "title": "Glowcast {name}: losse lampen in de entertainmentruimte",
       "description": "{lights} zijn in de Hue-app aan de entertainmentruimte toegevoegd en volgen het beeld dus via de ruimte. Glowcast laat ze weg uit de losse lampen, zodat ze niet twee kleuren krijgen. Wil je deze melding kwijt, kies dan de losse lampen opnieuw zonder deze lampen in de instellingen van Glowcast (Configureren, dan \"Entertainmentruimte en losse lampen\"), of haal ze in de Hue-app uit de entertainmentruimte. De melding wordt opnieuw gecontroleerd zodra Glowcast de lampen weer overneemt."
+    },
+    "ha_lights_streamed_elsewhere": {
+      "title": "Glowcast {name}: losse lampen in een ruimte die een andere app synchroniseert",
+      "description": "{lights} zitten in de entertainmentruimte {areas}, die nu door een andere app gesynchroniseerd wordt, bijvoorbeeld een Hue Sync Box of de Hue Sync-app. Zolang die synchroniseert, negeert de Hue-bridge andere opdrachten aan deze lampen, dus volgen ze Glowcast niet; de andere lampen werken gewoon, en deze volgen weer zodra de andere app stopt. Wil je dat ze Glowcast volgen, kies dan in de instellingen van Glowcast (Configureren) losse lampen die niet in die ruimte zitten, of haal ze in de Hue-app uit de ruimte. De melding wordt opnieuw gecontroleerd zodra Glowcast de lampen weer overneemt."
     }
   },
   "exceptions": {

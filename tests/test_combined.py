@@ -988,7 +988,7 @@ async def test_the_notice_says_what_the_start_left_out(
     entry = combined_entry(hass, output)
     area_with(bridge, strip)
     options = part_options(entry.options, output["parts"][1])
-    notice = OUTPUTS["ha_lights"].async_notice
+    notice = OUTPUTS["ha_lights"].notices[0].check
     assert await notice(hass, entry.data, options) is None  # not started yet
 
     ha_lights = OUTPUTS["ha_lights"].create(hass, entry.data, options)

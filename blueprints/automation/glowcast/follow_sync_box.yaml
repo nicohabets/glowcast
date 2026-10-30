@@ -1,0 +1,95 @@
+blueprint:
+  name: Follow a Hue Sync Box
+  description: >-
+    Turns the Glowcast switch on when a Philips Hue Play HDMI Sync Box starts
+    syncing, and off when it stops, so Glowcast's Home Assistant lights follow
+    the picture together with the box's own Hue lights. Choose an entity that
+    is on while the box syncs: the "Light sync" switch of the Hue Sync Box
+    integration (HACS), or the binary sensor of the box's entertainment area
+    from the Hue integration. Use Glowcast with Home Assistant lights only,
+    none of them in the box's entertainment area. A restart of Home Assistant
+    normally does not start Glowcast.
+  domain: automation
+  source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/follow_sync_box.yaml
+  homeassistant:
+    min_version: 2026.8.3
+  input:
+    syncing:
+      name: Sync Box syncing
+      description: >-
+        An entity that is on while the box syncs, for example the box's "Light
+        sync" switch, or the binary sensor of its entertainment area.
+      selector:
+        entity:
+          filter:
+            - domain:
+                - switch
+                - binary_sensor
+    glowcast_switch:
+      name: Glowcast switch
+      description: The Glowcast switch that drives the Home Assistant lights.
+      selector:
+        entity:
+          filter:
+            - domain: switch
+              integration: glowcast
+    tv:
+      name: TV (optional)
+      description: >-
+        Only start Glowcast while this TV is on (not off or in standby), for example when the box also
+        syncs for another screen. Leave empty to start whenever the box syncs.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+
+# The latest change of the box wins: if it starts and stops quickly, the run
+# for "on" is replaced by the run for "off". Each run is one short action
+# (Glowcast starts in the background), so a restart loses nothing.
+mode: restart
+
+variables:
+  tv: !input tv
+
+triggers:
+  # From "off" or "unavailable" only: when Home Assistant starts while the box
+  # syncs, the entity goes from "unknown" to "on", and that must not start
+  # Glowcast. "unavailable" also catches a short drop of the box's
+  # connection while it syncs (on -> unavailable -> on), which turns Glowcast
+  # on again.
+  - trigger: state
+    entity_id: !input syncing
+    from:
+      - "off"
+      - "unavailable"
+    to: "on"
+    id: sync_on
+  # Only from "on" to "off": a short drop to "unavailable" does not stop
+  # Glowcast.
+  - trigger: state
+    entity_id: !input syncing
+    from: "on"
+    to: "off"
+    id: sync_off
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: sync_on
+          - condition: template
+            value_template: >-
+              {{ not tv or states(tv) not in
+                 ['off', 'standby', 'unavailable', 'unknown'] }}
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input glowcast_switch
+      - conditions:
+          - condition: trigger
+            id: sync_off
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input glowcast_switch
