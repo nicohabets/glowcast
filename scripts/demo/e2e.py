@@ -36,13 +36,23 @@ from typing import Any
 
 import aiohttp
 from fake_bridge import AREAS, TV_AREA_ID, channel_position
+from room_harness import load_core
 
 REPO = Path(__file__).resolve().parent.parent.parent
 HELPER_NAME = "Test PC"  # generic, never the computer's name
 PAIRING_CODE = "123456"
-# Seconds per pattern: long enough for the black pattern's hold, release and
-# the next pattern's claim, with a settled stretch in each.
-INTERVAL = 6.0
+# How long all-zero frames last before the pipeline releases the lights,
+# from the working copy's core/ (loaded without Home Assistant).
+NO_PICTURE_WAIT: float = load_core(
+    REPO / "custom_components" / "glowcast" / "core", "glowcast_e2e_core"
+).pipeline.NO_PICTURE_WAIT
+# Seconds per pattern: long enough for the black pattern's hold and release
+# (NO_PICTURE_WAIT) and the next pattern's claim, with a settled stretch in each.
+INTERVAL = NO_PICTURE_WAIT + 3.0
+# The release comes NO_PICTURE_WAIT after the first all-zero frame, which
+# Glowcast gets up to a capture interval after black starts, plus the stop.
+RELEASE_EARLY = 0.5
+RELEASE_LATE = 2.0
 # Colours are compared from this long after a pattern starts (the capture
 # interval, the fade and the stream's latency), up to MARGIN before it ends.
 SETTLE = 2.0
@@ -654,9 +664,11 @@ def check_black(
     bridge: Bridge, watcher: Watcher, start: float, white: tuple[int, ...]
 ) -> dict[str, Any]:
     """All-zero frames are no picture (#68): the last colours (white) hold,
-    and after NO_PICTURE_WAIT (3 s) the lights are released; the stream stops.
+    and after NO_PICTURE_WAIT the lights are released; the stream stops.
 
-    Not the glow: that is for a black picture that is not all zero.
+    Before the release, the colours hold (and fade to the glow if
+    NO_PICTURE_WAIT is longer than the light state's hold on black); only
+    the first stretch, well within that hold, is compared.
     """
     frames = bridge.frames(start + 0.8, start + 2.3)
     hold = colours(frames, dict.fromkeys(CHANNELS, white))
@@ -666,11 +678,14 @@ def check_black(
     if not stops:
         raise Failed("no `action: stop` for the area during the black pattern")
     delay = stops[0] - start
-    if not 2.5 <= delay <= 5.0:
-        raise Failed(f"released {delay:.2f} s after black, not after about 3 s")
-    late = bridge.frames(stops[0], start + INTERVAL)
-    if late:
-        raise Failed(f"{len(late)} messages after the release")
+    early, late = NO_PICTURE_WAIT - RELEASE_EARLY, NO_PICTURE_WAIT + RELEASE_LATE
+    if not early <= delay <= late:
+        raise Failed(
+            f"released {delay:.2f} s after black, not after about "
+            f"{NO_PICTURE_WAIT:g} s (NO_PICTURE_WAIT)"
+        )
+    if after := bridge.frames(stops[0], start + INTERVAL):
+        raise Failed(f"{len(after)} messages after the release")
     if not watcher.seen("no_picture", start, start + INTERVAL + 1):
         raise Failed("the status sensor never showed no_picture")
     return {"hold": hold, "released_after_s": round(delay, 2), "status": "no_picture"}
