@@ -52,6 +52,10 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 
 *Setting up Glowcast: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
 
+<img width="400" alt="The Glowcast setup flow with Home Assistant lights in Home Assistant: choose LG webOS TV and the TV, choose Home Assistant lights, follow a Home Assistant area, choose the area Living Room, put Floor lamp left of the screen, fine-tune Light bar with the two sliders, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/ha-lights-setup.gif">
+
+*Or with Home Assistant lights: the TV, Home Assistant lights, a Home Assistant area, then a place for each light. More: [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/).*
+
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
 Updates show up in HACS and under Settings → System → Updates.
