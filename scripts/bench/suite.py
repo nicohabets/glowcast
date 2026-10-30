@@ -57,6 +57,8 @@ SCREEN_SEQUENCE: list[tuple[str, float, str]] = [
 ]
 SETTLE = 2.0  # seconds after a change before a colour counts as settled
 SAME_X = 0.2  # channels closer than this in x cannot show left and right
+# The exposures the calibration tries (log2 seconds, DirectShow).
+EXPOSURES = (-11.0, -10.0, -9.0, -8.0, -7.0, -6.0, -5.0)
 
 
 def iso_to_epoch(value: str) -> float:
@@ -65,6 +67,11 @@ def iso_to_epoch(value: str) -> float:
 
 class BenchError(Exception):
     """The bench itself could not go on (not a failure of Glowcast)."""
+
+
+class CalibrationError(Exception):
+    """The calibration failed: a light or the monitor not found, no usable
+    exposure, or too much ambient light. The detail goes to the terminal."""
 
 
 class Skipped(Exception):
@@ -123,6 +130,10 @@ class Bench:
         self.ha_start: asyncio.Future[Any] | None = None
         # Screen-mode changes timed by the window instead of the camera.
         self.window_timed = 0
+        # The bench area and the bridge's entertainment services (left/right).
+        self.bench_area: dict[str, Any] = {}
+        # Each light's side from the bridge ("left"/"right"), or None.
+        self.sides: dict[str, str] | None = None
         # Both Home Assistant tokens (the product owner's and the local one).
         self.tokens: list[str] = []
         # Picture changes on the Windows clock: [mode, picture, time].
@@ -280,6 +291,7 @@ class Bench:
         bench = next((a for a in areas if a["id"] == self.cfg["bench_area_id"]), None)
         if bench is None:
             raise BenchError("the bench area is not on the bridge")
+        self.bench_area = bench
         self.light_rids = [s["rid"] for s in bench.get("light_services", [])]
         self.channel_xs = [
             c.get("position", {}).get("x", 0.0) for c in bench.get("channels", [])
@@ -333,45 +345,234 @@ class Bench:
         for rid in self.light_rids:
             self.pre_bridge[rid] = await self.bridge.light(rid)
 
-    async def calibrate(self) -> None:
-        """The pre-run picture, the white and dark references, then the lights back."""
+    async def set_light(self, name: str, kelvin: int | None) -> None:
+        """One bench light at full brightness in this white, or off (None)."""
         assert self.owner is not None
-        pre = await self.measure(1.0)
-        self.pre_camera = {name: pre[name] for name in self.lights}
-        await self.save_image("pre-run")
+        entity = self.lights[name]["entity_id"]
+        if kelvin is None:
+            await self.owner.call(
+                "light", "turn_off", {"entity_id": entity, "transition": 0}
+            )
+            return
+        await self.owner.call(
+            "light",
+            "turn_on",
+            {
+                "entity_id": entity,
+                "brightness": 255,
+                "color_temp_kelvin": kelvin,
+                "transition": 0,
+            },
+        )
+
+    async def set_lights(self, kelvin: int | None) -> None:
+        for name in self.lights:
+            await self.set_light(name, kelvin)
+
+    async def camera_command(self, command: str, event: str) -> dict[str, Any]:
+        assert self.camera is not None
+        self.camera.send(command)
+        return await self.camera.wait_event(lambda e: e["event"] == event, 15)
+
+    async def grab(self, name: str) -> None:
+        assert self.camera is not None
+        self.camera.send(f"grab {name} 12")
+        await self.camera.wait_event(
+            lambda e: e["event"] == "grabbed" and e["name"] == name, 15
+        )
+
+    async def start_screen(self) -> None:
+        if self.screen is not None:
+            return
+        monitor = self.cfg["monitor"]
+        self.screen = winproc.Worker(
+            "screen",
+            [
+                self.uv,
+                "run",
+                "--no-project",
+                "-q",
+                "python",
+                "scripts/bench/win/screen.py",
+                "--left",
+                str(monitor[0]),
+                "--top",
+                str(monitor[1]),
+                "--width",
+                str(monitor[2]),
+                "--height",
+                str(monitor[3]),
+            ],
+        )
+        await self.screen.start()
+        await self.screen.wait_event(lambda e: e["event"] == "started", 120)
+
+    async def stop_screen(self) -> None:
+        if self.screen is not None:
+            await self.screen.stop()
+            self.screen = None
+
+    async def calibrate(self) -> None:
+        """Every run starts here: where the lights and the monitor are in the
+        picture, the exposure, the ambient light, the white, cool and dark
+        references and each light's side; then the lights back."""
+        await self.locate_regions()
+        await self.pick_exposure()
+        await self.references()
+
+    async def locate_regions(self) -> None:
+        """Find each light by switching it on alone, and the monitor by flashing
+        the window: the camera worker compares the frames (win/locate.py)."""
+        assert self.bridge is not None
         kelvin = self.cfg.get("calibration_kelvin", 2700)
-        for light in self.lights.values():
-            await self.owner.call(
-                "light",
-                "turn_on",
-                {
-                    "entity_id": light["entity_id"],
-                    "brightness": 255,
-                    "color_temp_kelvin": kelvin,
-                    "transition": 0,
-                },
-            )
+        monitor = "monitor" in self.regions and bool(self.cfg.get("monitor"))
+        if monitor:
+            await self.start_screen()
+            await self.show("#000000")
+        await self.set_lights(None)
         await asyncio.sleep(2.5)
-        start = self.win_now()
-        white = await self.measure(1.0)
-        clip = {name: self.p95(name, start, start + 1) for name in self.lights}
-        for light in self.lights.values():
-            await self.owner.call(
-                "light",
-                "turn_on",
-                {
-                    "entity_id": light["entity_id"],
-                    "brightness": 255,
-                    "color_temp_kelvin": self.cfg.get("cool_kelvin", 6500),
-                    "transition": 0,
-                },
+        await self.grab("off")
+        rid_of: dict[str, str | None] = {}
+        for name in self.lights:
+            await self.set_light(name, kelvin)
+            await asyncio.sleep(2.5)
+            await self.grab(f"on-{name}")
+            on = [
+                rid for rid in self.light_rids if (await self.bridge.light(rid))["on"]
+            ]
+            rid_of[name] = on[0] if len(on) == 1 else None
+            await self.set_light(name, None)
+            await asyncio.sleep(1.5)
+        targets: dict[str, Any] = {
+            name: {
+                "on": f"on-{name}",
+                "off": "off",
+                "size": self.regions[name][2:],
+                "others": [f"on-{o}" for o in self.lights if o != name],
+            }
+            for name in self.lights
+        }
+        if monitor:
+            await self.show("#ffffff")
+            await asyncio.sleep(1.0)
+            await self.grab("on-monitor")
+            await self.show("#000000")
+            targets["monitor"] = {
+                "on": "on-monitor",
+                "off": "off",
+                "size": self.regions["monitor"][2:],
+                "others": [f"on-{n}" for n in self.lights],
+            }
+            await self.stop_screen()
+        located = await self.camera_command("locate " + json.dumps(targets), "located")
+        self.camera_command_nowait("forget")
+        found_regions: dict[str, list[int]] = {}
+        missing = []
+        for name, result in located["targets"].items():
+            label = "monitor" if name == "monitor" else self.label[name]
+            cal = self.report.calibration
+            cal[f"{label} found (mean change per pixel)"] = result["found"]
+            cal[f"{label} region"] = result["box"]
+            cal[f"{label} moved (px)"] = rp.moved(self.regions[name], result["box"])
+            if result["found"] < self.th.min_found:
+                missing.append(label)
+            found_regions[name] = result["box"]
+        if missing:
+            print(
+                f"Not found in the camera picture: {', '.join(missing)} "
+                "(camera moved or blocked, or a light does not respond?)",
+                file=sys.stderr,
             )
+            raise CalibrationError("a light or the monitor was not found")
+        self.regions.update(found_regions)
+        await self.camera_command("regions " + json.dumps(self.regions), "regions")
+        # Left and right from the bridge: each light's channel x.
+        services = await self.bridge.entertainment()
+        xs = {
+            name: (
+                None if rid is None else rp.channel_x(self.bench_area, services, rid)
+            )
+            for name, rid in rid_of.items()
+        }
+        self.sides = rp.sides(xs, SAME_X)
+        consistent = None not in rid_of.values() and len(set(rid_of.values())) == len(
+            rid_of
+        )
+        for name, x in xs.items():
+            self.report.calibration[f"{self.label[name]} channel x"] = x
+            self.report.calibration[f"{self.label[name]} side"] = (
+                self.sides or {}
+            ).get(name, "-")
+        self.report.calibration["light, bridge light and region match"] = (
+            "yes" if consistent else "no"
+        )
+
+    def camera_command_nowait(self, command: str) -> None:
+        assert self.camera is not None
+        self.camera.send(command)
+
+    async def sweep(self) -> dict[float, dict[str, tuple[rp.RGB, float]]]:
+        """Per exposure, each light region's mean and 95th percentile."""
+        out: dict[float, dict[str, tuple[rp.RGB, float]]] = {}
+        for exposure in EXPOSURES:
+            await self.camera_command(f"exposure {exposure}", "exposure")
+            await asyncio.sleep(0.8)
+            start = self.win_now()
+            means = await self.measure(0.5)
+            out[exposure] = {
+                name: (means[name], self.p95(name, start, start + 0.5))
+                for name in self.lights
+            }
+        return out
+
+    async def pick_exposure(self) -> None:
+        """The brightest fixed exposure at which no light region clips (white
+        balance stays fixed); a region that clips at every exposure (a
+        spot's core) is judged on its rim, as in #133."""
+        kelvin = self.cfg.get("calibration_kelvin", 2700)
+        await self.set_lights(kelvin)
+        await asyncio.sleep(2.5)
+        white = await self.sweep()
+        await self.set_lights(None)
+        await asyncio.sleep(2.5)
+        dark = await self.sweep()
+        table = {
+            e: {
+                name: (white[e][name][0], dark[e][name][0], white[e][name][1])
+                for name in self.lights
+            }
+            for e in EXPOSURES
+        }
+        chosen, always = rp.choose_exposure(table, self.th)
+        cal = self.report.calibration
+        for e in EXPOSURES:
+            cal[f"exposure {e:g}: white p95"] = [
+                round(table[e][n][2]) for n in self.lights
+            ]
+        if chosen is None:
+            print("No exposure keeps every light in range.", file=sys.stderr)
+            raise CalibrationError("no usable exposure")
+        await self.camera_command(f"exposure {chosen}", "exposure")
+        await asyncio.sleep(0.8)
+        cal["exposure (log2 s)"] = chosen
+        cal["white balance (K), fixed"] = self.cfg.get("camera", {}).get(
+            "wb_temperature", 4000
+        )
+        cal["clips at every exposure"] = (
+            ", ".join(self.label[n] for n in always) or "none"
+        )
+
+    async def references(self) -> None:
+        """White (warm), cool and dark references at the chosen exposure, the
+        ambient light, then the lights back and their picture as the run's
+        reference for every restore."""
+        await self.set_lights(self.cfg.get("calibration_kelvin", 2700))
+        await asyncio.sleep(2.5)
+        white = await self.measure(1.0)
+        await self.set_lights(self.cfg.get("cool_kelvin", 6500))
         await asyncio.sleep(2.5)
         cool = await self.measure(1.0)
-        for light in self.lights.values():
-            await self.owner.call(
-                "light", "turn_off", {"entity_id": light["entity_id"], "transition": 0}
-            )
+        await self.set_lights(None)
         await asyncio.sleep(2.5)
         dark = await self.measure(1.0)
         self.cal = {
@@ -379,27 +580,55 @@ class Bench:
             for name in self.lights
         }
         self.calibrated = True
-        restored_at = self.win_now()
-        await self.restore_lights()
-        back = await self.wait_restored(restored_at)
-        ok = all(t is not None for t in back.values())
-        numbers: dict[str, Any] = {}
-        for name in self.lights:
-            numbers[f"{self.label[name]} pre-run level"] = round(
-                self.cal[name].level(self.pre_camera[name]), 3
+        ambient = {
+            name: rp.ambient_ratio(dark[name], white[name]) for name in self.lights
+        }
+        for name, ratio in ambient.items():
+            self.report.calibration[f"{self.label[name]} ambient / white"] = round(
+                ratio, 3
             )
-            numbers[f"{self.label[name]} white p95"] = clip[name]
+        await self.restore_lights()
+        await asyncio.sleep(3.0)
+        first = await self.measure(1.0)
+        second = await self.measure(1.0)
+        self.pre_camera = {name: second[name] for name in self.lights}
+        await self.save_image("pre-run")
+        steady = all(
+            rp.difference(first[n], second[n], self.cal[n]) <= self.th.same_picture
+            for n in self.lights
+        )
+        too_bright = [n for n, r in ambient.items() if r > self.th.max_ambient]
+        numbers: dict[str, Any] = {
+            f"{self.label[n]} pre-run level": round(
+                self.cal[n].level(self.pre_camera[n]), 3
+            )
+            for n in self.lights
+        }
+        ok = steady and not too_bright
         self.report.add(
             Step(
-                "calibration: white and dark references, lights back (camera)",
+                "calibration: camera position, exposure, ambient light, references",
                 "-",
                 PASS if ok else FAIL,
                 numbers=numbers,
-                note="" if ok else "a light did not come back to its pre-run picture",
+                note=""
+                if ok
+                else (
+                    "too much ambient light"
+                    if too_bright
+                    else "the lights' own picture is not steady"
+                ),
             )
         )
-        if not ok:
-            raise BenchError("the lights did not come back after the calibration")
+        if too_bright:
+            print(
+                "Too much ambient light (daylight?): "
+                + ", ".join(f"{self.label[n]} {ambient[n]:.2f}" for n in too_bright),
+                file=sys.stderr,
+            )
+            raise CalibrationError("too much ambient light")
+        if not steady:
+            raise CalibrationError("the lights' own picture is not steady")
 
     async def restore_lights(self) -> None:
         """Put the bench lights explicitly back in their pre-run state (#142)."""
@@ -733,12 +962,8 @@ class Bench:
                 out.setdefault(name, []).append((t - change) * 1000)
 
     def positions_differ(self) -> bool:
-        sides = [light.get("side") for light in self.lights.values()]
-        return (
-            bool(self.channel_xs)
-            and max(self.channel_xs) - min(self.channel_xs) >= SAME_X
-            and all(sides)
-        )
+        """Whether the lights' channels sit at different x (from the bridge)."""
+        return self.sides is not None
 
     def left_right_step(self, mode: str, start: float, end: float) -> None:
         if not self.positions_differ():
@@ -747,22 +972,22 @@ class Bench:
                     "left-red-right-blue: each light the colour of its side",
                     mode,
                     SKIP,
-                    note="the area's channels sit at the same x "
-                    "(or no side is configured)",
+                    note="the lights' channels sit at the same x on the bridge",
                 )
             )
             return
         samples = self.samples()
         ok = True
         numbers: dict[str, Any] = {}
-        for name, light in self.lights.items():
+        assert self.sides is not None
+        for name in self.lights:
             mean = rp.settled(samples, name, start + SETTLE + 2, end - 0.3)
-            expected = "red" if light["side"] == "left" else "blue"
+            expected = "red" if self.sides[name] == "left" else "blue"
             good = mean is not None and rp.matches_colour(
                 expected, mean, self.cal[name], self.th
             )
             ok &= good
-            numbers[f"{self.label[name]} seen"] = (
+            numbers[f"{self.label[name]} {self.sides[name]} seen"] = (
                 None if mean is None else rp.classify(mean, self.cal[name], self.th)
             )
         self.report.add(
@@ -1063,28 +1288,7 @@ class Bench:
 
     async def screen_mode(self) -> None:
         mode = "screen"
-        monitor = self.cfg["monitor"]
-        self.screen = winproc.Worker(
-            "screen",
-            [
-                self.uv,
-                "run",
-                "--no-project",
-                "-q",
-                "python",
-                "scripts/bench/win/screen.py",
-                "--left",
-                str(monitor[0]),
-                "--top",
-                str(monitor[1]),
-                "--width",
-                str(monitor[2]),
-                "--height",
-                str(monitor[3]),
-            ],
-        )
-        await self.screen.start()
-        await self.screen.wait_event(lambda e: e["event"] == "started", 120)
+        await self.start_screen()
         await self.start_helper(mode)
         if not await self.screen_self_check(mode):
             return

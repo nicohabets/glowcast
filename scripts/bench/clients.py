@@ -249,6 +249,10 @@ class Bridge:
     async def areas(self) -> list[dict[str, Any]]:
         return (await self._get(self.AREAS))[1].get("data", [])
 
+    async def entertainment(self) -> list[dict[str, Any]]:
+        """The entertainment services (each renders one light)."""
+        return (await self._get("/clip/v2/resource/entertainment"))[1].get("data", [])
+
     async def area(self, area_id: str) -> dict[str, Any] | None:
         return next((a for a in await self.areas() if a["id"] == area_id), None)
 

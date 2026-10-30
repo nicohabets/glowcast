@@ -38,6 +38,7 @@ EXIT_OTHER_AREA = 3  # skipped: the bridge streams another area
 EXIT_LOCKED = 4  # skipped: another bench run holds the lock
 EXIT_TV_AREA_OTHER_APP = 5  # skipped: another app streams the TV's area
 EXIT_ERROR = 6  # the run could not complete (the bench itself, not Glowcast)
+EXIT_CALIBRATION = 7  # the calibration failed: a light not found, too much ambient
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
 
@@ -66,6 +67,14 @@ class Thresholds:
     impurity_margin: float = 0.1
     stream_within_s: float = 15.0
     restore_within_s: float = 6.0
+    # Calibration: a light is found when its window brightens this much per
+    # pixel (0-765); a region clips at this 95th percentile; the lights in
+    # warm white must lift a region at least this much (sum of RGB) above
+    # dark; ambient light (lights off) may be at most this share of white.
+    min_found: float = 30.0
+    clip_p95: float = 240.0
+    min_white_lift: float = 60.0
+    max_ambient: float = 0.35
 
 
 @dataclasses.dataclass(frozen=True)
@@ -324,6 +333,7 @@ class Report:
     started: str
     steps: list[Step] = dataclasses.field(default_factory=list)
     delays: dict[str, dict[str, Any]] = dataclasses.field(default_factory=dict)
+    calibration: dict[str, Any] = dataclasses.field(default_factory=dict)
     facts: dict[str, Any] = dataclasses.field(default_factory=dict)
     outcome: str = "running"
     exit_code: int = EXIT_PASSED
@@ -357,6 +367,10 @@ class Report:
         if self.facts:
             lines += ["| Run | Value |", "|---|---|"]
             lines += [f"| {k} | {_cell(v)} |" for k, v in self.facts.items()]
+            lines.append("")
+        if self.calibration:
+            lines += ["Calibration:", "", "| Calibration | Value |", "|---|---|"]
+            lines += [f"| {k} | {_cell(v)} |" for k, v in self.calibration.items()]
             lines.append("")
         if self.delays:
             lines += [
@@ -401,6 +415,81 @@ def _cell(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return "(" + ", ".join(_cell(v) for v in value) + ")"
     return str(value)
+
+
+def choose_exposure(
+    sweep: dict[float, dict[str, tuple[Sequence[float], Sequence[float], float]]],
+    th: Thresholds,
+) -> tuple[float | None, list[str]]:
+    """The fixed exposure for the run, from a sweep with the lights in warm white
+    at full brightness: per exposure and region (white mean, dark mean, p95).
+
+    The brightest exposure at which no region clips and every region is lifted
+    well above dark. A region that clips at every exposure (a spot's core) is
+    left out of the clipping rule and returned, so the report can say it.
+    Returns (None, ...) when no exposure fits.
+    """
+    regions = {r for values in sweep.values() for r in values}
+    always = sorted(
+        r
+        for r in regions
+        if all(v[r][2] >= th.clip_p95 for v in sweep.values() if r in v)
+    )
+    fits = [
+        exposure
+        for exposure, values in sweep.items()
+        if all(
+            (r in always or p95 < th.clip_p95)
+            and sum(w - d for w, d in zip(white[:3], dark[:3], strict=True))
+            >= th.min_white_lift
+            for r, (white, dark, p95) in values.items()
+        )
+    ]
+    return (max(fits) if fits else None), always
+
+
+def ambient_ratio(dark: Sequence[float], white: Sequence[float]) -> float:
+    """The light with the lights off (daylight, a lamp) as a share of the
+    lights' warm white at full brightness, in one region."""
+    return sum(dark[:3]) / max(sum(white[:3]), 1.0)
+
+
+def moved(configured: Sequence[int], found: Sequence[int]) -> float:
+    """How far a region's centre moved, in camera pixels."""
+    cx = configured[0] + configured[2] / 2 - (found[0] + found[2] / 2)
+    cy = configured[1] + configured[3] / 2 - (found[1] + found[3] / 2)
+    return round((cx * cx + cy * cy) ** 0.5, 1)
+
+
+def channel_x(
+    area: dict[str, Any], services: list[dict[str, Any]], light_rid: str
+) -> float | None:
+    """The x position of the area's channel that holds this light (bridge data:
+    the channel's members are entertainment services, each renders a light)."""
+    renders = {
+        s["id"]: (s.get("renderer_reference") or {}).get("rid") for s in services
+    }
+    for channel in area.get("channels", []):
+        for member in channel.get("members", []):
+            if renders.get(member.get("service", {}).get("rid")) == light_rid:
+                return channel.get("position", {}).get("x")
+    return None
+
+
+def sides(xs: dict[str, float | None], min_spread: float) -> dict[str, str] | None:
+    """Left and right per light from their channels' x, or None when the
+    positions do not differ by `min_spread` (or one is unknown)."""
+    if not xs or any(x is None for x in xs.values()):
+        return None
+    values = [x for x in xs.values() if x is not None]
+    if max(values) - min(values) < min_spread:
+        return None
+    middle = (max(values) + min(values)) / 2
+    return {
+        name: "left" if x < middle else "right"
+        for name, x in xs.items()
+        if x is not None
+    }
 
 
 def describe_error(err: BaseException) -> str:

@@ -15,6 +15,13 @@ Usage:
 `log` reads commands on standard input, one per line:
     ping            answers {"event": "pong", "t": <time.time()>}
     snapshot PATH   saves the next frame as a PNG (regions drawn on it)
+    exposure N      sets the fixed exposure (log2 seconds), answers "exposure"
+    regions JSON    measures these regions from now on
+    grab NAME N     keeps the mean of the next N frames in memory as NAME
+    locate JSON     finds lights and the monitor in grabbed frames (locate.py):
+                    {"name": {"on": grab, "off": grab, "size": [w, h],
+                    "others": [grab, ...]}}, answers "located"
+    forget          drops the grabbed frames
     quit            stops
 It also stops when standard input closes.
 """
@@ -30,6 +37,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+from locate import change, locate
 
 # Spike #133: MJPG only sticks when the FOURCC is set after size and rate.
 DEFAULTS: dict[str, Any] = {
@@ -113,11 +121,22 @@ def log(regions: dict[str, list[int]], settings: dict[str, Any]) -> None:
     commands: queue.Queue[str] = queue.Queue()
     threading.Thread(target=_commands, args=(commands,), daemon=True).start()
     snapshot: str | None = None
+    grabs: dict[str, Any] = {}
+    grabbing: list[Any] = []  # [name, frames left, sum]
     while True:
         ok, frame = cap.read()
         t = time.time()
         if ok:
             _emit(t=round(t, 4), r=_measure(frame, regions))
+            if grabbing:
+                name, left, total = grabbing
+                total = frame.astype(np.float32) if total is None else total + frame
+                grabbing = [name, left - 1, total]
+                if left - 1 <= 0:
+                    count = max(1, int(grabs.pop(f"{name}#n", 1)))
+                    grabs[name] = total / count
+                    grabbing = []
+                    _emit(event="grabbed", name=name)
             if snapshot is not None:
                 cv2.imwrite(snapshot, _draw(frame, regions))
                 _emit(event="snapshot", path=snapshot)
@@ -132,6 +151,29 @@ def log(regions: dict[str, list[int]], settings: dict[str, Any]) -> None:
                 _emit(event="pong", t=time.time())
             elif command.startswith("snapshot "):
                 snapshot = command.split(" ", 1)[1]
+            elif command.startswith("exposure "):
+                value = float(command.split(" ", 1)[1])
+                cap.set(cv2.CAP_PROP_EXPOSURE, value)
+                _emit(event="exposure", value=value)
+            elif command.startswith("regions "):
+                regions = json.loads(command.split(" ", 1)[1])
+                _emit(event="regions")
+            elif command.startswith("grab "):
+                _, name, count = command.split()
+                grabs[f"{name}#n"] = int(count)
+                grabbing = [name, int(count), None]
+            elif command.startswith("locate "):
+                targets = json.loads(command.split(" ", 1)[1])
+                found = {}
+                for name, target in targets.items():
+                    off = grabs[target["off"]]
+                    others = [change(grabs[o], off) for o in target.get("others", [])]
+                    found[name] = locate(
+                        grabs[target["on"]], off, tuple(target["size"]), others
+                    )
+                _emit(event="located", targets=found)
+            elif command == "forget":
+                grabs.clear()
 
 
 def main() -> None:

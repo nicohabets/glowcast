@@ -24,7 +24,8 @@ home_assistant:
 # The bench lights: their entity in that Home Assistant and the camera region
 # [x, y, w, h] (in camera pixels, from `run.py snapshot`) that it lights.
 # Measure what a light lights, or include a spot's rim (spike #133).
-# `side` (left or right) only when the area's channels sit at different x.
+# Every run finds the regions itself (calibration); these are the starting
+# point and the sizes. Left and right come from the bridge.
 # `pure: true` on a light whose region shows clean colours (a lit wall, not a
 # clipped spot): the extended suite checks red and blue purity there.
 lights:

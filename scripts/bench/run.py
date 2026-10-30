@@ -17,7 +17,8 @@ Usage (from the repository root, in WSL on the bench's Windows computer):
 Exit codes: 0 passed, 1 a step failed, 2 usage or configuration error,
 3 skipped: the bridge streams another area, 4 skipped: another bench run
 holds the lock, 5 skipped: another app streams the TV's area, 6 the bench
-itself could not complete the run. See scripts/README.md.
+itself could not complete the run, 7 the calibration failed (a light or the
+monitor not found, no usable exposure, too much ambient light). See scripts/README.md.
 """
 
 from __future__ import annotations
@@ -419,6 +420,10 @@ async def run(
             outcome = ("aborted (Ctrl+C)", rp.EXIT_FAILED)
         except suite.Skipped as err:
             outcome = (str(err), err.exit_code)
+        except suite.CalibrationError as err:
+            print(f"The calibration failed: {err}", file=sys.stderr)
+            report.add(rp.Step("calibration failed", "-", rp.FAIL, note=str(err)))
+            outcome = ("calibration failed: " + str(err), rp.EXIT_CALIBRATION)
         except (suite.BenchError, clients.NotAllowed) as err:
             # The detail goes to the terminal; the report keeps fixed texts.
             print(f"The bench could not go on: {err}", file=sys.stderr)
