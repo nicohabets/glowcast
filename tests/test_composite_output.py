@@ -351,3 +351,82 @@ async def test_pipeline_with_a_combined_output() -> None:
     assert p.area_log[-2:] == ["output.stop", "output.close"]
     assert p.lights_log[-2:] == ["output.stop", "output.close"]
     assert log[-1] == "source.close"
+
+
+async def test_stop_during_a_slow_release_still_closes_the_part() -> None:
+    """Cancelling the retry must not cancel the lost part's release."""
+    p = Parts()
+    await p.start()
+    released = asyncio.Event()
+
+    async def slow_stop() -> None:
+        await released.wait()
+        p.area_log.append("output.stop")
+
+    p.area.stop = slow_stop  # type: ignore[method-assign]
+    p.area.check_error = OutputLost("dropped")
+    await p.output.check()
+    await settle()
+    await p.output.check()  # the retry waits for the release
+    stopping = asyncio.ensure_future(p.output.stop())
+    await settle()
+    released.set()
+    await stopping
+    # The release ran to its close, then stop() stopped the part once more.
+    assert p.area_log[1:3] == ["output.stop", "output.close"]
+
+
+async def test_a_part_waiting_for_its_retry_is_not_dropped_after_a_stop() -> None:
+    """Released for no picture: the part is claimed again at the next start."""
+    p = Parts()
+    await p.start()
+    p.area.check_error = OutputLost("dropped")
+    await p.tick(0.2)
+    p.area.check_error = None
+    assert "area" in p.output.dropped_parts
+    await p.output.stop()
+    await p.output.close()
+    assert p.output.dropped_parts == {}
+    channels = await p.start()
+    assert [c.id for c in channels] == ["0/0", "0/1", "1/0"]
+
+
+async def test_no_part_can_start_logs_one_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    p = Parts()
+    p.area.start_errors = [OutputBusy("another app streams")]
+    p.lights.start_errors = [OutputNotFound("no lights")]
+    caplog.set_level(logging.INFO)
+    with pytest.raises(OutputBusy):
+        await p.start()
+    # The pipeline logs the stop with the first error; the other is info.
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+    assert "lights could not start either (no lights)" in caplog.text
+
+
+async def test_last_part_failing_unexpectedly_raises_that_error() -> None:
+    """As for a single output: OUTPUT_UNAVAILABLE, not OUTPUT_LOST."""
+    p = Parts()
+    p.lights.start_errors = [OutputNotFound("gone")]
+    await p.start()
+    p.area.check_error = RuntimeError("bug")
+    await p.output.check()
+    await settle()
+    with pytest.raises(RuntimeError):
+        await p.output.check()
+
+
+async def test_a_failed_retry_of_the_last_part_is_output_gone() -> None:
+    p = Parts()
+    p.lights.start_errors = [OutputNotFound("gone")]
+    p.area.start_errors = [None, RuntimeError("bug in the retry")]
+    await p.start()
+    p.area.check_error = OutputLost("dropped")
+    await p.output.check()
+    await settle()
+    await p.output.check()  # the loss is handled: the retry waits
+    await p.clock.advance(5)
+    await settle()
+    with pytest.raises(OutputGone):
+        await p.output.check()

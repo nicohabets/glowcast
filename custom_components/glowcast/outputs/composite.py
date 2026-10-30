@@ -114,18 +114,21 @@ class CompositeOutput:
                 part.error, part.dropped = result, True
                 continue
             channels.extend(self._started(part, result))
+        if not channels and failed:
+            # The pipeline logs the stop with the first error; the others once.
+            for part, error in failed[1:]:
+                _LOGGER.info(
+                    "Glowcast: %s could not start either (%s)", part.name, error
+                )
+            raise failed[0][1]
         for part, error in failed:
             _LOGGER.warning(
-                "Glowcast: %s could not start (%s)%s",
+                "Glowcast: %s could not start (%s); it stays off until the next "
+                "start, the other lights start without it",
                 part.name,
                 error,
-                "; it stays off until the next start, the other lights start without it"
-                if channels
-                else "",
                 exc_info=not _is_port_error(error),
             )
-        if not channels and failed:
-            raise failed[0][1]
         return channels
 
     def send(self, colors: list[ChannelColor]) -> None:
@@ -170,8 +173,13 @@ class CompositeOutput:
             if part.check is None:
                 part.check = asyncio.ensure_future(part.output.check())
         if not any(part.running or part.retry is not None for part in self._parts):
-            if isinstance(self._last_error, OutputAuthFailed):
-                raise self._last_error
+            # As for a single output: a rejected key gives AUTH_FAILED, an
+            # unexpected error OUTPUT_UNAVAILABLE, anything else OUTPUT_LOST.
+            error = self._last_error
+            if isinstance(error, OutputAuthFailed) or (
+                error is not None and not _is_port_error(error)
+            ):
+                raise error
             raise OutputGone("None of the lights is left")
 
     async def stop(self) -> None:
@@ -233,11 +241,20 @@ class CompositeOutput:
     async def _async_retry(self, part: _Part) -> None:
         """Start a lost part again after the wait, once."""
         try:
-            await asyncio.gather(*part.releases, return_exceptions=True)
+            if part.releases:
+                # asyncio.wait: a cancelled retry does not cancel the release.
+                await asyncio.wait(set(part.releases))
             await self._clock.sleep(LOST_RETRY_DELAY)
             channels = await part.output.start()
         except Exception as err:
-            part.error = self._last_error = err
+            part.error = err
+            # A failed retry stops as lost, as for a single output, unless
+            # the key was rejected.
+            self._last_error = (
+                err
+                if isinstance(err, OutputAuthFailed)
+                else OutputLost(f"The retry of {part.name} failed")
+            )
             part.dropped = True
             _LOGGER.warning(
                 "Glowcast: the retry of %s failed (%s); it stays off until the "
@@ -286,6 +303,8 @@ class CompositeOutput:
         for part in self._parts:
             part.running = False
             part.retry = part.check = None
+            if not part.dropped:
+                part.error = None  # it is claimed again at the next start()
         releases = [task for part in self._parts for task in part.releases]
         await asyncio.gather(*releases, return_exceptions=True)
         results = await asyncio.gather(

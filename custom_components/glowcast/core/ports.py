@@ -39,10 +39,14 @@ class OutputLost(Exception):
 
 
 class OutputGone(Exception):
-    """The lights are lost and the output's own retry failed; stop, no retry.
+    """No lights are left; stop with OUTPUT_LOST, without the pipeline's retry.
 
-    A combined output retries each part itself (architecture 4.4), so the
-    pipeline must not retry the whole output on top of that.
+    A combined output raises it when its last part is dropped: its retry
+    failed, or it was lost again within 60 s of a successful retry. It retries
+    each part itself (architecture 4.4), so the pipeline must not retry the
+    whole output on top of that. When the last part rejected the key or failed
+    unexpectedly, that error is raised instead (AUTH_FAILED, or
+    OUTPUT_UNAVAILABLE), as for a single output.
     """
 
 
