@@ -502,19 +502,23 @@ async def test_five_failed_captures_in_a_row() -> None:
 
 
 @pytest.mark.parametrize(
-    ("rate", "seconds"),
+    ("rate", "max_rate_hz", "seconds"),
     [
-        # 4 per second: 5 failures take about 1.25 s, so the 3 s decide (#110).
-        (UpdateRate.MAXIMUM, 3.0),
+        # A screen at 4 per second: 5 failures take about 1 s, the 3 s decide.
+        (UpdateRate.MAXIMUM, 4.0, 3.0),
+        # The TV at Maximum, failing fast: the 3 s decide too (#110).
+        (UpdateRate.MAXIMUM, 20.0, 3.0),
+        # The TV at High: 5 failures take about 1.3 s, the 3 s decide.
+        (UpdateRate.HIGH, 20.0, 3.0),
         # 1 per second: the 5 failures take longer than 3 s and decide.
-        (UpdateRate.LOW, 4.0),
+        (UpdateRate.LOW, 4.0, 4.0),
     ],
 )
 async def test_failed_captures_stop_after_five_and_3_s(
-    rate: UpdateRate, seconds: float
+    rate: UpdateRate, max_rate_hz: float, seconds: float
 ) -> None:
     h = Harness(rate=rate)
-    h.source.max_rate_hz = 4.0
+    h.source.max_rate_hz = max_rate_hz
     h.source.capture_time = 0.01
     await h.start()
     await h.clock.advance(1)
@@ -523,6 +527,39 @@ async def test_failed_captures_stop_after_five_and_3_s(
     assert await h.finish() == StopReason.TV_OFF
     stopped_after = h.status_times[-1] - failing_since
     assert seconds <= stopped_after < seconds + 1.0
+
+
+async def test_a_capture_that_hangs_counts_from_its_start() -> None:
+    """The first failure hangs for 5 s: the 3 s are over when it ends, so
+    the stop comes with the fifth failure, not 3 s after the hang ended."""
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = ["hang"]
+    h.source.default = SourceUnavailable("no picture")
+    failing_since = h.clock.now()
+    assert await h.finish() == StopReason.TV_OFF
+    # The hang (5 s), then four more failures at 4 per second.
+    assert 5.5 <= h.status_times[-1] - failing_since < 7.0
+
+
+async def test_a_good_frame_starts_the_wait_again() -> None:
+    """Five failures within 3 s, a good frame, then failures again: the stop
+    comes 3 s after the second run of failures began."""
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = [SourceUnavailable("no picture")] * 6 + [solid(RED)]
+    h.source.default = SourceUnavailable("no picture")
+    began = h.clock.now()
+    # 6 failures and the frame at 4 per second; the second run begins with
+    # the eighth capture, about 1.75 s later.
+    assert await h.finish() == StopReason.TV_OFF
+    assert 1.75 + 3.0 <= h.status_times[-1] - began < 1.75 + 3.0 + 0.6
 
 
 async def test_four_failed_captures_then_a_good_one() -> None:
