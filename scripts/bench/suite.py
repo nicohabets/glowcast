@@ -1470,18 +1470,25 @@ class Bench:
         if active is None:
             self.report.add(Step(title, mode, FAIL, note="the area did not stream"))
             return
-        # Each pattern shows for 3 s (core/light_test.py STEP) from the claim.
-        await self.sleep_until_win(self.win(active) + 6.2)
+        # The test starts when the stream's handshake is done (seconds after
+        # the area turns active) and the lights are released right after it,
+        # so the patterns are judged back from the release: each shows for
+        # 3 s (core/light_test.py STEP).
+        inactive = await self.bridge.wait_status(area, "inactive", 25)
+        numbers: dict[str, Any] = {"area active after s": round(active - start, 2)}
+        if inactive is None:
+            self.report.add(
+                Step(title, mode, FAIL, numbers=numbers, note="area kept streaming")
+            )
+            return
+        numbers["area inactive after s"] = round(inactive - start, 2)
+        end = self.win(inactive)
+        await self.sleep_until_win(end + 0.6)
         samples = self.samples()
         ok = True
-        numbers: dict[str, Any] = {"area active after s": round(active - start, 2)}
         for name in self.lights:
-            first = rp.settled(
-                samples, name, self.win(active) + 1.0, self.win(active) + 2.7
-            )
-            second = rp.settled(
-                samples, name, self.win(active) + 4.0, self.win(active) + 5.7
-            )
+            first = rp.settled(samples, name, end - 5.0, end - 3.5)
+            second = rp.settled(samples, name, end - 2.0, end - 0.5)
             seen = [
                 None if mean is None else rp.classify(mean, self.cal[name], self.th)
                 for mean in (first, second)
@@ -1495,22 +1502,14 @@ class Bench:
             numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
                 str(s) for s in seen
             )
-        inactive = await self.bridge.wait_status(area, "inactive", 15)
-        released = 0.0 if inactive is None else inactive - start
-        back = await self.wait_restored(
-            self.win(start), released + self.th.restore_within_s
-        )
+        back = await self.wait_restored(end, self.th.restore_within_s)
         switch = (await self.ha.state("switch"))["state"]
         numbers["switch"] = switch
-        if inactive is not None:
-            numbers["area inactive after s"] = round(inactive - start, 2)
         for light, seconds in back.items():
             numbers[f"{self.label[light]} back after s"] = seconds
         problems = []
         if not ok:
             problems.append("a light showed another colour")
-        if inactive is None:
-            problems.append("area kept streaming")
         if any(v is None for v in back.values()):
             problems.append("a light did not come back (camera)")
         if switch != "off":
