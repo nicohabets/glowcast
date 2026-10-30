@@ -2,17 +2,33 @@
 real loose-lights output with the light services replaced by recorders."""
 
 from datetime import timedelta
+from typing import Any
 
 import pytest
-from homeassistant.const import SERVICE_TURN_OFF, SERVICE_TURN_ON, STATE_OFF, STATE_ON
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_HS_COLOR,
+    ColorMode,
+    LightEntity,
+)
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STOP,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_OFF,
+    STATE_ON,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
+    MockPlatform,
     async_fire_time_changed,
     async_mock_service,
+    mock_platform,
 )
 
 from custom_components.glowcast.const import DOMAIN
@@ -31,6 +47,60 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 SWITCH = "switch.glowcast_living_room_tv"
 SELECT = "select.glowcast_living_room_tv_lights"
+
+
+# A light's own state before Glowcast claims it: warm orange, dimmed.
+OWN_HS = (30.0, 50.0)
+OWN_BRIGHTNESS = 200
+
+
+class RecordingLight(LightEntity):
+    """A real light entity: Home Assistant's light services reach it."""
+
+    _attr_supported_color_modes = {ColorMode.HS}
+    _attr_color_mode = ColorMode.HS
+
+    def __init__(self, name: str) -> None:
+        self._attr_name = name.title()
+        self._attr_unique_id = name
+        self._attr_is_on = True
+        self._attr_hs_color = OWN_HS
+        self._attr_brightness = OWN_BRIGHTNESS
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._attr_is_on = True
+        if ATTR_HS_COLOR in kwargs:
+            self._attr_hs_color = kwargs[ATTR_HS_COLOR]
+        if ATTR_BRIGHTNESS in kwargs:
+            self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._attr_is_on = False
+        self.async_write_ha_state()
+
+
+async def real_lights(hass: HomeAssistant, *names: str) -> list[er.RegistryEntry]:
+    """Light entities of a small test platform, in the entity registry."""
+
+    async def setup_platform(hass, config, add_entities, discovery_info=None):
+        add_entities([RecordingLight(name) for name in names])
+
+    mock_platform(hass, "test.light", MockPlatform(async_setup_platform=setup_platform))
+    assert await async_setup_component(hass, "light", {"light": {"platform": "test"}})
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    return [registry.async_get(f"light.{name}") for name in names]
+
+
+def own_state(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether the light is back in its own state, not Glowcast's colour."""
+    state = hass.states.get(entity_id)
+    return (
+        state.state == STATE_ON
+        and tuple(state.attributes["hs_color"]) == OWN_HS
+        and state.attributes["brightness"] == OWN_BRIGHTNESS
+    )
 
 
 async def refreshed(hass: HomeAssistant) -> None:
@@ -174,3 +244,45 @@ async def test_the_entity_offers_areas_and_groups_and_restarts_on_a_choice(
     assert state.attributes["options"] == ["Living room", "Room"]
     await switch(hass, SERVICE_TURN_OFF)
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def syncing(hass: HomeAssistant, lamp: er.RegistryEntry) -> None:
+    """Switched on until the lamp shows Glowcast's red."""
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(
+        lambda: (
+            tuple(hass.states.get(lamp.entity_id).attributes["hs_color"])
+            == (0.0, 100.0)
+        )
+    )
+    assert not own_state(hass, lamp.entity_id)
+
+
+async def test_the_lights_are_restored_when_home_assistant_stops(
+    hass: HomeAssistant, adapters: FakeAdapters
+) -> None:
+    (lamp,) = await real_lights(hass, "lamp")
+    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await syncing(hass, lamp)
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    assert own_state(hass, lamp.entity_id)
+    assert hass.states.get(SWITCH).state == STATE_OFF
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_the_lights_are_restored_on_unload_while_syncing(
+    hass: HomeAssistant, adapters: FakeAdapters
+) -> None:
+    (lamp,) = await real_lights(hass, "lamp")
+    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await syncing(hass, lamp)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert own_state(hass, lamp.entity_id)
