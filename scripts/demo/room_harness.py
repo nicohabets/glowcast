@@ -6,26 +6,40 @@ are exactly what a real output would get. Only the TV (a source that makes the
 scenario pictures in memory) and the lights (an output that records what it
 gets) are fakes, and time only moves when the harness steps the clock.
 
-`core/` is loaded from a folder by path, without the Home Assistant package
-around it, so the same harness runs against another commit's `core/` for
-`demo.py room --compare`. Standard library only: the drawing is in room.py.
+With `--lights area` (the default) `core/` is loaded from a folder by path,
+without the Home Assistant package around it, so the same harness runs against
+another commit's `core/` for `demo.py room --compare`; then it needs only the
+standard library (the drawing is in room.py).
+
+With `--lights loose` or `--lights combined` (#196) the lights are Glowcast's
+own outputs too: the real loose-lights output (`outputs/ha_lights.py`, with its
+places, its schedule and its `transition`) and, combined, the real
+`CompositeOutput` with the entertainment area beside it. Only Home
+Assistant around the loose lights is a fake (FakeHass: the lights' states, an
+entity registry, and `light.turn_on` and `turn_off`, recorded); no Home
+Assistant is started. These modes import the Glowcast package of the tree that
+holds `--core`, so they need Home Assistant installed (the demo's environment,
+or the test requirements).
 
 Usage (room.py runs it; the result is JSON):
-    python room_harness.py --core DIR [--timing-from DIR] --out FILE
+    python room_harness.py --core DIR [--timing-from DIR]
+        [--lights area|loose|combined] [--place LIGHT=PLACE ...] --out FILE
 """
 
 import argparse
 import asyncio
+import colorsys
 import heapq
+import importlib
 import importlib.util
 import itertools
 import json
 import math
 import sys
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from types import MappingProxyType, ModuleType
+from types import MappingProxyType, ModuleType, SimpleNamespace
 from typing import Any
 
 WIDTH, HEIGHT = 64, 36  # as the webOS source delivers them
@@ -40,10 +54,12 @@ BRIGHTNESS = 80
 INTENSITY = 100
 UPDATE_RATE = "high"
 
-# The lights in the illustrated room and the channel each one stands for, with
-# its position (x: -1 left of the screen, +1 right; z: -1 floor, +1 ceiling).
-# room.py draws each light by its id; a new light in the room (loose lights,
-# #76) gets a row here and a drawing there.
+# The lights in the illustrated room, per output type: the one place that says
+# which light of the room stands for which channel. room.py draws each light
+# by its id; a new light in the room gets a row here and a drawing there.
+#
+# The entertainment area (--lights area, and combined), with each channel's
+# position (x: -1 left of the screen, +1 right; z: -1 floor, +1 ceiling).
 CHANNELS = [
     ("left", -1.0, 0.0),  # the strip's left side
     ("top_left", -0.5, 1.0),  # the strip's top, left third
@@ -53,19 +69,55 @@ CHANNELS = [
     ("floor_lamp", -1.0, -0.5),  # the floor lamp, left of the TV
     ("light_bar", 1.0, -0.5),  # the light bar on the console, right
 ]
+# The loose lights (#9) of "Room v2" (#196), one at every place, each with its
+# name and place: a preset of outputs/ha_lights.py or "x,z" as the sliders
+# fine-tune it (--place). --lights loose: all of them. Combined: those that
+# are not in the area. --lights area: the ones not in the area stay off.
+LOOSE = {
+    "floor_lamp": ("Floor lamp", "left"),
+    "light_bar": ("Light bar", "right"),
+    "wall_light": ("Wall light", "top"),  # above the TV
+    "console_lamp": ("Orb lamp", "bottom"),  # on the console
+    "console_strip": ("Light strip", "bottom"),  # along the console
+    "table_lamp": ("Table lamp", "ambient"),  # by the sofa
+}
+
+
+def loose_ids(lights: str) -> list[str]:
+    """The room's loose lights with this output (see LOOSE)."""
+    area = {id_ for id_, _, _ in CHANNELS} if lights == "combined" else set()
+    return [id_ for id_ in LOOSE if id_ not in area]
+
+
+LIGHTS = ("area", "loose", "combined")
+# The parts of a combined output, named by their type as outputs/__init__.py
+# names them.
+AREA_PART, LOOSE_PART = "hue_entertainment", "ha_lights"
+# The exit code when the tree has no loose lights or no combined output (main
+# before #9 or #11): room.py then draws this side only.
+EXIT_NO_OUTPUT = 3
 
 RGB = tuple[int, int, int]
 Picture = Callable[[float], bytes]  # seconds into the scenario -> pixels
 
 
+class NoOutput(Exception):
+    """The tree has no output of this kind (main before #9 or #11)."""
+
+
 @dataclass(frozen=True)
 class Scenario:
-    """A named run of pictures; `still` is the moment (0-1) that shows it best."""
+    """A named run of pictures; `still` is the moment (0-1) that shows it best.
+
+    `unavailable`: (loose light, seconds into the scenario) when that light
+    becomes unavailable in Home Assistant, for good.
+    """
 
     name: str
     seconds: float
     picture: Picture
     still: float = 1.0
+    unavailable: tuple[tuple[str, float], ...] = ()
 
 
 def _image(pixel: Callable[[float, float], RGB]) -> bytes:
@@ -152,9 +204,31 @@ def _crossfade(
     return picture
 
 
-def scenarios(black_hold: float, no_picture_wait: float) -> list[Scenario]:
-    """The fixed scenarios, in order; the timings follow `core/`."""
-    return [
+def _drifting(seconds: float) -> bytes:
+    """Colours that keep moving across the picture, one turn in 12 seconds."""
+
+    def pixel(x: float, y: float) -> RGB:
+        hue = (x * 0.5 + seconds / 12) % 1.0
+        r, g, b = colorsys.hsv_to_rgb(hue, 0.75, 0.9 if y < 0.6 else 0.6)
+        return round(r * 255), round(g * 255), round(b * 255)
+
+    return _image(pixel)
+
+
+def scenarios(
+    black_hold: float,
+    no_picture_wait: float,
+    lights: str = "area",
+    lost_retry_delay: float = 5.0,
+) -> list[Scenario]:
+    """The fixed scenarios, in order; the timings follow `core/`.
+
+    The combined output gets a seventh: its loose lights become unavailable,
+    one and then the other, until that part is dropped (the loose lights are
+    checked every 5 s, then released and started again once after
+    `lost_retry_delay`) while the strip keeps following the picture.
+    """
+    run = [
         Scenario("1 Sunset", 2.5, _still(_sunset)),
         # Holds the last colours for BLACK_HOLD, then fades to the glow.
         Scenario("2 Sudden dark picture", black_hold + 2.0, _still(_night)),
@@ -166,6 +240,22 @@ def scenarios(black_hold: float, no_picture_wait: float) -> list[Scenario]:
         # All-zero frames: released after NO_PICTURE_WAIT.
         Scenario("6 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
     ]
+    if lights == "combined":
+        run.append(
+            Scenario(
+                "7 Loose lights unavailable",
+                # One loose light 1 s in, the others 3 s in, the check up to
+                # 5 s later, the retry, and a moment to see that part dropped.
+                3.0 + 5.0 + lost_retry_delay + 2.0,
+                _drifting,
+                0.97,
+                tuple(
+                    (id_, 3.0 if n else 1.0)
+                    for n, id_ in enumerate(loose_ids("combined"))
+                ),
+            )
+        )
+    return run
 
 
 _LOADED = itertools.count()  # each load its own package name
@@ -184,6 +274,43 @@ def load_core(folder: Path, name: str) -> ModuleType:
     for module in ("models", "light_state", "pipeline"):
         setattr(package, module, importlib.import_module(f"{name}.{module}"))
     return package
+
+
+def load_glowcast(core_folder: Path, lights: str) -> SimpleNamespace:
+    """The Glowcast package of the tree that holds `core_folder`: its `core/`
+    and the outputs that `lights` needs, from the same tree.
+
+    Raises NoOutput when that tree does not have them yet.
+    """
+    package = core_folder.resolve().parent
+    needed = ["ha_lights.py"]
+    if lights == "combined":
+        needed.append("composite.py")
+    if missing := [
+        name for name in needed if not (package / "outputs" / name).is_file()
+    ]:
+        what = "loose lights" if lights == "loose" else "combined output"
+        files = ", ".join(f"outputs/{name}" for name in missing)
+        raise NoOutput(f"has no {what} ({files})")
+    root = package.parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    name = "custom_components.glowcast"
+    glowcast = importlib.import_module(name)
+    if Path(glowcast.__file__).resolve().parent != package:
+        raise ImportError(f"Glowcast is imported from {glowcast.__file__} already")
+    core = importlib.import_module(f"{name}.core")
+    for module in ("models", "light_state", "pipeline"):
+        setattr(core, module, importlib.import_module(f"{name}.core.{module}"))
+    return SimpleNamespace(
+        core=core,
+        ha_lights=importlib.import_module(f"{name}.outputs.ha_lights"),
+        composite=(
+            importlib.import_module(f"{name}.outputs.composite")
+            if lights == "combined"
+            else None
+        ),
+    )
 
 
 class FakeClock:
@@ -287,47 +414,364 @@ class RecordingOutput:
         pass
 
 
+# --- Home Assistant around the loose lights (a fake) -------------------------
+
+
+@dataclass
+class FakeLight:
+    """A loose light as Home Assistant shows it; it fades as a real light does:
+    from what it shows now to the new colour, over the command's `transition`.
+    """
+
+    room_id: str  # the light in the room (LOOSE)
+    name: str
+    available: bool = True
+    on: bool = False
+    _from: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    _to: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    _start: float = 0.0
+    _fade: float = 0.0
+    rgb_color: list[int] | None = None
+    brightness: int | None = None
+
+    @property
+    def registry_id(self) -> str:
+        # Not an entity id, as the entity registry's ids, so the output
+        # resolves it through the registry.
+        return f"room-{self.room_id.replace('_', '-')}"
+
+    @property
+    def entity_id(self) -> str:
+        return f"light.{self.room_id}"
+
+    def level(self, now: float) -> list[float] | None:
+        """The colour it shows now (0-1, brightness included); None when off."""
+        if not self.available or not self.on:
+            return None
+        t = 1.0 if self._fade <= 0 else min(max((now - self._start) / self._fade, 0), 1)
+        return [
+            round(a + (b - a) * t, 4) for a, b in zip(self._from, self._to, strict=True)
+        ]
+
+    def turn_on(self, now: float, data: Mapping[str, Any]) -> None:
+        start = self.level(now) or [0.0, 0.0, 0.0]
+        if "rgb_color" in data:
+            self.rgb_color = list(data["rgb_color"])
+        self.brightness = data.get("brightness", self.brightness or 255)
+        rgb = self.rgb_color or [255, 255, 255]
+        self._from = start
+        self._to = [c / 255 * self.brightness / 255 for c in rgb]
+        self._start, self._fade = now, float(data.get("transition", 0))
+        self.on = True
+
+    def turn_off(self) -> None:
+        self.on = False
+
+
+class FakeRegistry:
+    """The entity registry, for the loose lights only."""
+
+    def __init__(self, lights: list[FakeLight]) -> None:
+        entries = [
+            SimpleNamespace(
+                id=light.registry_id,
+                entity_id=light.entity_id,
+                domain="light",
+                # Not Hue or Matter: no shared network, so each light gets a
+                # command at most once per second.
+                platform="glowcast_room",
+                config_entry_id=None,
+                device_id=None,
+                area_id=None,
+                disabled=False,
+                name=None,
+                original_name=light.name,
+                capabilities=None,
+            )
+            for light in lights
+        ]
+        self._by_entity_id = {entry.entity_id: entry for entry in entries}
+        by_id = {entry.id: entry for entry in entries}
+        self.entities = SimpleNamespace(
+            get_entry=by_id.get, values=lambda: list(entries)
+        )
+
+    def async_get(self, entity_id: str) -> Any:
+        return self._by_entity_id.get(entity_id)
+
+
+class FakeHass:
+    """What the loose-lights output uses of Home Assistant: the lights' states,
+    the entity registry, `light.turn_on` and `turn_off` (recorded in `calls`)
+    and its tasks. Nothing else of Home Assistant runs."""
+
+    def __init__(self, clock: FakeClock, lights: list[FakeLight]) -> None:
+        from homeassistant.core import State
+        from homeassistant.helpers import entity_registry as er
+
+        self._clock = clock
+        self._state = State
+        self.lights = {light.entity_id: light for light in lights}
+        self.calls: list[dict[str, Any]] = []
+        self.data: dict[Any, Any] = {er.DATA_REGISTRY: FakeRegistry(lights)}
+        self.states = SimpleNamespace(get=self._get)
+        self.services = SimpleNamespace(async_call=self._async_call)
+
+    def async_create_task(
+        self, coro: Any, name: str | None = None, eager_start: bool = True
+    ) -> asyncio.Task[Any]:
+        return asyncio.ensure_future(coro)
+
+    def levels(self, now: float) -> dict[str, list[float]]:
+        """{room light: the colour it shows} of the lights that are on."""
+        return {
+            light.room_id: level
+            for light in self.lights.values()
+            if (level := light.level(now)) is not None
+        }
+
+    def _get(self, entity_id: str) -> Any:
+        light = self.lights.get(entity_id)
+        if light is None:
+            return None
+        attributes: dict[str, Any] = {
+            "supported_color_modes": ["rgb"],
+            "friendly_name": light.name,
+        }
+        if not light.available:
+            return self._state(entity_id, "unavailable", attributes)
+        if not light.on:
+            return self._state(entity_id, "off", attributes)
+        attributes |= {
+            "color_mode": "rgb",
+            "rgb_color": light.rgb_color,
+            "brightness": light.brightness,
+        }
+        return self._state(entity_id, "on", attributes)
+
+    async def _async_call(
+        self,
+        domain: str,
+        service: str,
+        data: Mapping[str, Any],
+        blocking: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        light = self.lights[data["entity_id"]]
+        now = self._clock.now()
+        self.calls.append(
+            {
+                "time": round(now, 6),
+                "light": light.room_id,
+                "service": service,
+                **{k: v for k, v in data.items() if k != "entity_id"},
+            }
+        )
+        if not light.available:
+            return  # gone: nothing reaches it
+        if service == "turn_on":
+            light.turn_on(now, data)
+        elif service == "turn_off":
+            light.turn_off()
+
+
+class BadPlace(ValueError):
+    """A --place for a light that is not loose, or a place that does not exist."""
+
+
+def place(
+    value: str, presets: Mapping[str, tuple[float, float]]
+) -> tuple[float, float]:
+    """A place as the loose lights' settings store it: a preset, or "x,z"."""
+    if value in presets:
+        return presets[value]
+    try:
+        x, z = (float(part) for part in value.split(","))
+    except ValueError:
+        raise BadPlace(
+            f"Unknown place {value!r}: one of {', '.join(presets)}, or x,z"
+        ) from None
+    if not (-1 <= x <= 1 and -1 <= z <= 1):
+        raise BadPlace(f"Place {value!r} is outside -1 to 1")
+    return x, z
+
+
+def places_of(
+    places: Mapping[str, str] | None, lights: str = "loose"
+) -> dict[str, str]:
+    """The place of each loose light with this output: LOOSE's, with
+    `places` instead."""
+    ids = loose_ids(lights)
+    chosen = {room_id: LOOSE[room_id][1] for room_id in ids}
+    for room_id, value in (places or {}).items():
+        if room_id not in ids:
+            raise BadPlace(
+                f"No loose light {room_id!r} with --lights {lights}: "
+                f"one of {', '.join(ids)}"
+            )
+        chosen[room_id] = value
+    return chosen
+
+
+class WatchedPart:
+    """A part of the combined output, passed through unchanged, that notes
+    whether its last start failed.
+
+    The port does not tell a part that waits for its retry from one that is
+    dropped for good: `dropped_parts` names a lost part from the moment it is
+    lost. A part that started before and then fails to start is the
+    composite's retry that failed, so from then on it is dropped. (A part
+    whose key is rejected is dropped without a retry; the scenarios never do
+    that.)
+    """
+
+    def __init__(self, output: Any) -> None:
+        self._output = output
+        self.max_rate_hz = output.max_rate_hz
+        self.dropped_parts = output.dropped_parts
+        self.start_failed = False
+
+    async def start(self, *, retry: bool = False) -> Any:
+        try:
+            channels = await self._output.start(retry=retry)
+        except Exception:
+            self.start_failed = True
+            raise
+        self.start_failed = False
+        return channels
+
+    def send(self, colors: list[Any]) -> None:
+        self._output.send(colors)
+
+    async def check(self) -> None:
+        await self._output.check()
+
+    async def stop(self) -> None:
+        await self._output.stop()
+
+    async def close(self) -> None:
+        await self._output.close()
+
+
+def _loose_lights(
+    glowcast: SimpleNamespace, clock: FakeClock, places: Mapping[str, str]
+) -> tuple[FakeHass, Any, dict[str, tuple[float, float]]]:
+    """The real loose-lights output on FakeHass, set up as the settings store
+    it (architecture 5): single lights, each with its place."""
+    ha_lights = glowcast.ha_lights
+    lights = [FakeLight(room_id, LOOSE[room_id][0]) for room_id in places]
+    positions = {
+        light.room_id: place(places[light.room_id], ha_lights.PRESETS)
+        for light in lights
+    }
+    block = {
+        "type": ha_lights.OUTPUT_HA_LIGHTS,
+        ha_lights.CONF_FOLLOW: ha_lights.FOLLOW_LIGHTS,
+        ha_lights.CONF_LIGHTS: [
+            {
+                ha_lights.CONF_ENTITY: light.registry_id,
+                ha_lights.CONF_X: positions[light.room_id][0],
+                ha_lights.CONF_Z: positions[light.room_id][1],
+            }
+            for light in lights
+        ],
+    }
+    hass = FakeHass(clock, lights)
+    output = ha_lights.HaLightsOutput(hass, block, now=clock.now)
+    return hass, output, positions
+
+
 async def _runner(func: Callable[..., Any], *args: Any) -> Any:
     return func(*args)
 
 
-async def _record(core: ModuleType, run: list[Scenario]) -> dict[str, Any]:
+async def _record(
+    core: ModuleType,
+    run: list[Scenario],
+    lights: str = "area",
+    places: Mapping[str, str] | None = None,
+    glowcast: SimpleNamespace | None = None,
+) -> dict[str, Any]:
     pipeline = core.pipeline
     clock = FakeClock()
     source = ScenarioSource(clock, run, core.models)
-    output = RecordingOutput(core.models)
+    area: RecordingOutput | None = None
+    hass: FakeHass | None = None
+    positions: dict[str, tuple[float, float]] = {}
+    chosen: dict[str, str] = {}
+    watched: dict[str, WatchedPart] = {}
+    output: Any
+    if lights == "area":
+        output = area = RecordingOutput(core.models)
+    else:
+        assert glowcast is not None
+        chosen = places_of(places, lights)
+        hass, output, positions = _loose_lights(glowcast, clock, chosen)
+        if lights == "combined":
+            area = RecordingOutput(core.models)
+            watched[LOOSE_PART] = WatchedPart(output)
+            output = glowcast.composite.CompositeOutput(
+                [(AREA_PART, area), (LOOSE_PART, watched[LOOSE_PART])], clock
+            )
+
+    def retrying(part: str) -> bool:
+        """A lost part whose retry has not failed (yet)."""
+        return part in watched and not watched[part].start_failed
+
     settings = pipeline.Settings(
         BRIGHTNESS, INTENSITY, pipeline.UpdateRate(UPDATE_RATE)
     )
-    lights = pipeline.Pipeline(
+    lights_ = pipeline.Pipeline(
         source, output, settings, _runner, clock, lambda status: None
     )
-    task = asyncio.ensure_future(lights.run())
+    task = asyncio.ensure_future(lights_.run())
     frames: dict[bytes, int] = {}
     samples = []
     start = 0
+    begin = 0.0  # when the scenario starts
     for index, scenario in enumerate(run):
         ticks = round(scenario.seconds * SEND_HZ)
+        events = sorted((begin + at, room_id) for room_id, at in scenario.unavailable)
         for tick in range(start, start + ticks):
             # Halfway between two sends, so a send and a sample never tie.
-            await clock.advance_to((tick + 0.5) / SEND_HZ)
+            now = (tick + 0.5) / SEND_HZ
+            while events and events[0][0] <= now:
+                _, room_id = events.pop(0)
+                if hass is not None:
+                    hass.lights[f"light.{room_id}"].available = False
+            await clock.advance_to(now)
             if task.done():
                 task.result()
                 raise RuntimeError("The pipeline stopped before the scenarios ended")
             frame = None
             if source.last is not None:
                 frame = frames.setdefault(source.last, len(frames))
+            # A light that was never claimed or is released is off.
+            lit = dict(area.colors) if area is not None else {}
+            if hass is not None:
+                lit |= hass.levels(clock.now())
             samples.append(
                 {
                     "scenario": index,
                     "time": round(clock.now(), 6),
                     "frame": frame,
-                    # A light that was never claimed or is released is off.
-                    "lights": dict(output.colors),
+                    "lights": lit,
+                    "unavailable": sorted(
+                        light.room_id
+                        for light in (hass.lights.values() if hass else [])
+                        if not light.available
+                    ),
+                    # Parts of a combined output that do not run: lost and
+                    # waiting for their retry, or dropped until the next start.
+                    "retrying": sorted(p for p in output.dropped_parts if retrying(p)),
+                    "dropped": sorted(
+                        p for p in output.dropped_parts if not retrying(p)
+                    ),
                 }
             )
         start += ticks
-    lights.stop()
+        begin += scenario.seconds
+    lights_.stop()
     # Advance until the pipeline has cleaned up, but never wait forever on a
     # core/ that does not stop (--compare against another commit).
     for _ in range(STOP_SECONDS):
@@ -339,11 +783,25 @@ async def _record(core: ModuleType, run: list[Scenario]) -> dict[str, Any]:
         raise RuntimeError(f"The pipeline did not stop within {STOP_SECONDS} s")
     task.result()
     return {
+        "lights": lights,
+        # Each loose light's place: as given (a preset or "x,z"), where, and
+        # whether --place moved it from LOOSE's.
+        "places": {
+            room_id: {
+                "name": name,
+                "x": positions[room_id][0],
+                "z": positions[room_id][1],
+                "moved": name != LOOSE[room_id][1],
+            }
+            for room_id, name in chosen.items()
+        },
         "scenarios": [
             {"name": scenario.name, "still": scenario.still} for scenario in run
         ],
         "frames": [pixels.hex() for pixels in frames],
         "samples": samples,
+        # What reached Home Assistant for the loose lights, in order.
+        "commands": hass.calls if hass is not None else [],
     }
 
 
@@ -351,36 +809,86 @@ def record(
     core_folder: Path,
     run: list[Scenario] | None = None,
     timing_folder: Path | None = None,
+    lights: str = "area",
+    places: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """record_async() in an event loop of its own."""
-    return asyncio.run(record_async(core_folder, run, timing_folder))
+    return asyncio.run(record_async(core_folder, run, timing_folder, lights, places))
 
 
 async def record_async(
     core_folder: Path,
     run: list[Scenario] | None = None,
     timing_folder: Path | None = None,
+    lights: str = "area",
+    places: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Run the scenarios through the `core/` in `core_folder`, sampling the
     lights and the TV picture on every send tick. The timings come from
     `timing_folder`'s `core/` (by default the same), so both sides of a
-    comparison have the same frames."""
-    core = load_core(core_folder, f"glowcast_core_{next(_LOADED)}")
+    comparison have the same frames.
+
+    `lights`: the room's lights as an entertainment area ("area"), as loose
+    lights at `places` ("loose"), or both ("combined": the area as with
+    "area", the other lights of LOOSE as loose lights). Raises NoOutput when
+    the tree of `core_folder` has no such output.
+    """
+    if lights not in LIGHTS:
+        raise ValueError(f"lights is one of {', '.join(LIGHTS)}")
+    glowcast = None
+    if lights == "area":
+        core = load_core(core_folder, f"glowcast_core_{next(_LOADED)}")
+    else:
+        glowcast = load_glowcast(core_folder, lights)
+        core = glowcast.core
     if run is None:
         timing = core
         if timing_folder is not None:
             timing = load_core(timing_folder, f"glowcast_core_{next(_LOADED)}")
-        run = scenarios(timing.light_state.BLACK_HOLD, timing.pipeline.NO_PICTURE_WAIT)
-    return await _record(core, run)
+        run = scenarios(
+            timing.light_state.BLACK_HOLD,
+            timing.pipeline.NO_PICTURE_WAIT,
+            lights,
+            timing.pipeline.LOST_RETRY_DELAY,
+        )
+    return await _record(core, run, lights, places, glowcast)
+
+
+def parse_places(values: list[str]) -> dict[str, str]:
+    """{light: place} from LIGHT=PLACE arguments (for example floor_lamp=left)."""
+    places = {}
+    for value in values:
+        room_id, separator, chosen = value.partition("=")
+        if not separator:
+            raise BadPlace(f"{value!r} is not LIGHT=PLACE")
+        places[room_id] = chosen
+    return places
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--core", type=Path, required=True)
     parser.add_argument("--timing-from", type=Path)
+    parser.add_argument("--lights", choices=LIGHTS, default="area")
+    parser.add_argument("--place", action="append", default=[])
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    recording = record(args.core, timing_folder=args.timing_from)
+    try:
+        places = parse_places(args.place)
+        places_of(places, args.lights)  # the lights, before anything runs
+    except BadPlace as err:
+        sys.exit(str(err))
+    try:
+        recording = record(
+            args.core, timing_folder=args.timing_from, lights=args.lights, places=places
+        )
+    except NoOutput as err:
+        print(err, file=sys.stderr)
+        sys.exit(EXIT_NO_OUTPUT)
+    except BadPlace as err:
+        # The presets are the loose lights' own, known once they are
+        # imported; a place is checked before the pipeline runs.
+        sys.exit(str(err))
     args.out.write_text(json.dumps(recording))
 
 
