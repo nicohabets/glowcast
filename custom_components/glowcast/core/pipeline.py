@@ -34,9 +34,11 @@ _LOGGER = logging.getLogger(__name__)
 STARTUP_GRACE = 10.0  # seconds for the TV to start and deliver a frame
 START_RETRY_INTERVAL = 1.0
 # Failed captures stop with TV_OFF once there are this many in a row, after
-# the startup grace, and they have lasted this long: as long as the wait for
-# no picture (#68) and a screen's own wait before it counts as off (#110), so
-# a fast source (4 per second) is not stopped after about 1.25 s.
+# the startup grace, and this long has passed since the first of them began:
+# as long as the wait for no picture (#68) and a screen's own wait before it
+# counts as off (#110), so a fast source (4 per second) is not stopped after
+# about 1 s (4 intervals of 0.25 s plus the capture time). It applies to the
+# TV too (product owner's decision, #110).
 MAX_CAPTURE_FAILURES = 5
 CAPTURE_FAILURE_WAIT = 3.0
 LOST_RETRY_DELAY = 5.0
@@ -193,7 +195,7 @@ class Pipeline:
         self._retried_at: float | None = None
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
-        self._failing_since = 0.0  # when the first of them failed
+        self._failing_since = 0.0  # when the first of them began
         self._no_picture_since: float | None = None
         self._black_picture = False
 
@@ -446,11 +448,13 @@ class Pipeline:
 
     async def _async_capture(self) -> Frame | None:
         """One capture, or None if it failed; too many failures in a row stop."""
+        begin = self._clock.now()
         try:
             frame = await self._source.capture()
         except SourceUnavailable:
             if self._failures == 0:
-                self._failing_since = self._clock.now()
+                # Its start: a capture that hangs for seconds counts in full.
+                self._failing_since = begin
             self._failures += 1
             if (
                 self._failures >= MAX_CAPTURE_FAILURES
