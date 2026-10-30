@@ -243,7 +243,7 @@ def hue_steps(rec: Recorder) -> None:
     rec.step("area")
     rec.click(page.locator(f"{DIALOG} ha-picker-field"))
     rec.step("area-choices")
-    rec.click(rec.option("area-tv"))
+    rec.click(rec.option("aaaaaaaa-0000-4000-8000-000000000001"))  # TV area
     rec.submit()
     rec.step("done")
     rec.submit()

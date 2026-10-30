@@ -12,6 +12,7 @@ and recordings; the virtual environment is shared.
 
 Usage:
     python scripts/demo.py start [--no-fake-sync]
+    python scripts/demo.py e2e [--keep]
     python scripts/demo.py record [FLOW ...] [--lang en|nl] [--theme light|dark]
                                   [--still] [--out DIR]
     python scripts/demo.py stop
@@ -19,6 +20,11 @@ Usage:
     python scripts/demo.py clean --all [--yes]
     python scripts/demo.py status
     python scripts/demo.py room [--compare] [--out DIR]
+
+`e2e` runs the end-to-end check (scripts/demo/e2e.py) on an instance of its
+own: the screen helper's test patterns through Glowcast's real screen source,
+pipeline and Hue output to the fake bridge, which takes the entertainment
+stream too. It exits non-zero if a check fails.
 
 start, record, stop and clean take --instance NAME to act on another instance
 than this working copy's.
@@ -64,6 +70,7 @@ LOCK = HOME.parent / "glowcast-demo.lock"
 # The first instance gets these if they are free; the others get free ones.
 HA_PORT = 8199
 BRIDGE_PORT = 8443
+DTLS_PORT = 8444  # UDP; only for `e2e`
 # A demo from before instances kept its state in HOME itself.
 LEGACY = "legacy"
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -116,12 +123,21 @@ logger:
   logs:
     custom_components.glowcast: info
     custom_components.glowcast_demo: info
+    custom_components.glowcast_e2e: info
 """
 # Loads the stub that swaps in the fake TV source and light output.
 FAKE_SYNC = """\
 glowcast_demo:
 """
 FAKE_SYNC_ACTIVE = "demo: fake TV source and fake light output active"
+# For `e2e`: the stub that sends hue-entertainment's stream to the fake bridge.
+E2E = """\
+glowcast_e2e:
+  bridge: "127.0.0.1:{bridge_port}"
+  dtls_port: {dtls_port}
+"""
+E2E_ACTIVE = "e2e: the Hue stream goes to the fake bridge on 127.0.0.1"
+E2E_SUFFIX = "-e2e"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -181,6 +197,12 @@ class Instance:
         return self.state.get("fake_sync", False)
 
     @property
+    def e2e(self) -> bool:
+        """Whether this is an `e2e` instance: Glowcast's own source and
+        output, with the stream to the fake bridge."""
+        return self.state.get("e2e", False)
+
+    @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.ha_port}"
 
@@ -227,6 +249,15 @@ def main() -> None:
             metavar="NAME",
             help=f"another instance than this working copy's ({_default_name()})",
         )
+    e2e = commands.add_parser(
+        "e2e",
+        help="the end-to-end check: test patterns in, colours at the fake bridge",
+    )
+    e2e.add_argument(
+        "--keep",
+        action="store_true",
+        help="leave Home Assistant and the fake bridge running afterwards",
+    )
     commands.add_parser("status", help="list all instances")
     room = commands.add_parser(
         "room", help="draw what Glowcast sends to the lights in the illustrated room"
@@ -246,6 +277,9 @@ def main() -> None:
         return
     if args.command == "room":
         draw_room(args)
+        return
+    if args.command == "e2e":
+        run_e2e(keep=args.keep)
         return
     if args.command == "clean" and args.all:
         clean_all(confirmed=args.yes)
@@ -271,8 +305,11 @@ def main() -> None:
             print(f"Removed {folder}")
 
 
-def start(instance: Instance, *, fake_sync: bool = True) -> None:
-    """Install if needed, write a fresh config and start both processes."""
+def start(instance: Instance, *, fake_sync: bool = True, e2e: bool = False) -> str:
+    """Install if needed, write a fresh config and start both processes.
+
+    Returns an access token of the demo user.
+    """
     if instance.legacy:
         sys.exit(
             "The legacy demo cannot be started any more; `start` without "
@@ -287,6 +324,9 @@ def start(instance: Instance, *, fake_sync: bool = True) -> None:
         _install()
         try:
             ha_port, bridge_port = _pick_ports(instance)
+            dtls_port = (
+                _free_udp_port(DTLS_PORT, _taken_ports(instance)) if e2e else None
+            )
             instance.home.mkdir(parents=True, exist_ok=True)
             # Written in one go: `status` in another session may read it now.
             state = instance.home / "state.json.tmp"
@@ -296,7 +336,9 @@ def start(instance: Instance, *, fake_sync: bool = True) -> None:
                         "repo": str(REPO),
                         "ha_port": ha_port,
                         "bridge_port": bridge_port,
-                        "fake_sync": fake_sync,
+                        "fake_sync": fake_sync and not e2e,
+                        "e2e": e2e,
+                        **({"dtls_port": dtls_port} if e2e else {}),
                     }
                 )
             )
@@ -311,6 +353,7 @@ def start(instance: Instance, *, fake_sync: bool = True) -> None:
                     str(DEMO / "fake_bridge.py"),
                     str(instance.run / "bridge"),
                     str(bridge_port),
+                    *(["--dtls-port", str(dtls_port)] if e2e else []),
                 ],
             )
             _spawn(
@@ -332,15 +375,70 @@ def start(instance: Instance, *, fake_sync: bool = True) -> None:
         # Also on sys.exit() and Ctrl-C: leave nothing running.
         stop(instance)
         raise
-    print(
-        f"Ready: {instance.url} (user {USERNAME!r}, password {PASSWORD!r}).\n"
-        "Glowcast is not set up yet; `record` runs the setup flow."
-        + (
-            ""
-            if instance.fake_sync
-            else "\nWithout the fakes: switching Glowcast on stops after about 10 s."
+    print(f"Ready: {instance.url} (user {USERNAME!r}, password {PASSWORD!r}).")
+    if not instance.e2e:
+        print(
+            "Glowcast is not set up yet; `record` runs the setup flow."
+            + (
+                ""
+                if instance.fake_sync
+                else "\nWithout the fakes: switching Glowcast on stops after "
+                "about 10 s."
+            )
         )
-    )
+    return token
+
+
+def run_e2e(*, keep: bool) -> None:
+    """Start this working copy's e2e instance, run the checks, stop it."""
+    instance = _instance(_default_name() + E2E_SUFFIX)
+    print(f"Instance {instance.name} ({instance.home})", flush=True)
+    summary = instance.home / "e2e-summary.json"
+    try:
+        token = start(instance, fake_sync=False, e2e=True)
+    except SystemExit as error:
+        # No check ran; still a summary an agent can read.
+        result = {
+            "passed": False,
+            "steps": [{"name": "start", "passed": False, "detail": str(error.code)}],
+        }
+        instance.home.mkdir(parents=True, exist_ok=True)
+        summary.write_text(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2))
+        print(f"FAIL start: {error.code}", file=sys.stderr)
+        sys.exit(1)
+    instance = dataclasses.replace(instance)  # reads the state start() wrote
+    sys.stdout.flush()  # before the checks write to the same output
+    try:
+        checks = subprocess.run(
+            [
+                str(_python()),
+                str(DEMO / "e2e.py"),
+                "--url",
+                instance.url,
+                "--bridge",
+                f"https://127.0.0.1:{instance.bridge_port}",
+                "--events",
+                str(instance.run / "bridge" / "events.jsonl"),
+                "--summary",
+                str(summary),
+                "--work",
+                str(instance.home / "e2e"),
+            ],
+            # Not on the command line, where `ps` would show it.
+            env={**os.environ, "GLOWCAST_E2E_TOKEN": token},
+            cwd=REPO,
+        )
+    finally:
+        if keep:
+            print(
+                f"Still running (--keep): {instance.url}; "
+                f"`stop --instance {instance.name}` stops it."
+            )
+        else:
+            stop(instance)
+    print(f"Logs: {instance.run} and {instance.config / 'home-assistant.log'}")
+    sys.exit(checks.returncode)
 
 
 def record_flows(instance: Instance, args: argparse.Namespace) -> None:
@@ -524,14 +622,22 @@ def _pick_ports(instance: Instance) -> tuple[int, int]:
     after a while), nor the defaults while a legacy demo exists: its code
     always uses them.
     """
+    taken = _taken_ports(instance)
+    ha_port = _free_port(HA_PORT, taken)
+    return ha_port, _free_port(BRIDGE_PORT, taken | {ha_port})
+
+
+def _taken_ports(instance: Instance) -> set[int | None]:
+    """The ports of the other running instances, and the legacy demo's."""
     taken: set[int | None] = set()
     for other in _instances():
         if other.legacy:
             taken |= {HA_PORT, BRIDGE_PORT}
         elif other != instance and _running(other):
-            taken |= {other.state.get("ha_port"), other.state.get("bridge_port")}
-    ha_port = _free_port(HA_PORT, taken)
-    return ha_port, _free_port(BRIDGE_PORT, taken | {ha_port})
+            taken |= {
+                other.state.get(key) for key in ("ha_port", "bridge_port", "dtls_port")
+            }
+    return taken
 
 
 def _free_port(preferred: int, taken: set[int | None]) -> int:
@@ -556,6 +662,20 @@ def _free_port(preferred: int, taken: set[int | None]) -> int:
             except OSError:
                 pass
     sys.exit(f"No free port from {preferred} up.")
+
+
+def _free_udp_port(preferred: int, taken: set[int | None]) -> int:
+    """The first free UDP port on 127.0.0.1 from `preferred` up."""
+    for port in range(preferred, 65536):
+        if port in taken:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                pass
+    sys.exit(f"No free UDP port from {preferred} up.")
 
 
 def _install() -> None:
@@ -600,7 +720,15 @@ def _write_config(instance: Instance) -> None:
     shutil.rmtree(config, ignore_errors=True)
     (config / ".storage").mkdir(parents=True)
     (config / "configuration.yaml").write_text(
-        CONFIGURATION + (FAKE_SYNC if instance.fake_sync else "")
+        CONFIGURATION
+        + (FAKE_SYNC if instance.fake_sync else "")
+        + (
+            E2E.format(
+                bridge_port=instance.bridge_port, dtls_port=instance.state["dtls_port"]
+            )
+            if instance.e2e
+            else ""
+        )
     )
     entries = [
         _entry(
@@ -665,6 +793,8 @@ def _write_config(instance: Instance) -> None:
 
 def _stubs(instance: Instance) -> list[str]:
     """The stub integrations in the instance's config directory."""
+    if instance.e2e:
+        return ["hue", "webostv", "glowcast_e2e"]
     return ["hue", "webostv", *(["glowcast_demo"] if instance.fake_sync else [])]
 
 
@@ -777,6 +907,8 @@ def _check_isolated(instance: Instance, token: str) -> None:
             sys.exit(f"Stopped: the {stub} stub was not loaded.")
     if instance.fake_sync and FAKE_SYNC_ACTIVE not in log:
         sys.exit("Stopped: the fake TV source and light output are not active.")
+    if instance.e2e and E2E_ACTIVE not in log:
+        sys.exit("Stopped: the Hue stream does not go to the fake bridge.")
     loaded = {
         component.split(".")[0]
         for component in _request(instance, "GET", "/api/config", token=token)[
@@ -791,6 +923,11 @@ def _check_isolated(instance: Instance, token: str) -> None:
     )
     if instance.fake_sync:
         print("Fake sync: Glowcast uses a fake TV source and a fake light output.")
+    if instance.e2e:
+        print(
+            "E2E: Glowcast's own source and Hue output; the Hue stream goes to "
+            "the fake bridge."
+        )
 
 
 def _reachable_from_network(instance: Instance) -> str | None:
