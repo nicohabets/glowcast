@@ -32,6 +32,9 @@ DEMO_API = {
     "_onboard": ["instance"],
     "_wait_until_running": ["instance", "token"],
     "stop": ["instance"],
+    # The restart (#183): the graceful stop and the login flow.
+    "_pid": ["instance", "name"],
+    "_request": ["instance", "method", "path", "body"],
 }
 
 
@@ -52,6 +55,7 @@ def test_the_demo_helpers_it_uses_exist() -> None:
         function = getattr(demo, name)
         assert list(inspect.signature(function).parameters)[: len(params)] == params
     assert "CONFIGURATION" in vars(demo)
+    assert {"USERNAME", "PASSWORD"} <= vars(demo).keys()
     assert "browser" in inspect.signature(demo._install).parameters
     instance = local_ha.instance()
     assert instance.home.parent == local_ha.INSTANCES
