@@ -65,8 +65,8 @@
         "title": "Welke lampen volgen het beeld?",
         "description": "Je kunt dit later wijzigen in de instellingen van Glowcast.",
         "menu_options": {
-          "bridge": "Hue-entertainmentruimte - het vloeiendst, voor Hue-lampen in een entertainmentruimte",
-          "ha_lights": "Losse lampen - elke kleurenlamp in Home Assistant, ongeveer één wijziging per seconde"
+          "bridge": "Hue-entertainmentruimte - het vloeiendst",
+          "ha_lights": "Losse lampen - elke kleurenlamp, trager"
         }
       },
       "ha_lights": {
@@ -162,8 +162,8 @@
         "title": "Welke lampen volgen het beeld?",
         "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo.",
         "menu_options": {
-          "hue_options": "Hue-entertainmentruimte - het vloeiendst, voor Hue-lampen in een entertainmentruimte",
-          "ha_lights_options": "Losse lampen - elke kleurenlamp in Home Assistant, ongeveer één wijziging per seconde"
+          "hue_options": "Hue-entertainmentruimte - het vloeiendst",
+          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager"
         }
       },
       "settings": {

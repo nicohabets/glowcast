@@ -47,9 +47,9 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 3. Restart Home Assistant (Settings → System → the restart button in the top right, or the repair HACS shows).
 4. Go to **Settings → Devices & services → Add integration → Glowcast**.
 
-<img width="400" alt="The Glowcast setup flow in Home Assistant: choose the TV, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/setup-flow.gif">
+<img width="400" alt="The Glowcast setup flow in Home Assistant: choose the TV, choose Hue entertainment area, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/setup-flow.gif">
 
-*Setting up Glowcast: the TV, the Hue bridge and its link button, then the entertainment area.*
+*Setting up Glowcast: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
 
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
@@ -71,9 +71,9 @@ Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcas
 
 Under **Configure**, or on Glowcast's device page (see [Settings](https://nicohabets.github.io/glowcast/docs/settings/#settings-on-the-device-page)), you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
 
-<img width="400" alt="Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then entertainment area TV area, brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
+<img width="400" alt="The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
 
-*The settings screen under Configure, with the default settings.*
+*The last page of the settings screen under Configure, after the lights, with the default settings.*
 
 More: [setup](https://nicohabets.github.io/glowcast/docs/setup/), [settings](https://nicohabets.github.io/glowcast/docs/settings/) (also as entities on the device page, to change from an automation), and [a computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) as the picture (a preview).
 

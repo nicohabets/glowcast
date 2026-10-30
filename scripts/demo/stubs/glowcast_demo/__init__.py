@@ -9,6 +9,9 @@ Glowcast's SOURCES and OUTPUTS registries. Everything else in those entries
 (checks, device links, setup steps, entities) stays Glowcast's own, so the
 real pipeline, runtime, entities and status run unchanged.
 
+It also adds three demo colour lights (light.py), two of them in the area
+"Living room", for the loose-lights flows (#9); they reach no device.
+
 It also has a service, `glowcast_demo.discover_screen_helper`, that hands
 Glowcast a zeroconf discovery of a screen helper, as Home Assistant's zeroconf
 integration would. The demo loads no discovery integration (nothing is looked
@@ -23,7 +26,7 @@ from ipaddress import ip_address
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import discovery_flow
+from homeassistant.helpers import discovery, discovery_flow
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
@@ -59,6 +62,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # No reload needed: `start` writes a config without a Glowcast entry, and
     # a pipeline is only built when the switch is turned on.
     _LOGGER.warning("demo: fake TV source and fake light output active")
+    hass.async_create_task(
+        discovery.async_load_platform(hass, "light", DOMAIN, {}, config)
+    )
 
     async def discover_screen_helper(call: ServiceCall) -> None:
         host = ip_address(call.data["host"])

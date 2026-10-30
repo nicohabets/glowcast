@@ -65,8 +65,8 @@
         "title": "Which lights should follow the picture?",
         "description": "You can change this later in Glowcast's settings.",
         "menu_options": {
-          "bridge": "Hue entertainment area - the smoothest, for Hue lights in an entertainment area",
-          "ha_lights": "Loose lights - any colour light in Home Assistant, about one change per second"
+          "bridge": "Hue entertainment area - the smoothest",
+          "ha_lights": "Loose lights - any colour light, slower"
         }
       },
       "ha_lights": {
@@ -162,8 +162,8 @@
         "title": "Which lights should follow the picture?",
         "description": "First the lights and their own settings, then brightness, intensity and the update rate.",
         "menu_options": {
-          "hue_options": "Hue entertainment area - the smoothest, for Hue lights in an entertainment area",
-          "ha_lights_options": "Loose lights - any colour light in Home Assistant, about one change per second"
+          "hue_options": "Hue entertainment area - the smoothest",
+          "ha_lights_options": "Loose lights - any colour light, slower"
         }
       },
       "settings": {
