@@ -101,8 +101,10 @@ class GlowcastData:
         self._stopped_by_ha = False
         # Set by async_resume(); every start and stop clears it.
         self._resume_wanted = False
-        # The light test while Glowcast does not sync (#182).
+        # The light test while Glowcast does not sync (#182), and whether a
+        # start waits for its release (no new test may claim the lights then).
         self._test: asyncio.Task[None] | None = None
+        self._ending_test = False
 
     @property
     def is_on(self) -> bool:
@@ -147,7 +149,11 @@ class GlowcastData:
         if self._pipeline is not None:
             return
         self._resume_wanted = False
-        await self._async_end_test()
+        self._ending_test = True
+        try:
+            await self._async_end_test()
+        finally:
+            self._ending_test = False
         if self._pipeline is not None:
             return  # started meanwhile
         data, options = self._entry.data, self._entry.options
@@ -277,6 +283,9 @@ class GlowcastData:
             return
         if self._test is not None and not self._test.done():
             _LOGGER.debug("Glowcast %s is testing the lights already", title)
+            return
+        if self._ending_test:
+            _LOGGER.debug("Glowcast %s is starting; no light test now", title)
             return
         data, options = self._entry.data, self._entry.options
         output_type = OUTPUTS.get(options[CONF_OUTPUT][CONF_TYPE])

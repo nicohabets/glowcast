@@ -151,6 +151,22 @@ async def test_switching_on_during_the_test_releases_it_first(
     assert pipeline.tests == 0
 
 
+async def test_a_press_while_switching_on_ends_no_second_test(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A press while the switch-on waits for the test's release starts no new
+    test: only the pipeline claims the lights after it (review of #182)."""
+    entry = await setup(hass)
+    await press(hass)
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the test's release
+    await entry.runtime_data.async_test_lights()
+    await start
+    await settle(hass)
+    assert fakes.log == [*RELEASED, "source.start", "output.start"]
+    assert len(fakes.outputs) == 2  # the test's and the pipeline's
+
+
 async def test_unloading_during_the_test_releases_the_lights(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
