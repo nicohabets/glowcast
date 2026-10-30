@@ -1,0 +1,17 @@
+# Setup
+
+After [installing Glowcast](installation.md), go to **Settings → Devices & services → Add integration → Glowcast**. During setup you pick:
+
+1. **What the lights follow** - **LG webOS TV**, then one of your LG webOS TVs in Home Assistant (or **Computer screen**, see [A computer screen](computer-screen.md))
+2. **Hue Bridge** - and press its link button when asked, then click Submit within 30 seconds. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself. It shows up in the Hue app as an app called "glowcast".
+3. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand
+
+![The Glowcast setup flow in Home Assistant: choose the TV, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done.](../images/setup-flow.gif){ width="400" }
+
+*Setting up Glowcast: the TV, the Hue bridge and its link button, then the entertainment area.*
+
+Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcast's key (for example because you removed the app in the Hue app), Home Assistant asks you to press the link button again; your settings are kept.
+
+The TV and bridge are fixed; to change them, remove Glowcast and add it again. Everything else can be changed later, see [Settings](settings.md).
+
+Glowcast adds one device, "Glowcast *TV name*", with a switch to start and stop syncing. Next: [start it automatically](starting.md) when the TV turns on.

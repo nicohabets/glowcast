@@ -247,7 +247,7 @@ Rules:
 - **One Glowcast entry per computer:** the entry's unique id is the helper's id (TXT `id`, or the `id` from pairing). A helper that is discovered again, for example at a new address, shows no new discovery; its `host` and `port` are updated inside the entry's `source` block (`_abort_if_unique_id_configured(updates=..., reload_on_update=False)`). The entry is not reloaded, which would stop a running sync: the source reads the address at every start. Typing the address of a helper that has an entry also updates the address, stores the token of the pairing that just worked (so it also works as a reauth at a new address; the reauth step itself pairs at the stored address) and aborts ("already set up for this computer"); its manual flow does not wait for a discovery of the same helper (`raise_on_progress=False`), and creating the entry removes that discovery.
 - **Two TVs on one bridge** are allowed, but only one can stream at a time: the second one gets "another app is streaming".
 - **Reauth:** when the pipeline stops with `AUTH_FAILED`, the HA side calls `entry.async_start_reauth(hass)`. The generic reauth step runs the reauth step of the entry's output type. With `SOURCE_AUTH_FAILED` (#110) it passes `{"glowcast_reauth_part": "source"}` as the flow's data, and the generic step runs the source type's `reauth_step` instead, so a rejected helper token never leads to pairing with the bridge again (each pairing adds an app on the bridge). A type without a reauth step (today the webOS source) aborts with `reauth_unavailable`. The screen source's reauth step (`screen_reauth`, #109) asks for a new pairing code, checks that the helper that answers has the stored id, stores the new token in the `source` block and keeps everything else; no reload, as the token is read at every start. For the output, HA then shows a re-authentication notification; the user presses the bridge button again and the new keys are stored with all settings kept. Opening the settings screen with a rejected key also starts reauth (instead of showing the area list).
-- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Diagnostics never include it (4.4). The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` lets the output type say what the user must clean up: the Hue output type shows a persistent notification with the steps in the Hue app (the same as in the README), for an entry that paired with a bridge. Discovery of a screen helper trusts the TXT `id` on the local network, as Home Assistant integrations commonly do: a device on the network that claims another helper's id can move that entry to its own address and so receive Glowcast's token at the next start. That is acceptable because the token only unlocks that one helper (its small frames and its info), not Home Assistant, the lights or anything else. The id check at every start (`/v1/info` must report the stored id, 3.4) keeps an unrelated service at that address from being used; it does not stop a device that claims the id.
+- **Security:** Glowcast's `app_key` is a full bridge user, not only a streaming key. Diagnostics never include it (4.4). The bridge has no API to remove an app, so removing Glowcast's entry leaves the app on the bridge. When the entry is removed, `async_remove_entry` lets the output type say what the user must clean up: the Hue output type shows a persistent notification with the steps in the Hue app (the same as on the website's "Uninstalling" page), for an entry that paired with a bridge. Discovery of a screen helper trusts the TXT `id` on the local network, as Home Assistant integrations commonly do: a device on the network that claims another helper's id can move that entry to its own address and so receive Glowcast's token at the next start. That is acceptable because the token only unlocks that one helper (its small frames and its info), not Home Assistant, the lights or anything else. The id check at every start (`/v1/info` must report the stored id, 3.4) keeps an unrelated service at that address from being used; it does not stop a device that claims the id.
 - **Why a separate Hue pairing:** HA's `hue` config entry stores only an `api_key`. Streaming needs a `clientkey` (the DTLS pre-shared key), which the bridge hands out only when an app pairs with `generateclientkey`. It cannot be read back later, so Glowcast pairs once itself.
 
 ### 4.2 Options (the settings screen)
@@ -285,7 +285,7 @@ The Hue entertainment-area output provides the **entertainment area** (`select`,
 
 The entities can be used in automations, dashboards and voice.
 
-Example automation (goes in the README):
+Example automation (on the website's "Starting automatically" page):
 
 ```yaml
 triggers:
@@ -301,7 +301,7 @@ actions:
       entity_id: switch.glowcast_living_room_tv
 ```
 
-The trigger accepts both `off` and `unavailable`, because a TV that Home Assistant has not reached since its start can go from `unavailable` to `on`; it never fires from `unknown`, so a restart of Home Assistant while the TV is on does not start Glowcast (#49). The blueprint `blueprints/automation/glowcast/start_with_tv.yaml` ("Start Glowcast when the TV turns on", linked from the README) uses the same trigger, asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off.
+The trigger accepts both `off` and `unavailable`, because a TV that Home Assistant has not reached since its start can go from `unavailable` to `on`; it never fires from `unknown`, so a restart of Home Assistant while the TV is on does not start Glowcast (#49). The blueprint `blueprints/automation/glowcast/start_with_tv.yaml` ("Start Glowcast when the TV turns on", linked from the website) uses the same trigger, asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off.
 
 The startup grace period (3.5) covers the seconds between the TV reporting "on" and captures working.
 
@@ -418,6 +418,7 @@ tests/
   test_webos_source.py  test_hue_output.py  test_manifest.py
 .github/
   workflows/ci.yml         # hassfest, HACS validation, pytest, ruff
+  workflows/website.yml    # builds the website, checks links, publishes it from main (#167)
   ISSUE_TEMPLATE/  pull_request_template.md
 screen_helper/             # the screen helper (#108, 8.3): its own package, tests and lock file,
                            #   not installed by HACS, not imported by the integration
@@ -425,6 +426,8 @@ scripts/                   # developer tools, not installed (render_brand.py bui
                            #   demo.py + demo/: a local HA with stubs for review GIFs)
 docs/ARCHITECTURE.md
 docs/brand/                # icon and logo sources (SVG), colours, font
+website/                   # the user documentation and landing page (MkDocs Material, #167),
+                           #   published at https://nicohabets.github.io/glowcast/
 hacs.json  README.md  LICENSE  CLAUDE.md
 ```
 

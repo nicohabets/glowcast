@@ -30,7 +30,7 @@ Why this matters, what is already known or verified, links to `docs/ARCHITECTURE
 - [ ] CI green (`pytest`, `ruff check`, hassfest, HACS validation)
 - [ ] No `homeassistant` imports in `core/`; no secrets, image URLs or frame contents in logs
 - [ ] Verified on real hardware where hardware is involved
-- [ ] README and `docs/ARCHITECTURE.md` updated if behaviour visible to users changed
+- [ ] The website (`website/pages/`), the README and `docs/ARCHITECTURE.md` updated if behaviour visible to users changed
 
 ## Depends on
 -
