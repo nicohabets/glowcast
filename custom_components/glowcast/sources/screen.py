@@ -45,8 +45,7 @@ RETRY_DELAY = 0.1
 # A wrong pairing code costs 1 s at the helper, one attempt at a time.
 PAIR_TIMEOUT = 10.0
 # No picture for this long after a frame turns the source off (product owner's
-# decision, #110), like the 3 s wait for an all-zero picture (#68), so a few
-# slow grabs on a busy computer do not stop syncing.
+# decision, #110), so a few slow grabs on a busy computer do not stop syncing.
 NO_PICTURE_WAIT = 3.0
 
 
