@@ -32,7 +32,10 @@ BLOBS = [
 BLOB_WIDTH = 0.18  # in the picture's widths
 # Channels per entertainment area, as the fake bridge reports them
 # (AREAS in fake_bridge.py; this stub cannot import it).
-AREA_CHANNELS = {"area-tv": 5, "area-room": 3}
+AREA_CHANNELS = {
+    "aaaaaaaa-0000-4000-8000-000000000001": 5,  # TV area
+    "aaaaaaaa-0000-4000-8000-000000000002": 3,  # Whole room
+}
 
 
 def picture(seconds: float) -> Frame:

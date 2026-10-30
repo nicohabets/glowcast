@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import imageio_ffmpeg
+from fake_bridge import TV_AREA_ID
 from playwright.sync_api import (
     Browser,
     BrowserContext,
@@ -243,7 +244,7 @@ def hue_steps(rec: Recorder) -> None:
     rec.step("area")
     rec.click(page.locator(f"{DIALOG} ha-picker-field"))
     rec.step("area-choices")
-    rec.click(rec.option("area-tv"))
+    rec.click(rec.option(TV_AREA_ID))
     rec.submit()
     rec.step("done")
     rec.submit()
