@@ -41,6 +41,8 @@ class FakeHelper:
         self.info: Any = {"id": HELPER_ID, "protocol": 1}
         self.slow = 10.0
         self.frame_requests = 0
+        # Called on every frame request, for example to move a fake clock.
+        self.on_frame: Any = None
         self.authorization: list[str | None] = []
         app = web.Application()
         app.router.add_get("/v1/info", self._info)
@@ -64,6 +66,8 @@ class FakeHelper:
 
     async def _frame(self, request: web.Request) -> web.StreamResponse:
         self.frame_requests += 1
+        if self.on_frame is not None:
+            self.on_frame()
         self.authorization.append(request.headers.get("Authorization"))
         item = self.frames.pop(0) if self.frames else self.default
         if item == "slow":
@@ -367,6 +371,26 @@ async def test_a_capture_that_hangs_ends_within_the_timeout(
     clock.time = 3.0
     with pytest.raises(SourceUnavailable):
         await source.capture()
+    assert not source.is_on()
+
+
+async def test_one_capture_that_hangs_for_4_s_turns_it_off(
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
+) -> None:
+    """The wait counts from the start of the failed capture: two requests
+    of about 2 s each are more than 3 s."""
+    source = source_for(hass, helper)
+    await source.start()
+    await source.capture()
+    helper.default = "slow"
+
+    def two_seconds_pass() -> None:
+        clock.time += 2.05
+
+    helper.on_frame = two_seconds_pass
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert clock.time == pytest.approx(4.1)
     assert not source.is_on()
 
 

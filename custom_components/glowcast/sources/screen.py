@@ -116,8 +116,9 @@ class ScreenFrameSource:
     def is_on(self) -> bool:
         """Return whether the helper answers with a picture.
 
-        False after start() failed, or once there has been no picture for
-        NO_PICTURE_WAIT after a frame came.
+        False after start() failed, or once a failed capture ends
+        NO_PICTURE_WAIT or more after the start of the first failed capture
+        in a row, after a frame came (no picture or no answer).
         """
         return self._on
 
@@ -125,6 +126,9 @@ class ScreenFrameSource:
         """Return the screen; ask once more before reporting no picture."""
         if not self._on:
             raise SourceUnavailable("The screen helper is not reachable")
+        # The wait counts from the start of the first failed capture, so one
+        # that hangs for 4 s already counts as more than NO_PICTURE_WAIT.
+        begin = self._now()
         # Reasons are set outside the except blocks, so no error from the
         # request is chained to SourceUnavailable.
         reason: str
@@ -143,10 +147,9 @@ class ScreenFrameSource:
         except TimeoutError:
             reason = "The screen helper did not respond in time"
         if self._delivered:
-            now = self._now()
             if self._no_picture_since is None:
-                self._no_picture_since = now
-            elif now - self._no_picture_since >= NO_PICTURE_WAIT:
+                self._no_picture_since = begin
+            if self._now() - self._no_picture_since >= NO_PICTURE_WAIT:
                 self._on = False
         raise SourceUnavailable(reason)
 
