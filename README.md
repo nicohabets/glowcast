@@ -34,8 +34,9 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 
 - Home Assistant 2025.7.2 or newer
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
-- A Philips Hue Bridge v2 or Hue Bridge Pro with colour lights, set up in Home Assistant with the **Philips Hue** integration. The original round bridge (sold 2012-2015) cannot stream.
-- An entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas)
+- Colour lights, one of:
+  - A Hue bridge with an entertainment area: a Philips Hue Bridge v2 or Hue Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas). The smoothest. The original round bridge (sold 2012-2015) cannot stream.
+  - Or colour lights in Home Assistant (loose lights): any colour light, of any brand. No Hue bridge needed.
 - [HACS](https://hacs.xyz/)
 
 ## Installation
@@ -70,7 +71,7 @@ During setup you pick:
 
 Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcast's key (for example because you removed the app in the Hue app), Home Assistant asks you to press the link button again; your settings are kept.
 
-Under **Configure**, or on Glowcast's device page (see [Settings](https://nicohabets.github.io/glowcast/docs/settings/#settings-on-the-device-page)), you can change which lights follow the picture (the area, or the loose lights and their places), brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
+Under **Configure**, or on Glowcast's device page (see [Settings](https://nicohabets.github.io/glowcast/docs/settings/#settings-on-the-device-page)), you can change which lights follow the picture (the area, or the loose lights and their places), brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV is fixed, and so is the bridge once Glowcast has paired with it; to change them, remove Glowcast and add it again. With loose lights, a bridge can be paired later: switch to an entertainment area under Configure.
 
 <img width="400" alt="The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
 
