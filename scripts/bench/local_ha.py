@@ -111,6 +111,40 @@ def loose_glowcast_entry(
     return entry
 
 
+def combined_output(area_id: str, lights: dict[str, Any]) -> dict[str, Any]:
+    """The combined output block (#11): the area, then the loose lights."""
+    return {
+        "type": "combined",
+        "parts": [{"type": "hue_entertainment", "area_id": area_id}, lights],
+    }
+
+
+def combined_glowcast_entry(
+    *,
+    helper: dict[str, Any],
+    app_key: str,
+    client_key: str,
+    area_id: str,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    """Glowcast's entry with the bench area and loose lights in one (#11).
+
+    The loose lights' part has no lights yet: they are stored by entity
+    registry id once Home Assistant has added the proxies.
+    """
+    entry = glowcast_entry(
+        helper=helper,
+        app_key=app_key,
+        client_key=client_key,
+        area_id=area_id,
+        settings=settings,
+    )
+    entry["options"]["output"] = combined_output(
+        area_id, {"type": "ha_lights", "follow": "lights", "lights": []}
+    )
+    return entry
+
+
 def stub_entry_id(domain: str) -> str:
     """The id of a stub entry the bench writes (demo._entry's)."""
     return demo._entry(domain, "", "", {})["entry_id"]

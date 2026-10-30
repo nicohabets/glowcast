@@ -117,6 +117,12 @@ def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
     return out
 
 
+def beside_area(lights: Sequence[LooseLight]) -> list[LooseLight]:
+    """The loose lights the combined suite drives beside the bench area: the
+    ones the camera does not see (the camera lights are the area's)."""
+    return [light for light in lights if light.camera is None]
+
+
 def labels(lights: Sequence[LooseLight], camera_labels: Mapping[str, str]) -> dict:
     """{index: label}: a camera light's own label ("light 1"), the others
     numbered on after the camera lights ("light 3 (state)")."""

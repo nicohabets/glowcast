@@ -89,6 +89,11 @@ class Thresholds:
     # report about once per second); commands may come this much early
     # (the send loop's tick and the event's time).
     loose_settle_s: float = 4.0
+    # A combined output (#11): a lost part shows in `dropped_outputs` within
+    # this (its check every 5 s), and clears this long after it is back (the
+    # retry after 5 s, its release first).
+    drop_within_s: float = 10.0
+    clear_within_s: float = 12.0
     rate_slack_s: float = 0.15
 
 

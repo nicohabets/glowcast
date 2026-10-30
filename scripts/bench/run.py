@@ -8,7 +8,7 @@ A USB webcam watches the monitor and the bench lights. Every run writes a
 report (Markdown and JSON, numbers only) to ~/.cache/glowcast-bench/reports/.
 
 Usage (from the repository root, in WSL on the bench's Windows computer):
-    python3 scripts/bench/run.py [--suite basic|extended|loose]
+    python3 scripts/bench/run.py [--suite basic|extended|loose|combined]
                                  [--mode pattern|screen|both]
                                  [--dry-run] [--keep-images] [--wait SECONDS]
                                  [--config FILE]
@@ -113,6 +113,30 @@ PLAN = {
         "switch off: each loose light back (owner state; camera)",
         "switch on, stop the helper: tv_off, each loose light back",
     ],
+    # The area and loose lights in one entry (#11): combined_suite.py.
+    "combined": [
+        "the calibration as above (the camera lights, through the bench area)",
+        "the local Home Assistant with proxy lights for the loose lights that\n"
+        "    the camera does not see (as in the loose suite); one Glowcast entry\n"
+        "    with the output `combined`: the bench area and those lights",
+        "cycle pattern, switch on: the area streams; per colour the area lights\n"
+        "    (camera) and the loose lights (owner state) show it; left-red-\n"
+        "    right-blue per side and band; black releases both, lights back",
+        "the area streams with one stream through the colours; the loose lights'\n"
+        "    rate as in the loose suite (at most once a second each)",
+        "switch off: area released, bench lights back (camera), loose lights\n"
+        "    back (owner state)",
+        "steady picture (left-red-right-blue), switch on; the loose lights'\n"
+        "    proxies unavailable in the local HA only (glowcast_bench.set_available,\n"
+        "    the owner's lights are not touched): `dropped_outputs` shows\n"
+        "    ha_lights within 10 s while the area streams on",
+        "available again before the retry (5 s): it follows again, the attribute\n"
+        "    clears, the area streams on",
+        "after Glowcast's lost-again window (60 s): unavailable through the\n"
+        "    retry: stays dropped with the reason, also once available again",
+        "switch off; switch on again, stop the helper: tv_off, area released,\n"
+        "    every light back",
+    ],
 }
 END = (
     "At the end, also after Ctrl+C or a failure: the bench Glowcast off, the bench\n"
@@ -155,7 +179,9 @@ def main() -> None:
         choices=["run", "snapshot", "pair-bridge"],
     )
     parser.add_argument(
-        "--suite", choices=["basic", "extended", "loose"], default="basic"
+        "--suite",
+        choices=["basic", "extended", "loose", "combined"],
+        default="basic",
     )
     parser.add_argument("--mode", choices=["pattern", "screen", "both"], default="both")
     parser.add_argument(
@@ -177,10 +203,11 @@ def main() -> None:
         ensure_environment()
         sys.exit(pair_bridge(args))
     modes = ["pattern", "screen"] if args.mode == "both" else [args.mode]
-    if args.suite == "loose":
+    if args.suite in ("loose", "combined"):
         if args.mode == "screen":
             print(
-                "Configuration error: the loose suite runs in pattern mode only",
+                f"Configuration error: the {args.suite} suite runs in pattern "
+                "mode only",
                 file=sys.stderr,
             )
             sys.exit(rp.EXIT_USAGE)
@@ -188,9 +215,9 @@ def main() -> None:
     if args.dry_run:
         print(f"Dry run: suite {args.suite}, modes {', '.join(modes)}.")
         print("Nothing is touched.")
-        if args.suite == "loose":
-            print("\nloose lights (pattern mode):")
-            for step in PLAN["loose"]:
+        if args.suite in ("loose", "combined"):
+            print(f"\n{args.suite} (pattern mode):")
+            for step in PLAN[args.suite]:
                 print(f"  - {step}")
             print("\nNeeds `loose_lights:` in the config (config.example.yaml).")
             print("\n" + END)
@@ -260,13 +287,18 @@ def check_config(
             raise ConfigError("`monitor` must be [left, top, width, height]")
         if cfg.get("monitor_region") is not None and not _box(cfg["monitor_region"]):
             raise ConfigError("`monitor_region` must be [x, y, w, h]")
-    if suite == "loose":
+    if suite in ("loose", "combined"):
         import loose
 
         try:
-            loose.parse(cfg)
+            lights = loose.parse(cfg)
         except ValueError as err:
             raise ConfigError(str(err)) from None
+        if suite == "combined" and not loose.beside_area(lights):
+            raise ConfigError(
+                "the combined suite needs a loose light without `light`: one the "
+                "camera does not see, beside the bench area"
+            )
     helper = cfg["helper"]
     if not str(helper.get("pairing_code", "")).isdigit() or not helper.get("port"):
         raise ConfigError("`helper` needs a `port` and a 6-digit `pairing_code`")
@@ -460,6 +492,12 @@ async def run(
 
                 print("loose lights...", flush=True)
                 await loose_suite.run(bench)
+                return
+            if suite_name == "combined":
+                import combined_suite
+
+                print("the area and loose lights together...", flush=True)
+                await combined_suite.run(bench)
                 return
             for mode in modes:
                 print(f"{mode} mode...", flush=True)

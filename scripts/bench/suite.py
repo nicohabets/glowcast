@@ -149,12 +149,20 @@ class Bench:
         self.tokens: list[str] = []
         # Picture changes on the Windows clock: [mode, picture, time].
         self.changes: list[list[Any]] = []
-        # Loose lights (#9, suite `loose`): the config, their labels, their
+        # Loose lights (#9, suite `loose`; #11, suite `combined`: only those
+        # not in the bench area, beside it): the config, their labels, their
         # proxies in the local HA (index -> entity id, registry entry) and
         # the owner's token for the proxies (written into the private storage).
         self.loose: list[loose.LooseLight] = (
-            loose.parse(cfg) if suite == "loose" else []
+            loose.parse(cfg)
+            if suite == "loose"
+            else loose.beside_area(loose.parse(cfg))
+            if suite == "combined"
+            else []
         )
+        # The helper's pattern in pattern mode (the combined suite also shows
+        # one steady picture).
+        self.helper_pattern = "cycle"
         self.loose_label: dict[int, str] = loose.labels(self.loose, self.label)
         self.proxies: dict[int, dict[str, Any]] = {}
         self.owner_token = ""
@@ -831,7 +839,7 @@ class Bench:
         if mode == "pattern":
             args += [
                 "--pattern",
-                "cycle",
+                self.helper_pattern,
                 "--pattern-interval",
                 str(h.get("pattern_interval", TIMING.pattern_interval)),
             ]
@@ -908,9 +916,27 @@ class Bench:
         }
         settings = {"brightness": 80, "intensity": 100, "update_rate": "high"}
         proxies: dict[str, dict[str, Any]] | None = None
-        if self.loose:
+        if self.suite == "combined":
+            # The bench area and the loose lights beside it in one entry (#11).
+            entry = local_ha.combined_glowcast_entry(
+                helper=helper,
+                app_key=self.keys["app_key"],
+                client_key=self.keys["client_key"],
+                area_id=self.cfg["bench_area_id"],
+                settings=settings,
+            )
+        elif self.loose:
             # Glowcast's loose-lights output on proxy lights (stubs/proxy.py).
             entry = local_ha.loose_glowcast_entry(helper=helper, settings=settings)
+        else:
+            entry = local_ha.glowcast_entry(
+                helper=helper,
+                app_key=self.keys["app_key"],
+                client_key=self.keys["client_key"],
+                area_id=self.cfg["bench_area_id"],
+                settings=settings,
+            )
+        if self.loose:
             proxies = {}
             for kind in loose.KINDS:
                 lights = [
@@ -926,14 +952,6 @@ class Bench:
                     proxies[kind] = local_ha.proxy_block(
                         self.cfg["home_assistant"]["url"], self.owner_token, lights
                     )
-        else:
-            entry = local_ha.glowcast_entry(
-                helper=helper,
-                app_key=self.keys["app_key"],
-                client_key=self.keys["client_key"],
-                area_id=self.cfg["bench_area_id"],
-                settings=settings,
-            )
         self.ha_start = asyncio.ensure_future(
             asyncio.to_thread(local_ha.start, self.keys["host"], entry, proxies)
         )
@@ -995,7 +1013,7 @@ class Bench:
                 "the owner's lights? see its home-assistant.log)"
             )
         self.proxies = {wanted[u].index: entry for u, entry in found.items()}
-        output = {
+        output: dict[str, Any] = {
             "type": "ha_lights",
             "follow": "lights",
             "lights": [
@@ -1007,6 +1025,8 @@ class Bench:
                 for light in self.loose
             ],
         }
+        if self.suite == "combined":
+            output = local_ha.combined_output(self.cfg["bench_area_id"], output)
         await self.ha.call(
             "glowcast_bench",
             "set_output",

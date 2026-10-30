@@ -48,6 +48,9 @@ FORWARDED = (
 )
 FEATURES = LightEntityFeature.TRANSITION | LightEntityFeature.FLASH
 GONE = ("unavailable", "unknown")
+# hass.data key: {local entity id: ProxyLight}, for glowcast_bench.set_available
+# (the combined suite, #11: a part failing, only in the local Home Assistant).
+LIGHTS = "bench_proxy_lights"
 PREFERRED = (ColorMode.XY, ColorMode.HS, ColorMode.RGB, ColorMode.COLOR_TEMP)
 
 
@@ -186,6 +189,8 @@ class ProxyLight(LightEntity):
         self._source = light["source"]
         self._attr_unique_id = light["unique_id"]
         self._attr_name = light["name"]
+        # Made unavailable by the bench (set_unavailable), whatever its light.
+        self._held = False
         caps = capabilities(state.get("attributes", {}))
         self._attr_supported_color_modes = caps["modes"]
         self._attr_supported_features = caps["features"]
@@ -194,6 +199,22 @@ class ProxyLight(LightEntity):
         if caps["max_kelvin"]:
             self._attr_max_color_temp_kelvin = caps["max_kelvin"]
         self._apply(state)
+
+    @property
+    def available(self) -> bool:
+        return self._attr_available and not self._held
+
+    def set_unavailable(self, held: bool) -> None:
+        """Unavailable in this Home Assistant only (the owner's light is not
+        touched), until called with False."""
+        self._held = held
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        self.hass.data.setdefault(LIGHTS, {})[self.entity_id] = self
+
+    async def async_will_remove_from_hass(self) -> None:
+        self.hass.data.get(LIGHTS, {}).pop(self.entity_id, None)
 
     def _apply(self, state: dict[str, Any]) -> None:
         a = state.get("attributes", {})
