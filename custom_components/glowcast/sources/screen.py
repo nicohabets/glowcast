@@ -61,8 +61,9 @@ class ScreenFrameSource:
         Glowcast's token."""
         self._hass = hass
         self._helper_id = helper_id
-        self._base = URL.build(scheme="http", host=host, port=port)
-        self._headers = {"Authorization": f"Bearer {token}"}
+        self._host = host
+        self._port = port
+        self._token = token
         self._on = False
         # A frame came since start(): only then does no picture turn it off,
         # so the pipeline's startup grace keeps asking while the computer
@@ -77,30 +78,15 @@ class ScreenFrameSource:
         """
         self._on = False
         self._delivered = False
-        reason: str
-        try:
-            async with asyncio.timeout(REQUEST_TIMEOUT):
-                async with self._get("/v1/info") as response:
-                    if response.status == 401:
-                        raise SourceAuthFailed(
-                            "The screen helper rejected Glowcast's token; pair again"
-                        )
-                    info = await response.json() if response.status == 200 else None
-            if not isinstance(info, dict):
-                reason = "The screen helper gave an unexpected answer"
-            elif info.get("id") != self._helper_id:
-                reason = "Another screen helper or service answers at this address"
-            elif info.get("protocol") != PROTOCOL:
-                reason = "The screen helper speaks another protocol version"
-            else:
-                self._on = True
-                return
-        except TimeoutError:
-            reason = "The screen helper did not respond in time"
-        except (OSError, ValueError, aiohttp.ClientError):
-            # ValueError: an answer that is not JSON.
-            reason = "Could not connect to the screen helper"
-        raise SourceUnavailable(reason)
+        # Raises SourceAuthFailed (401) or SourceUnavailable itself.
+        info = await async_info(self._hass, self._host, self._port, self._token)
+        if info.get("id") != self._helper_id:
+            raise SourceUnavailable(
+                "Another screen helper or service answers at this address"
+            )
+        if info.get("protocol") != PROTOCOL:
+            raise SourceUnavailable("The screen helper speaks another protocol version")
+        self._on = True
 
     def is_on(self) -> bool:
         """Return whether the helper answers with a picture.
@@ -172,7 +158,7 @@ class ScreenFrameSource:
         """A GET request to the helper, with the token; never logged."""
         session = async_get_clientsession(self._hass)
         async with session.get(
-            self._base.with_path(path), headers=self._headers
+            _url(self._host, self._port, path), headers=_auth(self._token)
         ) as response:
             yield response
 
@@ -254,11 +240,11 @@ async def async_info(
         async with asyncio.timeout(REQUEST_TIMEOUT):
             async with async_get_clientsession(hass).get(
                 _url(host, port, "/v1/info"),
-                headers={"Authorization": f"Bearer {token}"},
+                headers=_auth(token),
             ) as response:
                 if response.status == 401:
                     raise SourceAuthFailed(
-                        "The screen helper rejected Glowcast's token"
+                        "The screen helper rejected Glowcast's token; pair again"
                     )
                 info = await response.json() if response.status == 200 else None
         if isinstance(info, dict):
@@ -267,6 +253,7 @@ async def async_info(
     except TimeoutError:
         reason = "The screen helper did not respond in time"
     except (OSError, ValueError, aiohttp.ClientError):
+        # ValueError: an answer that is not JSON.
         reason = "Could not connect to the screen helper"
     raise SourceUnavailable(reason)
 
@@ -274,6 +261,11 @@ async def async_info(
 def _url(host: str, port: int, path: str) -> URL:
     """The helper's URL for this path."""
     return URL.build(scheme="http", host=host, port=port, path=path)
+
+
+def _auth(token: str) -> dict[str, str]:
+    """The header with Glowcast's token; never logged."""
+    return {"Authorization": f"Bearer {token}"}
 
 
 def create(

@@ -26,6 +26,8 @@ from custom_components.glowcast.const import DOMAIN, REAUTH_PART, REAUTH_SOURCE
 from custom_components.glowcast.outputs.hue_entertainment import _device_type
 from custom_components.glowcast.sources import SOURCES
 
+from .fakes import HELPER_ID, HELPER_NAME, HELPER_TOKEN, PAIRING_CODE
+
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 TV_ID = "tv-unique-id"
@@ -710,10 +712,7 @@ def test_translations_match() -> None:
 
 # The screen source's steps (#109): discovery, the address, the pairing code.
 
-HELPER_ID = "4f0c9a1b2c3d4e5f6a7b8c9d0e1f2a3b"
 PC_HOST = "192.0.2.10"
-PC_TOKEN = "Zq3vX8pL1mN7cR4tY9wK2bF6hJ0dS5aG"
-CODE = "123456"
 PAIR_URL = f"http://{PC_HOST}:8488/v1/pair"
 INFO_URL = f"http://{PC_HOST}:8488/v1/info"
 
@@ -724,7 +723,7 @@ class FakeHelperHTTP:
     def __init__(self) -> None:
         self.reachable = True
         # None: the helper has no code (--non-interactive).
-        self.code: str | None = CODE
+        self.code: str | None = PAIRING_CODE
         self.helper_id = HELPER_ID
         self.protocol = 1
         self.pair_requests = 0
@@ -737,7 +736,9 @@ class FakeHelperHTTP:
             return self._json(method, url, 403, {"error": "pairing_unavailable"})
         if data != {"code": self.code}:
             return self._json(method, url, 403, {"error": "wrong_code"})
-        return self._json(method, url, 200, {"token": PC_TOKEN, "id": self.helper_id})
+        return self._json(
+            method, url, 200, {"token": HELPER_TOKEN, "id": self.helper_id}
+        )
 
     async def info(self, method: str, url: URL, data: Any) -> Any:
         if not self.reachable:
@@ -746,7 +747,7 @@ class FakeHelperHTTP:
             method,
             url,
             200,
-            {"id": self.helper_id, "name": "Test PC", "protocol": self.protocol},
+            {"id": self.helper_id, "name": HELPER_NAME, "protocol": self.protocol},
         )
 
     @staticmethod
@@ -774,7 +775,7 @@ def discovery(
         hostname="test-pc.local.",
         type="_glowcast._tcp.local.",
         name="Test PC (4f0c9a)._glowcast._tcp.local.",
-        properties={"id": HELPER_ID, "name": "Test PC", "protocol": "1"} | properties,
+        properties={"id": HELPER_ID, "name": HELPER_NAME, "protocol": "1"} | properties,
     )
 
 
@@ -782,7 +783,7 @@ def screen_entry(hass: HomeAssistant, host: str = PC_HOST) -> MockConfigEntry:
     """An existing Glowcast entry for the helper, with changed settings."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        title="Test PC",
+        title=HELPER_NAME,
         unique_id=HELPER_ID,
         version=1,
         data={
@@ -846,7 +847,7 @@ SCREEN_SOURCE = {
     "helper_id": HELPER_ID,
     "host": PC_HOST,
     "port": 8488,
-    "token": PC_TOKEN,
+    "token": HELPER_TOKEN,
 }
 
 
@@ -859,9 +860,9 @@ async def test_a_discovered_helper_is_set_up_with_its_code(
     result = await discover(hass, discovery())
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "screen_code"
-    assert result["description_placeholders"] == {"computer": "Test PC"}
+    assert result["description_placeholders"] == {"computer": HELPER_NAME}
     [flow] = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
-    assert flow["context"]["title_placeholders"] == {"name": "Test PC"}
+    assert flow["context"]["title_placeholders"] == {"name": HELPER_NAME}
     assert flow["context"]["unique_id"] == HELPER_ID
     flow_id = result["flow_id"]
 
@@ -871,8 +872,10 @@ async def test_a_discovered_helper_is_set_up_with_its_code(
     assert result["step_id"] == "screen_code"
     assert result["errors"] == {"base": "screen_wrong_code"}
 
-    result = await through_the_output(hass, await code(hass, flow_id, f" {CODE} "))
-    assert result["title"] == "Test PC"
+    result = await through_the_output(
+        hass, await code(hass, flow_id, f" {PAIRING_CODE} ")
+    )
+    assert result["title"] == HELPER_NAME
     assert result["data"] == {
         "source": SCREEN_SOURCE,
         "bridge": {
@@ -893,7 +896,7 @@ async def test_a_discovered_helper_is_set_up_with_its_code(
         for _, url, _, headers in aioclient_mock.mock_calls
         if str(url) == INFO_URL
     ]
-    assert info_headers == {"Authorization": f"Bearer {PC_TOKEN}"}
+    assert info_headers == {"Authorization": f"Bearer {HELPER_TOKEN}"}
 
 
 async def test_a_code_that_is_not_6_digits_is_not_sent(
@@ -925,14 +928,14 @@ async def test_pairing_problems_keep_the_form_open(
     flow_id = result["flow_id"]
     for name, value in change.items():
         setattr(screen_helper, name, value)
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "screen_code"
     assert result["errors"] == {"base": error}
 
     for name, value in vars(FakeHelperHTTP()).items():
         setattr(screen_helper, name, value)
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["step_id"] == "bridge"
 
 
@@ -1016,8 +1019,8 @@ async def test_a_helper_set_up_by_hand(
     assert result["step_id"] == "screen_code"
     assert result["description_placeholders"] == {"computer": PC_HOST}
 
-    result = await through_the_output(hass, await code(hass, flow_id, CODE))
-    assert result["title"] == "Test PC"
+    result = await through_the_output(hass, await code(hass, flow_id, PAIRING_CODE))
+    assert result["title"] == HELPER_NAME
     assert result["data"]["source"] == SCREEN_SOURCE
     assert result["result"].unique_id == HELPER_ID
 
@@ -1033,7 +1036,7 @@ async def test_a_helper_by_hand_alongside_its_discovery(
     await hass.config_entries.flow.async_configure(
         flow_id, {"host": PC_HOST, "port": 8488}
     )
-    result = await through_the_output(hass, await code(hass, flow_id, CODE))
+    result = await through_the_output(hass, await code(hass, flow_id, PAIRING_CODE))
     assert result["result"].unique_id == HELPER_ID
     assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
 
@@ -1050,7 +1053,7 @@ async def test_a_helper_by_hand_that_has_an_entry(
     await hass.config_entries.flow.async_configure(
         flow_id, {"host": PC_HOST, "port": 8488}
     )
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "screen_already_configured"
     assert entry.data["source"] == SCREEN_SOURCE
@@ -1129,7 +1132,7 @@ async def test_screen_reauth_asks_a_new_code(
     result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "screen_reauth"
-    assert result["description_placeholders"]["computer"] == "Test PC"
+    assert result["description_placeholders"]["computer"] == HELPER_NAME
     flow_id = result["flow_id"]
 
     result = await code(hass, flow_id, "654321")
@@ -1137,17 +1140,17 @@ async def test_screen_reauth_asks_a_new_code(
     assert result["errors"] == {"base": "screen_wrong_code"}
 
     screen_helper.helper_id = "another-helper"
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["errors"] == {"base": "screen_other_helper"}
 
     screen_helper.helper_id = HELPER_ID
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "screen_reauth_successful"
     assert entry.data["source"] == SCREEN_SOURCE
     assert entry.data["bridge"]["app_key"] == "old-app-key"
     assert entry.options == options
-    assert entry.title == "Test PC"
+    assert entry.title == HELPER_NAME
     assert FakeHueAPI.instances == []
 
 
@@ -1195,7 +1198,7 @@ async def test_a_helper_found_at_a_new_address_during_its_reauth(
     assert result["type"] is FlowResultType.ABORT
     assert entry.data["source"]["host"] == PC_HOST
 
-    result = await code(hass, flow_id, CODE)
+    result = await code(hass, flow_id, PAIRING_CODE)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "screen_reauth_successful"
     assert entry.data["source"] == SCREEN_SOURCE
@@ -1213,11 +1216,11 @@ async def test_screen_reauth_of_a_loaded_entry_does_not_reload_it(
     await hass.async_block_till_done()
 
     result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
-    result = await code(hass, result["flow_id"], CODE)
+    result = await code(hass, result["flow_id"], PAIRING_CODE)
     await hass.async_block_till_done()
 
     assert result["reason"] == "screen_reauth_successful"
-    assert entry.data["source"]["token"] == PC_TOKEN
+    assert entry.data["source"]["token"] == HELPER_TOKEN
     assert entry.state is ConfigEntryState.LOADED
     assert "should use it for scheduling a reload" not in caplog.text
     assert await hass.config_entries.async_unload(entry.entry_id)
