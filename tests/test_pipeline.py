@@ -979,6 +979,19 @@ async def test_source_refusing_at_start_stops_when_the_grace_ends(
     assert h.log[-3:] == CLEANUP
 
 
+async def test_the_grace_ends_on_a_refusal_during_an_attempt() -> None:
+    """The grace may end while the next attempt is still asking: the last
+    answer, the refusal, still counts (#253)."""
+    h = Harness()
+    h.source.default = SourceNotSupported("not permitted", not_permitted=True)
+    # Attempts of 0.6 s and 1 s apart: the one from 9.6 s is cut off at 10 s.
+    h.source.capture_time = 0.6
+    await h.start()
+    await h.clock.advance(STARTUP_GRACE + 1)
+    assert await h.finish() == StopReason.SOURCE_NOT_PERMITTED
+    assert "output.start" not in h.log
+
+
 async def test_a_refusal_at_start_that_passes_starts_normally() -> None:
     """A TV still starting its services may refuse once (#214)."""
     h = Harness()

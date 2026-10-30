@@ -10,7 +10,7 @@ Glowcast adds one device, "Glowcast *TV name*", with a **switch** under Controls
 
 With an entertainment area, what the lights do when it stops follows the area's "When syncing stops" setting in the Hue app: with "Last on-state" the bridge restores them; with "Pause on the last colour" they keep the last colour Glowcast sent, while Home Assistant still shows their earlier state. Choose "Last on-state" to get them back, or set the lights again from Home Assistant or the Hue app.
 
-Glowcast does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs, Glowcast continues once Home Assistant is back, if the TV still shows a picture; otherwise the switch stays off. Start it from a dashboard, by voice, or with an automation, for example when the TV turns on.
+Glowcast does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs, Glowcast continues once Home Assistant is back, if the TV still shows a picture; otherwise the switch stays off. A TV that no longer allows screenshots stops it again after about 10 seconds, with a repair (see [Troubleshooting](troubleshooting.md#the-tv-does-not-allow-screenshots)). Start it from a dashboard, by voice, or with an automation, for example when the TV turns on.
 
 ## The blueprint
 
