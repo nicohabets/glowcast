@@ -183,3 +183,31 @@ def test_left_and_right_come_from_the_bridge() -> None:
     assert rp.sides({"wall": -0.30077, "spot": -0.28475}, 0.2) is None
     assert rp.sides({"wall": -0.3, "spot": None}, 0.2) is None
     assert rp.channel_x(AREA, SERVICES, "another-light") is None
+
+
+def test_the_timing_follows_glowcasts_constants() -> None:
+    from custom_components.glowcast.core.light_state import BLACK_HOLD
+    from custom_components.glowcast.core.pipeline import NO_PICTURE_WAIT
+
+    now = rp.Timing(no_picture_wait=NO_PICTURE_WAIT, black_hold=BLACK_HOLD)
+    # Each pattern leaves room for the release, the lights' return and a look.
+    assert now.pattern_interval >= NO_PICTURE_WAIT + 5.0
+    assert now.release_hold_end < NO_PICTURE_WAIT < now.released_by
+    assert now.short_black < BLACK_HOLD < now.long_black
+    low, high = now.glow_window
+    assert low < BLACK_HOLD < high < now.long_black
+    assert now.glow_settled_from < now.long_black - 1.0
+
+
+def test_a_longer_no_picture_wait_moves_the_pattern_steps() -> None:
+    """A 3 s wait gives the bench's 8 s patterns; 7 s gives 12 s."""
+    three = rp.Timing(no_picture_wait=3.0, black_hold=3.5)
+    seven = rp.Timing(no_picture_wait=7.0, black_hold=3.5)
+    assert three.pattern_interval == 8.0
+    assert seven.pattern_interval == 12.0
+    assert (three.release_hold_end, three.released_by) == (2.7, 5.5)
+    assert (seven.release_hold_end, seven.released_by) == (6.7, 9.5)
+    assert seven.back_from == 6.5
+    # The glow does not depend on the no-picture wait.
+    assert three.glow_window == seven.glow_window == (3.0, 6.0)
+    assert (three.short_black, three.long_black) == (2.0, 8.0)

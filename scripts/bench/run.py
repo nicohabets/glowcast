@@ -57,8 +57,8 @@ PLAN = {
         "    left-red-right-blue, letterbox)",
         "switch on: the bench area streams within the limit",
         "per colour: the camera sees it on each light; the delay per change",
-        "black (all zero): the colours hold for 3 s, then the lights are released\n"
-        "    and back (camera)",
+        "black (all zero): the colours hold for the no-picture wait, then the\n"
+        "    lights are released and back (camera)",
         "left-red-right-blue: the lights are claimed again; each light its side\n"
         "    (skipped when the channels share x)",
         "long black glow: skipped (all zero is no picture; checked in screen mode)",
@@ -72,9 +72,9 @@ PLAN = {
         "switch on: the bench area streams",
         "red, green, blue, white: the colours, and the delay from the monitor to\n"
         "    the light",
-        "near-black 2 s: the colours hold",
-        "near-black 8 s: the colours hold 3 s, then the warm glow; the area keeps\n"
-        "    streaming",
+        "short near-black: the colours hold",
+        "long near-black: the colours hold on black, then the warm glow; the\n"
+        "    area keeps streaming",
         "left-red-right-blue (skipped when the channels share x)",
         "more colour changes for the delay",
         "switch off: area stops, lights back; switch on, stop the helper: tv_off,\n"

@@ -87,6 +87,64 @@ class Thresholds:
 
 
 @dataclasses.dataclass(frozen=True)
+class Timing:
+    """The suite's timing, derived from Glowcast's own constants, so a change
+    of the no-picture wait or the hold on black does not break the bench.
+
+    no_picture_wait: all-zero frames for this long release the lights
+    (core.pipeline.NO_PICTURE_WAIT); black_hold: the colours hold this long on
+    a black picture before the glow (core.light_state.BLACK_HOLD).
+    """
+
+    no_picture_wait: float
+    black_hold: float
+
+    @property
+    def pattern_interval(self) -> float:
+        """Seconds per helper pattern: the release (the wait and a capture),
+        the lights' return (about 1.7 s, #142) and a settled look after it."""
+        return max(8.0, float(int(self.no_picture_wait + 5.0 + 0.999)))
+
+    @property
+    def release_hold_end(self) -> float:
+        """Until here (after the change) all-zero black still holds the colours."""
+        return self.no_picture_wait - 0.3
+
+    @property
+    def released_by(self) -> float:
+        """From here the area must be inactive."""
+        return self.no_picture_wait + 2.5
+
+    @property
+    def back_from(self) -> float:
+        """From here the camera looks for the lights' own picture."""
+        return self.no_picture_wait - 0.5
+
+    @property
+    def short_black(self) -> float:
+        """A near-black picture this short holds the colours."""
+        return min(2.0, self.black_hold - 1.0)
+
+    @property
+    def long_black(self) -> float:
+        """A near-black picture this long shows the glow for a while."""
+        return self.black_hold + 4.5
+
+    @property
+    def glow_hold_end(self) -> float:
+        return self.black_hold - 0.5
+
+    @property
+    def glow_window(self) -> tuple[float, float]:
+        """When the light must have crossed to the glow (after the change)."""
+        return self.black_hold - 0.5, self.black_hold + 2.5
+
+    @property
+    def glow_settled_from(self) -> float:
+        return self.black_hold + 2.0
+
+
+@dataclasses.dataclass(frozen=True)
 class Calibration:
     """A region's references: dark (lights off), white (warm white, full) and
     cool (a cool white at full brightness, for Glowcast's white)."""

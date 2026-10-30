@@ -64,7 +64,6 @@ monitor: [1920, 0, 1920, 1080]
 helper:
   port: 8489
   pairing_code: "135790"
-  pattern_interval: 8  # seconds per pattern in pattern mode
 
 # Windows' uv.exe as a WSL path; empty: found with `where.exe uv`.
 uv: ""

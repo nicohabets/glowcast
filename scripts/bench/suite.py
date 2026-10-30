@@ -29,6 +29,12 @@ import report as rp
 import winproc
 from report import FAIL, PASS, SKIP, Step
 
+# Glowcast's own timing from the working copy (core/ imports no Home Assistant).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from custom_components.glowcast.core.light_state import BLACK_HOLD  # noqa: E402
+from custom_components.glowcast.core.pipeline import NO_PICTURE_WAIT  # noqa: E402
+
+TIMING = rp.Timing(no_picture_wait=NO_PICTURE_WAIT, black_hold=BLACK_HOLD)
 CAMERA_PACKAGES = ["--with", "opencv-python==5.0.0.93", "--with", "numpy==2.5.4"]
 CYCLE = ("red", "green", "blue", "white", "black", "left-red-right-blue", "letterbox")
 # What each helper pattern should show on the lights.
@@ -46,9 +52,9 @@ SCREEN_SEQUENCE: list[tuple[str, float, str]] = [
     ("#00ff00", 5, "green"),
     ("#0000ff", 5, "blue"),
     ("#ffffff", 5, "white"),
-    (NEAR_BLACK, 2, "short-black"),
+    (NEAR_BLACK, TIMING.short_black, "short-black"),
     ("#ff0000", 5, "red"),
-    (NEAR_BLACK, 8, "long-black"),
+    (NEAR_BLACK, TIMING.long_black, "long-black"),
     ("split #ff0000 #0000ff", 6, "left-red-right-blue"),
     ("#00ff00", 5, "green"),
     ("#ff0000", 5, "red"),
@@ -805,7 +811,7 @@ class Bench:
                 "--pattern",
                 "cycle",
                 "--pattern-interval",
-                str(h.get("pattern_interval", 8)),
+                str(h.get("pattern_interval", TIMING.pattern_interval)),
             ]
         elif screen is not None:
             args += ["--screen", str(screen)]
@@ -1154,7 +1160,9 @@ class Bench:
 
     async def pattern_mode(self) -> None:
         mode = "pattern"
-        interval = float(self.cfg["helper"].get("pattern_interval", 8))
+        interval = float(
+            self.cfg["helper"].get("pattern_interval", TIMING.pattern_interval)
+        )
         cycles = int(self.cfg.get("pattern_cycles", 2))
         await self.start_helper(mode)
         await self.wait_for_red(interval)
@@ -1215,7 +1223,7 @@ class Bench:
         self.delay_step(mode, all_delays)
         self.report.add(
             Step(
-                "long black: the warm glow after about 3.5 s",
+                "long black: the warm glow after the hold on black",
                 mode,
                 SKIP,
                 note="the helper's black is all zero (no picture): "
@@ -1286,24 +1294,26 @@ class Bench:
     def black_release_step(
         self, mode: str, prev: dict[str, rp.RGB], start: float, stop: float
     ) -> None:
-        """The helper's all-zero black: hold for 3 s, then the lights are
-        released and back."""
+        """The helper's all-zero black: the colours hold during the no-picture
+        wait, then the lights are released and back."""
         assert self.ha is not None
         self.hold_step(
             mode,
-            "black (all zero), first 3 s: the colours hold",
+            "black (all zero), during the no-picture wait: the colours hold",
             prev,
             start + 0.3,
-            start + 2.7,
+            start + TIMING.release_hold_end,
         )
         released = self.ha.first("status", "no_picture", self.wsl(start))
         samples = self.samples()
-        numbers: dict[str, Any] = {}
+        numbers: dict[str, Any] = {"no-picture wait s": TIMING.no_picture_wait}
         ok = released is not None and self.win(released) < stop
         if released is not None:
             numbers["released after s"] = round(self.win(released) - start, 2)
         assert self.bridge is not None
-        statuses = self.bridge.statuses(self.wsl(start + 5.5), self.wsl(stop - 0.2))
+        statuses = self.bridge.statuses(
+            self.wsl(start + TIMING.released_by), self.wsl(stop - 0.2)
+        )
         inactive = bool(statuses) and all(s["status"] == "inactive" for s in statuses)
         ok &= inactive
         for name in self.lights:
@@ -1313,7 +1323,7 @@ class Bench:
                 self.pre_camera[name],
                 self.cal[name],
                 self.th,
-                start + 2.5,
+                start + TIMING.back_from,
                 stop,
             )
             numbers[f"{self.label[name]} back after s"] = (
@@ -1322,7 +1332,7 @@ class Bench:
             ok &= t is not None
         self.report.add(
             Step(
-                "no picture (all-zero black for 3 s): "
+                "no picture (all-zero black past the no-picture wait): "
                 "lights released and back (camera)",
                 mode,
                 PASS if ok else FAIL,
@@ -1439,7 +1449,7 @@ class Bench:
             elif kind == "short-black":
                 self.hold_step(
                     mode,
-                    "short black (2 s, not all zero): the colours hold",
+                    "short black (shorter than the hold, not all zero): colours hold",
                     prev or {},
                     t + 0.3,
                     stop - 0.05,
@@ -1475,21 +1485,23 @@ class Bench:
     def glow_step(
         self, mode: str, prev: dict[str, rp.RGB], start: float, stop: float
     ) -> None:
-        """Near-black (not all zero): hold 3.5 s, then the dim warm glow,
-        still streaming."""
+        """Near-black (not all zero): the hold on black, then the dim warm
+        glow, still streaming."""
         assert self.ha is not None
         self.hold_step(
             mode,
-            "long black, first 3 s: the colours hold",
+            "long black, during the hold on black: the colours hold",
             prev,
             start + 0.3,
-            start + 3.0,
+            start + TIMING.glow_hold_end,
         )
         samples = self.samples()
         numbers: dict[str, Any] = {}
         ok = True
         for name in self.lights:
-            glow = rp.settled(samples, name, start + 5.5, stop - 0.3)
+            glow = rp.settled(
+                samples, name, start + TIMING.glow_settled_from, stop - 0.3
+            )
             if glow is None or name not in prev:
                 ok = False
                 continue
@@ -1504,7 +1516,8 @@ class Bench:
             numbers[f"{self.label[name]} glow after s"] = (
                 None if t is None else round(t - start, 2)
             )
-            ok &= t is not None and 3.0 <= t - start <= 6.0
+            low, high = TIMING.glow_window
+            ok &= t is not None and low <= t - start <= high
         streaming, polls = self.streamed_throughout(self.wsl(start), self.wsl(stop))
         ok &= streaming
         black = "black_picture" in self.ha.states_of(
@@ -1514,7 +1527,7 @@ class Bench:
         numbers["status black_picture"] = "yes" if black else "no"
         self.report.add(
             Step(
-                "long black (8 s, not all zero): the warm glow after about 3.5 s",
+                "long black (not all zero): the warm glow after the hold on black",
                 mode,
                 PASS if ok else FAIL,
                 numbers=numbers,
