@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from types import MappingProxyType
 from typing import Any
 
 import aiohttp
@@ -87,6 +88,7 @@ class HueEntertainmentOutput:
     """Streams colours to one Hue entertainment area."""
 
     max_rate_hz = 25.0
+    dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
 
     def __init__(
         self,

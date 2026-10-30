@@ -82,6 +82,7 @@ class CountingOutput:
     def __init__(self, output: HueEntertainmentOutput) -> None:
         self._output = output
         self.max_rate_hz = output.max_rate_hz
+        self.dropped_parts = output.dropped_parts
         self.sends = 0
         self.first_send: float | None = None
 

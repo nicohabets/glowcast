@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any
 
 from homeassistant.components.light import (
@@ -110,6 +111,7 @@ class HaLightsOutput:
     """Drives loose lights with light.turn_on, each at its own position."""
 
     max_rate_hz = MAX_RATE_HZ
+    dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
 
     def __init__(
         self,

@@ -162,6 +162,8 @@ class FakeOutput:
         self.start_errors: list[Any] = []  # None, an exception, or "hang"
         self.check_error: Exception | None = None
         self.check_hangs = False
+        # Parts of a combined output that do not run (by name).
+        self.dropped_parts: dict[str, Exception] = {}
         self.sent: list[tuple[float, list[ChannelColor]]] = []
         self.checks = 0
 

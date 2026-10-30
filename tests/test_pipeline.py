@@ -25,6 +25,7 @@ from custom_components.glowcast.core.pipeline import (
 from custom_components.glowcast.core.ports import (
     OutputAuthFailed,
     OutputBusy,
+    OutputGone,
     OutputLost,
     OutputNotFound,
     OutputTooManyChannels,
@@ -615,6 +616,66 @@ async def test_stream_lost_and_the_retry_fails(
     h.output.check_error = OutputLost("dropped")
     assert await h.finish() == reason
     assert h.log[-3:] == CLEANUP
+
+
+async def test_output_gone_stops_without_a_retry() -> None:
+    """A combined output retried its parts itself (#11): no second round."""
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.output.check_error = OutputGone("every part is lost")
+    assert await h.finish() == StopReason.OUTPUT_LOST
+    assert h.log.count("output.start") == 1
+    assert Phase.RETRYING not in h.phases
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_dropped_parts_are_reported_when_they_change() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    assert all(status.dropped_parts == {} for status in h.statuses)
+    reports = len(h.statuses)
+    h.output.dropped_parts = {"area": OutputLost("dropped")}
+    await h.clock.advance(TICK)
+    assert len(h.statuses) == reports + 1
+    assert h.statuses[-1].phase is Phase.STREAMING
+    assert h.statuses[-1].dropped_parts == {"area": StopReason.OUTPUT_LOST}
+    await h.clock.advance(0.2)  # unchanged: no report per tick
+    assert len(h.statuses) == reports + 1
+    h.output.dropped_parts = {"area": OutputAuthFailed("revoked")}
+    await h.clock.advance(TICK)
+    assert h.statuses[-1].dropped_parts == {"area": StopReason.AUTH_FAILED}
+    h.output.dropped_parts = {}
+    await h.clock.advance(TICK)
+    assert h.statuses[-1].dropped_parts == {}
+    assert await h.stop() == StopReason.USER
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (OutputBusy("taken"), StopReason.OUTPUT_BUSY),
+        (OutputNotFound("gone"), StopReason.OUTPUT_NOT_FOUND),
+        (OutputTooManyChannels("21"), StopReason.OUTPUT_TOO_MANY_CHANNELS),
+        (OutputUnavailable("off"), StopReason.OUTPUT_UNAVAILABLE),
+        (OutputAuthFailed("revoked"), StopReason.AUTH_FAILED),
+        (OutputLost("dropped"), StopReason.OUTPUT_LOST),
+        (OutputGone("gone"), StopReason.OUTPUT_LOST),
+        (ValueError("unexpected"), StopReason.OUTPUT_UNAVAILABLE),
+    ],
+)
+async def test_parts_dropped_at_start_are_in_the_first_reports(
+    error: Exception, reason: StopReason
+) -> None:
+    h = Harness()
+    h.output.dropped_parts = {"lights": error}
+    await h.start()
+    await h.clock.advance(0.5)
+    streaming = next(s for s in h.statuses if s.phase is Phase.STREAMING)
+    assert streaming.dropped_parts == {"lights": reason}
+    assert await h.stop() == StopReason.USER
+    assert h.statuses[-1].dropped_parts == {"lights": reason}
 
 
 async def lose_stream(h: Harness) -> None:

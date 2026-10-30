@@ -1,5 +1,6 @@
 """Ports: the interfaces the pipeline uses to talk to the outside world."""
 
+from collections.abc import Mapping
 from typing import Protocol
 
 from .models import Channel, ChannelColor, Frame
@@ -35,6 +36,14 @@ class OutputAuthFailed(Exception):
 
 class OutputLost(Exception):
     """A running stream is gone or was taken over."""
+
+
+class OutputGone(Exception):
+    """The lights are lost and the output's own retry failed; stop, no retry.
+
+    A combined output retries each part itself (architecture 4.4), so the
+    pipeline must not retry the whole output on top of that.
+    """
 
 
 class FrameSource(Protocol):
@@ -73,6 +82,11 @@ class LightOutput(Protocol):
 
     max_rate_hz: float  # how often send() may be called
 
+    # The parts of a combined output that do not run now, by their name, with
+    # why: they could not start, or were lost (waiting for their retry, or
+    # dropped until the next start). Empty for an output of one part.
+    dropped_parts: Mapping[str, Exception]
+
     async def start(self) -> list[Channel]:
         """Claim the lights and return the channels to drive.
 
@@ -87,7 +101,7 @@ class LightOutput(Protocol):
         """Send colours; non-blocking."""
 
     async def check(self) -> None:
-        """Raise OutputLost (gone or taken over) or OutputAuthFailed.
+        """Raise OutputLost (gone or taken over), OutputGone or OutputAuthFailed.
 
         Called again on every send tick when no check is running, so the
         output throttles its own status requests.
