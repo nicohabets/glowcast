@@ -60,6 +60,7 @@ class FakeWebOsClient:
         self.callbacks: list[Callable[[WebOsTvState], Any]] = []
         self.power_state = POWER_ON
         self.request_result: Any = {"imageUri": IMAGE_URL}
+        self.payloads: list[dict[str, Any]] = []
         self.connect_calls = 0
         self.disconnected = False
         self._dropped = asyncio.Event()
@@ -121,6 +122,7 @@ class FakeWebOsClient:
     async def request(self, uri: str, payload: dict[str, Any]) -> dict[str, Any]:
         assert uri == "tv/executeOneShot"
         assert payload["method"] == "DISPLAY"
+        self.payloads.append(payload)
         if self.request_result is HANG:
             await asyncio.Event().wait()
         if isinstance(self.request_result, BaseException):
@@ -443,6 +445,27 @@ async def test_capture_returns_a_downscaled_frame(
     right = frame.pixels[row + 3 * 58 : row + 3 * 58 + 3]
     assert left[0] > 200 and left[2] < 50
     assert right[2] > 200 and right[0] < 50
+
+
+async def test_capture_asks_for_a_picture_size(
+    started: tuple[WebOsFrameSource, FakeWebOsClient],
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Older TVs refuse a full-screen capture without a size (#221)."""
+    source, client = started
+    aioclient_mock.get(IMAGE_URL, content=_jpeg())
+
+    await source.capture()
+
+    assert client.payloads == [
+        {
+            "path": "/tmp/capture.jpg",
+            "method": "DISPLAY",
+            "format": "JPG",
+            "width": 960,
+            "height": 540,
+        }
+    ]
 
 
 async def test_capture_when_tv_off(
