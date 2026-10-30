@@ -59,9 +59,12 @@ def test_no_light_service_details(name: str) -> None:
     assert LIGHT_SERVICE.findall((PACKAGE / name).read_text()) == []
 
 
-@pytest.mark.parametrize("path", CORE, ids=lambda path: path.name)
+@pytest.mark.parametrize(
+    "path", [*CORE, PACKAGE / "outputs/composite.py"], ids=lambda path: path.name
+)
 def test_core_does_not_import_home_assistant(path: Path) -> None:
-    """core/ is tested with plain fakes, without Home Assistant (CLAUDE.md)."""
+    """core/ is tested with plain fakes, without Home Assistant (CLAUDE.md);
+    so is the combined output (#11), as its docstring says."""
     imports = imported_modules(path)
     roots = {module.split(".")[0] for module in imports}
     assert "homeassistant" not in roots

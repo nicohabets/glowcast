@@ -12,7 +12,13 @@ from typing import Any
 
 import pytest
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
-from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF, SERVICE_TURN_ON
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    EVENT_HOMEASSISTANT_STOP,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_OFF,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ServiceValidationError
@@ -62,6 +68,7 @@ from .test_ha_lights_flow import (  # noqa: F401 (fixtures)
     save_settings,
 )
 from .test_ha_lights_output import add_light
+from .test_ha_lights_sync import own_state, real_lights
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -160,6 +167,33 @@ def parts(monkeypatch: pytest.MonkeyPatch) -> Parts:
         "ha_lights",
         dataclasses.replace(
             OUTPUTS["ha_lights"], create=lambda hass, data, options: fakes.loose()
+        ),
+    )
+    monkeypatch.setitem(
+        SOURCES,
+        "webos",
+        dataclasses.replace(
+            SOURCES["webos"],
+            create=lambda hass, data, options: FakeSource(
+                MonotonicClock(), [], capture_time=0
+            ),
+            is_missing=lambda hass, data, options: False,
+        ),
+    )
+    return fakes
+
+
+@pytest.fixture
+def area_part(monkeypatch: pytest.MonkeyPatch) -> Parts:
+    """A fake area and a fake TV; the loose lights are the real output."""
+    fakes = Parts()
+    monkeypatch.setitem(
+        OUTPUTS,
+        "hue_entertainment",
+        dataclasses.replace(
+            OUTPUTS["hue_entertainment"],
+            create=lambda hass, data, options: fakes.area(),
+            is_missing=lambda hass, data, options: False,
         ),
     )
     monkeypatch.setitem(
@@ -641,3 +675,48 @@ async def test_a_missing_part_is_logged_only_while_syncing(
     # Stopped: the stop is logged, not "syncs without" again.
     assert caplog.text.count("syncs without some of its lights") == 1
     assert issues(hass, entry) == {"output_missing"}
+
+
+async def syncing_both(
+    hass: HomeAssistant, lamp: er.RegistryEntry, parts: Parts
+) -> MockConfigEntry:
+    """Both parts set up and switched on, the lamp showing Glowcast's red."""
+    entry = combined_entry(hass, combined(lamp))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(
+        lambda: (
+            parts.areas
+            and parts.areas[0].sent
+            and tuple(hass.states.get(lamp.entity_id).attributes["hs_color"])
+            == (0.0, 100.0)
+        )
+    )
+    return entry
+
+
+async def test_both_parts_are_released_when_home_assistant_stops(
+    hass: HomeAssistant, area_part: Parts
+) -> None:
+    (lamp,) = await real_lights(hass, "floor_lamp")
+    entry = await syncing_both(hass, lamp, area_part)
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await settle(hass)
+    assert area_part.area_log[-2:] == ["output.stop", "output.close"]
+    assert own_state(hass, lamp.entity_id)
+    assert hass.states.get(SWITCH).state == STATE_OFF
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_both_parts_are_released_on_unload_while_syncing(
+    hass: HomeAssistant, area_part: Parts
+) -> None:
+    (lamp,) = await real_lights(hass, "floor_lamp")
+    entry = await syncing_both(hass, lamp, area_part)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await settle(hass)
+    assert area_part.area_log[-2:] == ["output.stop", "output.close"]
+    assert own_state(hass, lamp.entity_id)
