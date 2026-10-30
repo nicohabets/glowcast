@@ -56,8 +56,10 @@ SEGMENTS = [
 GLOW_MAX = color_engine.BLACK_LEVEL - 4
 GLOW_BACKGROUND = (16, 16, 16)
 # A side is one colour to the camera when its strongest channel is at least
-# this many times the next (white: all channels within WHITE_RATIO).
-CLEAR = 1.6
+# this many times the next (white: all channels within WHITE_RATIO). 2.5, not
+# less: the camera's warm white reference lifts blue, so a pink (227, 21, 116)
+# was seen blue and a green with blue at half was close (bench, #168).
+CLEAR = 2.5
 WHITE_RATIO = 1.25
 
 
@@ -84,11 +86,11 @@ SCENES: dict[str, Scene] = {
         Scene(
             "aurora",
             ((70, 40, 255), (25, 20, 150)),
-            ((30, 255, 130), (0, 150, 90)),
+            ((30, 255, 80), (0, 160, 55)),
             (0.6, 0.3),
         ),
-        # Neon tubes: acid green and hot pink.
-        Scene("neon", ((40, 255, 70), (10, 170, 60)), ((255, 30, 120), (190, 10, 110))),
+        # Neon tubes: acid green and a hot red.
+        Scene("neon", ((40, 255, 70), (10, 170, 60)), ((255, 30, 75), (200, 10, 60))),
         # Night sky and moonlight: deep blue and a cool white.
         Scene(
             "moonlight",
@@ -104,7 +106,7 @@ SCENES: dict[str, Scene] = {
             (0.5, 0.55),
         ),
         # Deep water and a green shallow.
-        Scene("ocean", ((10, 80, 255), (0, 30, 140)), ((20, 245, 110), (0, 160, 90))),
+        Scene("ocean", ((10, 80, 255), (0, 30, 140)), ((20, 245, 75), (0, 160, 55))),
         # A meadow and an amber sun.
         Scene(
             "golden-hour",

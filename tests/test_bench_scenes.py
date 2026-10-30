@@ -59,7 +59,8 @@ def test_expected_is_the_colour_engine_on_the_lights_channels() -> None:
     ("rgb", "colour"),
     [
         ((240, 30, 70), "red"),
-        ((15, 206, 112), "green"),
+        ((15, 206, 60), "green"),
+        ((227, 21, 116), None),  # pink: the camera reads it blue
         ((20, 36, 179), "blue"),
         ((233, 236, 244), "white"),
         ((255, 200, 0), None),  # yellow: neither one channel nor white
