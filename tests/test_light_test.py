@@ -80,6 +80,41 @@ def test_the_middle_of_the_first_pattern_mixes_both_sides() -> None:
     assert red > 0.3 and blue > 0.3 and green == 0
 
 
+@pytest.mark.parametrize("y", [-1.0, 0.0, 0.49])
+def test_a_light_far_from_the_tv_shows_its_place_only(y: float) -> None:
+    """Since #15 a light further back blends with the whole picture; the test
+    leaves that out, so the colours say where it sits (#270)."""
+    back_left = Channel(id="bl", name="back left", x=-1.0, z=-1.0, y=y)
+    back_top = Channel(id="bt", name="back top", x=1.0, z=1.0, y=y)
+    [first, second] = pattern_colors([back_left, back_top])
+    assert by_id(first) == {"bl": approx(RED_RGB), "bt": approx(BLUE_RGB)}
+    assert by_id(second) == {"bl": approx(WHITE_RGB), "bt": approx(GREEN_RGB)}
+
+
+def test_a_strip_around_the_tv_keeps_its_stretch() -> None:
+    """A gradient strip behind the TV (#23) is still stretched to the edges:
+    unstretched, its top segment at z 0.3 would sample pale green."""
+    strip = [
+        Channel(id="tl", name="top left", x=-0.3, z=0.3, y=1.0, light="strip"),
+        Channel(id="br", name="bottom right", x=0.3, z=-0.3, y=1.0, light="strip"),
+    ]
+    [first, second] = pattern_colors(strip)
+    assert by_id(first) == {"tl": approx(RED_RGB), "br": approx(BLUE_RGB)}
+    assert by_id(second) == {"tl": approx(GREEN_RGB), "br": approx(WHITE_RGB)}
+
+
+def test_a_strip_from_the_tv_to_the_back_is_not_stretched() -> None:
+    """As while syncing: a light with a channel further back keeps its
+    positions (#23), also in the test."""
+    strip = [
+        Channel(id="a", name="a", x=-0.3, z=0.3, y=1.0, light="strip"),
+        Channel(id="b", name="b", x=0.3, z=0.3, y=-1.0, light="strip"),
+    ]
+    [_, second] = pattern_colors(strip)
+    red, green, blue = by_id(second)["a"]
+    assert green == pytest.approx(1.0, abs=0.01) and red < 0.9 and blue < 0.9
+
+
 def test_the_steps_take_3_s_each_at_the_brightness() -> None:
     test = LightTest(pattern_colors([TOP_LEFT, BOTTOM_RIGHT]), start=10.0)
     assert by_id(test.colors(10.0, 0.5)) == {
