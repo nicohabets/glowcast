@@ -217,6 +217,9 @@ class FakeAdapters:
         self.source_on = True
         self.source_start_error: Exception | None = None
         self.source_picture = True
+        # What the sources' captures raise instead of a picture, if set (a TV
+        # that refuses the screenshot call, #253).
+        self.source_refusal: Exception | None = None
         self.channels = [CHANNEL]
         self.sources: list[FakeSource] = []
         self.outputs: list[FakeOutput] = []
@@ -227,6 +230,8 @@ class FakeAdapters:
         source.start_error = self.source_start_error
         if not self.source_picture:
             source.default = SourceUnavailable("no picture")
+        if self.source_refusal is not None:
+            source.default = self.source_refusal
         self.sources.append(source)
         return source
 
