@@ -564,3 +564,19 @@ async def test_the_lights_are_stored_by_registry_id_with_their_positions() -> No
         ],
     }
     assert bench.proxies[3]["entity_id"] == "light.bench_proxy_3"
+
+
+def test_the_rate_step_leaves_out_a_proxy_of_no_loose_light() -> None:
+    """The combined suite's proxy of a light in the area too (#198) is not
+    one of `bench.loose`: the rate step judges the loose lights only."""
+    bench = _bench()
+    bench.proxies[9] = {
+        "id": "registry0009",
+        "entity_id": "light.bench_proxy_9",
+        "platform": "hue",
+        "config_entry_id": "hueentry",
+    }
+    bench.ha = SimpleNamespace(calls=[])
+    loose_suite.rate_step(bench, 99.0, 103.0)
+    (step,) = bench.report.steps
+    assert step.numbers["Hue network lights"] == 2
