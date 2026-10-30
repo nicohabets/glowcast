@@ -16,9 +16,21 @@
 
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the average colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Support for other lights and other TVs is planned.
 
-**Everything about using Glowcast is on its website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).**
+**The full documentation is on Glowcast's website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).** This README is the short version.
 
 > **Status: v0.2.0 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.2.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
+
+## How it works
+
+```
+LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-->  Hue Bridge  -->  your lights
+```
+
+Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integration (no extra prompt on the TV) and asks the TV for a small screen capture about 3 times per second. Each light gets the average colour of the part of the screen that matches its position, ignoring black bars, and the colours stream to an entertainment area on your Hue Bridge, fading smoothly between frames; a gradient lightstrip shows several colours along its length. On a black picture the lights keep a faint warm glow instead of going dark. Everything stays on your local network.
+
+At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
+
+More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustrations of [what the lights do](https://nicohabets.github.io/glowcast/).
 
 ## Requirements
 
@@ -47,6 +59,8 @@ Updates show up in HACS and under Settings → System → Updates.
 
 From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketplace](https://hacs.xyz/docs/marketplace/) (Settings → Marketplace); custom repositories added in HACS carry over. Updated steps follow in [#57](https://github.com/nicohabets/glowcast/issues/57).
 
+More: [installation](https://nicohabets.github.io/glowcast/docs/installation/), and [uninstalling](https://nicohabets.github.io/glowcast/docs/uninstalling/).
+
 ## Configuration
 
 During setup you pick:
@@ -63,19 +77,46 @@ Under **Configure**, or on Glowcast's device page (see [Settings](https://nicoha
 
 *The settings screen under Configure, with the default settings.*
 
-Glowcast adds one device with a **switch**: turn it on to start syncing, or let the blueprint start it when the TV turns on (see [Starting automatically](https://nicohabets.github.io/glowcast/docs/starting/)).
+More: [setup](https://nicohabets.github.io/glowcast/docs/setup/), [settings](https://nicohabets.github.io/glowcast/docs/settings/) (also as entities on the device page, to change from an automation), and [a computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) as the picture (a preview).
 
-## More on the website
+## Starting and stopping
 
-The [documentation](https://nicohabets.github.io/glowcast/docs/) has the rest:
+Glowcast adds one device, "Glowcast *TV name*", with a **switch** (for example `switch.glowcast_living_room_tv`): turn it on to start syncing and off to stop. It never starts by itself; the switch is off after a restart of Home Assistant. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
 
-- [Starting automatically](https://nicohabets.github.io/glowcast/docs/starting/): the switch, and the blueprint that starts Glowcast when the TV turns on
-- [Settings](https://nicohabets.github.io/glowcast/docs/settings/): the settings on the device page, and changing them from an automation
-- [Status and diagnostics](https://nicohabets.github.io/glowcast/docs/status/): what Glowcast is doing and why it stopped
-- [Troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/) and [reporting a problem](https://nicohabets.github.io/glowcast/docs/troubleshooting/#reporting-a-problem)
-- [Known limits](https://nicohabets.github.io/glowcast/docs/limits/)
-- [A computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) as the picture (a preview)
-- [Uninstalling](https://nicohabets.github.io/glowcast/docs/uninstalling/) and [privacy](https://nicohabets.github.io/glowcast/docs/privacy/)
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml)
+
+When syncing stops, what the lights do follows the entertainment area's "When syncing stops" setting in the Hue app; choose "Last on-state" to get them back as they were. Glowcast also stops by itself when the TV turns off, when another app streams to the bridge, or when the light stream is lost: the switch turns off, the [status](#seeing-what-glowcast-does) says why, and where you can fix it, Home Assistant shows a repair.
+
+More: [starting automatically](https://nicohabets.github.io/glowcast/docs/starting/) (with an automation to write yourself), and [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
+
+## Seeing what Glowcast does
+
+The **Status** sensor on Glowcast's device shows **Idle**, **Starting**, **Streaming**, **Black picture** (a dark scene), **No picture** (the TV gives no picture, for example a streaming app with DRM; the lights are released until the picture returns), **TV off** or **Error**. For TV off and Error, the **Stop reason** attribute says why, as a fixed key for automations. A diagnostic **Capture rate** sensor (off by default) shows how many pictures per second Glowcast gets from the TV.
+
+More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status/), with every status and stop reason.
+
+## Known limits
+
+- **About 3 captures per second**, the TV's limit: the lights follow scenes, not every flash or cut.
+- **Only LG webOS TVs** for now, tested on one model (a 2023 LG G3); other webOS TVs should work the same way.
+- **Streaming apps with DRM** in the TV's own apps give no picture (tested with Prime Video); the same app on a streaming stick over HDMI works.
+- **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
+- **Only the lights in the entertainment area** follow the picture; other lamps are planned for v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)).
+- **The TV's capture call is undocumented** by LG and could stop working after a firmware update.
+
+More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).
+
+## Reporting a problem
+
+Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and attach Glowcast's diagnostics: **Settings → Devices & services → Glowcast → ⋮ → Download diagnostics**. Keys, addresses, ids, serial numbers and names are left out, but have a look before you post it: issues on GitHub are public. **Tried it on your TV?** Please [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md), also when it just works.
+
+More: [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
+
+## Privacy
+
+Everything stays on your local network: frames are kept in memory and never stored or sent anywhere. Glowcast's key gives full access to your Hue Bridge, and removing Glowcast from Home Assistant does not remove its app from the bridge; Home Assistant shows the steps to remove it in the Hue app.
+
+More: [privacy](https://nicohabets.github.io/glowcast/docs/privacy/) and [uninstalling](https://nicohabets.github.io/glowcast/docs/uninstalling/).
 
 ## Disclaimer
 
