@@ -7,7 +7,8 @@ keeps the token in its own entry's data.
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Mapping
+import time
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -43,6 +44,10 @@ CAPTURE_TIMEOUT = 5.0
 RETRY_DELAY = 0.1
 # A wrong pairing code costs 1 s at the helper, one attempt at a time.
 PAIR_TIMEOUT = 10.0
+# No picture for this long after a frame turns the source off (product owner's
+# decision, #110), like the 3 s wait for an all-zero picture (#68), so a few
+# slow grabs on a busy computer do not stop syncing.
+NO_PICTURE_WAIT = 3.0
 
 
 class _NoPicture(Exception):
@@ -55,19 +60,29 @@ class ScreenFrameSource:
     max_rate_hz = MAX_RATE_HZ
 
     def __init__(
-        self, hass: HomeAssistant, helper_id: str, host: str, port: int, token: str
+        self,
+        hass: HomeAssistant,
+        helper_id: str,
+        host: str,
+        port: int,
+        token: str,
+        now: Callable[[], float] = time.monotonic,
     ) -> None:
         """Initialize for the helper with this id at this address, with
-        Glowcast's token."""
+        Glowcast's token; `now` is the clock (a fake one in tests)."""
         self._hass = hass
+        self._now = now
         self._helper_id = helper_id
-        self._base = URL.build(scheme="http", host=host, port=port)
-        self._headers = {"Authorization": f"Bearer {token}"}
+        self._host = host
+        self._port = port
+        self._token = token
         self._on = False
         # A frame came since start(): only then does no picture turn it off,
         # so the pipeline's startup grace keeps asking while the computer
         # wakes up or unlocks.
         self._delivered = False
+        # When the no picture after the last frame began; None with a picture.
+        self._no_picture_since: float | None = None
 
     async def start(self) -> None:
         """Check that Glowcast's helper answers and accepts the token.
@@ -77,36 +92,22 @@ class ScreenFrameSource:
         """
         self._on = False
         self._delivered = False
-        reason: str
-        try:
-            async with asyncio.timeout(REQUEST_TIMEOUT):
-                async with self._get("/v1/info") as response:
-                    if response.status == 401:
-                        raise SourceAuthFailed(
-                            "The screen helper rejected Glowcast's token; pair again"
-                        )
-                    info = await response.json() if response.status == 200 else None
-            if not isinstance(info, dict):
-                reason = "The screen helper gave an unexpected answer"
-            elif info.get("id") != self._helper_id:
-                reason = "Another screen helper or service answers at this address"
-            elif info.get("protocol") != PROTOCOL:
-                reason = "The screen helper speaks another protocol version"
-            else:
-                self._on = True
-                return
-        except TimeoutError:
-            reason = "The screen helper did not respond in time"
-        except (OSError, ValueError, aiohttp.ClientError):
-            # ValueError: an answer that is not JSON.
-            reason = "Could not connect to the screen helper"
-        raise SourceUnavailable(reason)
+        self._no_picture_since = None
+        # Raises SourceAuthFailed (401) or SourceUnavailable itself.
+        info = await async_info(self._hass, self._host, self._port, self._token)
+        if info.get("id") != self._helper_id:
+            raise SourceUnavailable(
+                "Another screen helper or service answers at this address"
+            )
+        if info.get("protocol") != PROTOCOL:
+            raise SourceUnavailable("The screen helper speaks another protocol version")
+        self._on = True
 
     def is_on(self) -> bool:
         """Return whether the helper answers with a picture.
 
-        False after start() failed, or once two requests in a row got no
-        picture after a frame came.
+        False after start() failed, or once there has been no picture for
+        NO_PICTURE_WAIT after a frame came.
         """
         return self._on
 
@@ -132,7 +133,11 @@ class ScreenFrameSource:
         except TimeoutError:
             reason = "The screen helper did not respond in time"
         if self._delivered:
-            self._on = False
+            now = self._now()
+            if self._no_picture_since is None:
+                self._no_picture_since = now
+            elif now - self._no_picture_since >= NO_PICTURE_WAIT:
+                self._on = False
         raise SourceUnavailable(reason)
 
     async def close(self) -> None:
@@ -165,6 +170,7 @@ class ScreenFrameSource:
             _LOGGER.debug("The screen helper sent %d bytes, not a frame", len(pixels))
             raise _NoPicture
         self._on = self._delivered = True
+        self._no_picture_since = None
         return Frame(width=WIDTH, height=HEIGHT, pixels=pixels)
 
     @asynccontextmanager
@@ -172,7 +178,7 @@ class ScreenFrameSource:
         """A GET request to the helper, with the token; never logged."""
         session = async_get_clientsession(self._hass)
         async with session.get(
-            self._base.with_path(path), headers=self._headers
+            _url(self._host, self._port, path), headers=_auth(self._token)
         ) as response:
             yield response
 
@@ -254,11 +260,11 @@ async def async_info(
         async with asyncio.timeout(REQUEST_TIMEOUT):
             async with async_get_clientsession(hass).get(
                 _url(host, port, "/v1/info"),
-                headers={"Authorization": f"Bearer {token}"},
+                headers=_auth(token),
             ) as response:
                 if response.status == 401:
                     raise SourceAuthFailed(
-                        "The screen helper rejected Glowcast's token"
+                        "The screen helper rejected Glowcast's token; pair again"
                     )
                 info = await response.json() if response.status == 200 else None
         if isinstance(info, dict):
@@ -267,6 +273,7 @@ async def async_info(
     except TimeoutError:
         reason = "The screen helper did not respond in time"
     except (OSError, ValueError, aiohttp.ClientError):
+        # ValueError: an answer that is not JSON.
         reason = "Could not connect to the screen helper"
     raise SourceUnavailable(reason)
 
@@ -274,6 +281,11 @@ async def async_info(
 def _url(host: str, port: int, path: str) -> URL:
     """The helper's URL for this path."""
     return URL.build(scheme="http", host=host, port=port, path=path)
+
+
+def _auth(token: str) -> dict[str, str]:
+    """The header with Glowcast's token; never logged."""
+    return {"Authorization": f"Bearer {token}"}
 
 
 def create(
