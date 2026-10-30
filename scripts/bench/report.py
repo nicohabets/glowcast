@@ -95,6 +95,11 @@ class Thresholds:
     drop_within_s: float = 10.0
     clear_within_s: float = 12.0
     rate_slack_s: float = 0.15
+    # A restart of the local HA (#183): the switch on again this long after HA
+    # runs (Glowcast looks for the source at once, then every 10 s); with the
+    # switch off at the stop, it stays off and the area inactive this long.
+    resume_within_s: float = 45.0
+    stays_off_s: float = 30.0
 
 
 @dataclasses.dataclass(frozen=True)

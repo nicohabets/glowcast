@@ -1241,11 +1241,17 @@ class Bench:
         """Whether the lights' channels sit at different x (from the bridge)."""
         return self.sides is not None
 
-    def left_right_step(self, mode: str, start: float, end: float) -> None:
+    def left_right_step(
+        self,
+        mode: str,
+        start: float,
+        end: float,
+        name: str = "left-red-right-blue: each light the colour of its side",
+    ) -> None:
         if not self.positions_differ():
             self.report.add(
                 Step(
-                    "left-red-right-blue: each light the colour of its side",
+                    name,
                     mode,
                     SKIP,
                     note=self.sides_note,
@@ -1266,14 +1272,7 @@ class Bench:
             numbers[f"{self.label[name]} {self.sides[name]} seen"] = (
                 None if mean is None else rp.classify(mean, self.cal[name], self.th)
             )
-        self.report.add(
-            Step(
-                "left-red-right-blue: each light the colour of its side",
-                mode,
-                PASS if ok else FAIL,
-                numbers=numbers,
-            )
-        )
+        self.report.add(Step(name, mode, PASS if ok else FAIL, numbers=numbers))
 
     def hold_step(
         self, mode: str, label: str, ref: dict[str, rp.RGB], start: float, end: float
