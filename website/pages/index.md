@@ -1,6 +1,6 @@
 ---
-title: Hue lights that follow your LG TV
-description: Glowcast lets your Philips Hue lights follow what's on your LG webOS TV, from Home Assistant - no subscription, no HDMI box, nothing leaves your home.
+title: Lights that follow your LG TV
+description: Glowcast lets your lights follow what's on your LG webOS TV, from Home Assistant, with a Hue entertainment area or any colour light - no subscription, no HDMI box, nothing leaves your home.
 hide:
   - navigation
   - toc
@@ -8,9 +8,9 @@ hide:
 
 <div class="gc-hero" markdown>
 
-# Your Hue lights follow the picture on your LG TV
+# Your lights follow the picture on your LG TV
 
-<p class="gc-lead">Glowcast is a free Home Assistant integration that sends the colours on your LG webOS TV to your Philips Hue lights - no subscription, no HDMI box, nothing leaves your home.</p>
+<p class="gc-lead">Glowcast is a free Home Assistant integration that sends the colours on your LG webOS TV to a Hue entertainment area, the smoothest option, or to any colour light in Home Assistant. No subscription, no HDMI box, nothing leaves your home.</p>
 
 ![An illustrated living room: the picture on the TV changes colour and the light strip and lamps follow it.](images/illustrations/scene-1-picture-leads-loop.webp)
 
