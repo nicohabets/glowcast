@@ -1,4 +1,4 @@
-"""The loose-lights output type's steps (architecture 4.1 and 4.2, #9).
+"""The Home Assistant lights output type's steps (architecture 4.1 and 4.2, #9).
 
 The same steps at setup and in the settings screen: what the lights follow
 (single lights, an area or a light group), the lights or the area or group,
@@ -85,7 +85,7 @@ NONE_TEXT = "-"
 
 
 class HaLightsSteps(ConfigEntryBaseFlow):
-    """Choose the loose lights and place each one.
+    """Choose the Home Assistant lights and place each one.
 
     Uses only what the setup flow and the options flow both have, plus the
     hooks in flow.py (`async_output_chosen`).

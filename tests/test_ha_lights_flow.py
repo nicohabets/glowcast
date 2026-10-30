@@ -1,4 +1,4 @@
-"""Loose lights in the setup and the settings screen (#9).
+"""Home Assistant lights in the setup and the settings screen (#9).
 
 Choosing the output, the lights, an area or a group, the positions, the hints
 for Hue lights and the warning for crowded networks; switching between the
@@ -54,8 +54,8 @@ def hue_bridge_entry(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
-async def to_loose_lights(hass: HomeAssistant) -> dict[str, Any]:
-    """Setup: the TV, then Loose lights in the output menu."""
+async def to_ha_lights(hass: HomeAssistant) -> dict[str, Any]:
+    """Setup: the TV, then Home Assistant lights in the output menu."""
     result = await start_tv(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"tv": TV_ID}
@@ -71,7 +71,7 @@ async def test_set_up_with_single_lights_and_no_bridge(hass: HomeAssistant) -> N
     left = add_light(hass, "floor_lamp")
     right = add_light(hass, "light_bar")
     add_light(hass, "white_bulb", modes=("color_temp",))
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     assert result["step_id"] == "ha_lights"
 
     result = await configure(hass, result, {"follow": "lights"})
@@ -122,7 +122,7 @@ async def test_set_up_with_an_area_places_each_light(hass: HomeAssistant) -> Non
     area = ar.async_get(hass).async_create("Living room")
     one = add_light(hass, "a_lamp", area_id=area.id)
     two = add_light(hass, "b_lamp", area_id=area.id)
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     result = await configure(hass, result, {"follow": "area"})
     assert result["step_id"] == "ha_lights_area"
     result = await configure(hass, result, {"area": area.id})
@@ -149,7 +149,7 @@ async def test_set_up_with_an_area_places_each_light(hass: HomeAssistant) -> Non
 async def test_set_up_with_a_light_group(hass: HomeAssistant) -> None:
     one = add_light(hass, "one")
     group = add_light(hass, "room", "group", members=[one.entity_id])
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     result = await configure(hass, result, {"follow": "group"})
     assert result["step_id"] == "ha_lights_group"
     result = await configure(hass, result, {"group": group.id})
@@ -165,7 +165,7 @@ async def test_set_up_with_a_light_group(hass: HomeAssistant) -> None:
 @pytest.mark.parametrize("follow", ["lights", "area", "group"])
 async def test_nothing_to_follow_says_so(hass: HomeAssistant, follow: str) -> None:
     add_light(hass, "white", modes=("onoff",))
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     result = await configure(hass, result, {"follow": follow})
     assert result["step_id"] == "ha_lights"
     assert result["errors"] == {"base": f"ha_lights_no_{follow}"}
@@ -210,7 +210,7 @@ async def test_hue_lights_get_the_hint_and_crowded_ones_the_warning(
         f"https://{HOST}/clip/v2/resource/entertainment_configuration",
         side_effect=bridge.area_list,
     )
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     result = await configure(hass, result, {"follow": "lights"})
     result = await configure(
         hass, result, {"lights": [light.entity_id for light in lights]}
@@ -246,7 +246,7 @@ async def test_hue_lights_without_an_area_get_the_how_to(
         f"https://{HOST}/clip/v2/resource/entertainment_configuration",
         side_effect=bridge.area_list,
     )
-    result = await to_loose_lights(hass)
+    result = await to_ha_lights(hass)
     result = await configure(hass, result, {"follow": "lights"})
     result = await configure(hass, result, {"lights": [light.entity_id]})
     assert result["step_id"] == "ha_lights_hue_no_area"
@@ -269,7 +269,7 @@ async def test_other_lights_and_an_unreachable_bridge_get_no_hint(
         side_effect=bridge.area_list,
     )
     for picked in (other, light):
-        result = await to_loose_lights(hass)
+        result = await to_ha_lights(hass)
         result = await configure(hass, result, {"follow": "lights"})
         result = await configure(hass, result, {"lights": [picked.entity_id]})
         assert result["step_id"] == "ha_lights_position"
@@ -279,7 +279,7 @@ async def test_other_lights_and_an_unreachable_bridge_get_no_hint(
 # The settings screen
 
 
-def loose_entry(
+def ha_lights_entry(
     hass: HomeAssistant, output: dict[str, Any], data: dict[str, Any] | None = None
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
@@ -314,7 +314,7 @@ async def save_settings(hass: HomeAssistant, result: dict[str, Any]) -> Any:
     )
 
 
-async def test_switch_from_an_area_to_loose_lights_and_back_keeps_the_bridge(
+async def test_switch_from_an_area_to_ha_lights_and_back_keeps_the_bridge(
     hass: HomeAssistant,
 ) -> None:
     lamp = add_light(hass, "lamp")
@@ -362,7 +362,7 @@ async def test_an_entry_without_a_bridge_pairs_from_the_settings(
     hass: HomeAssistant,
 ) -> None:
     lamp = add_light(hass, "lamp")
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     result = await options(hass, entry, "hue_options")
     assert result["step_id"] == "bridge"
     result = await options_configure(hass, result, {"bridge": BRIDGE_ID})
@@ -392,7 +392,7 @@ async def test_the_settings_show_the_stored_lights_and_positions(
 ) -> None:
     lamp = add_light(hass, "lamp")
     other = add_light(hass, "other")
-    entry = loose_entry(
+    entry = ha_lights_entry(
         hass,
         {"follow": "lights", "lights": [{"entity": lamp.id, "x": 0.5, "z": 0.25}]},
     )
@@ -421,7 +421,7 @@ async def test_lights_that_joined_or_left_show_a_notice(hass: HomeAssistant) -> 
     stays = add_light(hass, "stays", area_id=area.id)
     joined = add_light(hass, "joined", area_id=area.id)
     left = add_light(hass, "left_lamp")
-    entry = loose_entry(
+    entry = ha_lights_entry(
         hass,
         {
             "follow": "area",
@@ -458,7 +458,7 @@ async def test_an_entry_that_never_paired_leaves_no_notice(
     hass: HomeAssistant,
 ) -> None:
     lamp = add_light(hass, "lamp")
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     notifications = hass.data.get("persistent_notification", {})
@@ -469,7 +469,7 @@ async def test_an_entry_that_paired_and_switched_still_gets_the_notice(
     hass: HomeAssistant,
 ) -> None:
     lamp = add_light(hass, "lamp")
-    entry = loose_entry(
+    entry = ha_lights_entry(
         hass,
         {"follow": "lights", "lights": [{"entity": lamp.id}]},
         {"bridge": {"unique_id": BRIDGE_ID, "app_key": "k", "client_key": "c"}},

@@ -34,7 +34,7 @@ LIGHT_CHANNELS = [Channel("0", "lamp", 0, 0)]
 
 
 class Parts:
-    """An entertainment area at 25 per second and loose lights at 4."""
+    """An entertainment area at 25 per second and Home Assistant lights at 4."""
 
     def __init__(self) -> None:
         self.clock = FakeClock()
