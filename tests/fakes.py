@@ -20,6 +20,7 @@ from custom_components.glowcast.core.pipeline import (
     PipelineStatus,
     Settings,
     StopReason,
+    stop_reason_of,
 )
 from custom_components.glowcast.core.ports import SourceUnavailable
 
@@ -263,7 +264,16 @@ class FakePipeline:
                 self.reason = error
             else:
                 await self.output.start()
-                self.on_status(PipelineStatus(Phase.STREAMING, channels=1))
+                self.on_status(
+                    PipelineStatus(
+                        Phase.STREAMING,
+                        channels=1,
+                        dropped_parts={
+                            name: stop_reason_of(error)
+                            for name, error in self.output.dropped_parts.items()
+                        },
+                    )
+                )
                 await self._stop.wait()
         except asyncio.CancelledError:
             # Like the real pipeline: release, report USER, re-raise.
