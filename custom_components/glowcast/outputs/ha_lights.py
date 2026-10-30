@@ -1,4 +1,4 @@
-"""Light output for loose lights: any colour light through Home Assistant (#9).
+"""Light output for Home Assistant lights: any colour light through Home Assistant (#9).
 
 Architecture 8.1. Every light gets its own position, so it becomes a channel
 for the colour engine. Colours go out with `light.turn_on`, within the rate
@@ -81,7 +81,7 @@ NO_LIGHTS = Issue(
     "ha_lights_not_found",
     "there are no colour lights to follow",
 )
-# Loose lights that joined the entertainment area later, in the Hue app
+# Home Assistant lights that joined the entertainment area later, in the Hue app
 # (#198): left out while the area streams to them.
 IN_AREA = Issue(
     "loose_lights_in_area",
@@ -124,7 +124,7 @@ class Light:
 
 
 class HaLightsOutput:
-    """Drives loose lights with light.turn_on, each at its own position."""
+    """Drives Home Assistant lights with light.turn_on, each at its own position."""
 
     max_rate_hz = MAX_RATE_HZ
     dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
@@ -475,10 +475,10 @@ async def async_lights_in_area(
     area_output: Mapping[str, Any],
     output: Mapping[str, Any],
 ) -> str | None:
-    """The names of the loose lights that are in the entertainment area too.
+    """The names of the Home Assistant lights that are in the entertainment area too.
 
     For a combined output (#11): `area_output` is the entertainment area's
-    block, `output` the loose lights' (a choice, or what is stored). The area
+    block, `output` the Home Assistant lights' (a choice, or what is stored). The area
     drives its lights already, so such a light would get two colours. A
     light group counts when one of its members is in the area. None when
     there are none, or when the bridge cannot be asked.
@@ -509,7 +509,7 @@ def lights_in(
 async def async_in_area_notice(
     hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> Mapping[str, str] | None:
-    """The placeholders of IN_AREA when the last start of these loose lights
+    """The placeholders of IN_AREA when the last start of these Home Assistant lights
     left lights out because the entertainment area streams to them, else None
     (also when the bridge could not be asked)."""
     area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
@@ -524,7 +524,8 @@ def _left_out(hass: HomeAssistant) -> dict[str, str | None]:
 
 
 def _left_out_key(area: Mapping[str, Any], output: Mapping[str, Any]) -> str:
-    """The same for the same area and loose lights, whichever entry has them."""
+    """The same for the same area and Home Assistant lights, whichever entry has
+    them."""
     return json.dumps([area, output], sort_keys=True)
 
 

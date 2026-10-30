@@ -32,7 +32,7 @@ class LocalHA:
         self._token = token
         self.entities: dict[str, str] = {}  # key (switch, status, ...) -> entity id
         self.events: list[tuple[float, str, str, dict[str, Any]]] = []
-        # light.turn_on calls (loose lights, #9): (time fired, service data).
+        # light.turn_on calls (Home Assistant lights, #9): (time fired, service data).
         self.calls: list[tuple[float, dict[str, Any]]] = []
         # light.turn_on and light.turn_off calls (#198): (time fired, service,
         # service data).
@@ -218,7 +218,8 @@ class OwnerHA:
         self._headers = {"Authorization": f"Bearer {token}"}
         self.lights = list(lights)
         self.tv_switch = tv_switch
-        # Polled states of lights (loose lights, #9): (WSL time, entity, state).
+        # Polled states of lights (Home Assistant lights, #9): (WSL time, entity,
+        # state).
         self.samples: list[tuple[float, str, dict[str, Any]]] = []
         self._task: asyncio.Task[None] | None = None
 

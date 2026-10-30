@@ -38,11 +38,11 @@ TITLE = "Bench"
 EXTRA_CONFIGURATION = """\
 diagnostics:
 """
-# Loose lights (#9): proxy lights under stub `hue` and `matter` entries
+# Home Assistant lights (#9): proxy lights under stub `hue` and `matter` entries
 # (stubs/proxy.py), and the service that stores Glowcast's lights.
 STUBS = Path(__file__).resolve().parent / "stubs"
 PROXY = "bench_proxy"  # the stub entries' data key (stubs/proxy.py)
-LOOSE_CONFIGURATION = """\
+HA_LIGHTS_CONFIGURATION = """\
 glowcast_bench:
 """
 MATTER_UNIQUE_ID = "bench-thread"
@@ -93,10 +93,10 @@ def glowcast_entry(
     return entry
 
 
-def loose_glowcast_entry(
+def ha_lights_glowcast_entry(
     *, helper: dict[str, Any], settings: dict[str, Any]
 ) -> dict[str, Any]:
-    """Glowcast's entry with the loose-lights output (no `bridge` in data).
+    """Glowcast's entry with the Home Assistant lights output (no `bridge` in data).
 
     No lights yet: they are stored by entity registry id, known only once
     Home Assistant has added the proxy lights (`glowcast_bench.set_output`).
@@ -116,7 +116,7 @@ def loose_glowcast_entry(
 
 
 def combined_output(area_id: str, lights: dict[str, Any]) -> dict[str, Any]:
-    """The combined output block (#11): the area, then the loose lights."""
+    """The combined output block (#11): the area, then the Home Assistant lights."""
     return {
         "type": "combined",
         "parts": [{"type": "hue_entertainment", "area_id": area_id}, lights],
@@ -131,9 +131,9 @@ def combined_glowcast_entry(
     area_id: str,
     settings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Glowcast's entry with the bench area and loose lights in one (#11).
+    """Glowcast's entry with the bench area and Home Assistant lights in one (#11).
 
-    The loose lights' part has no lights yet: they are stored by entity
+    The Home Assistant lights' part has no lights yet: they are stored by entity
     registry id once Home Assistant has added the proxies.
     """
     entry = glowcast_entry(
@@ -159,7 +159,7 @@ def proxy_block(url: str, token: str, lights: list[dict[str, str]]) -> dict[str,
     return {"url": url, "token": token, "lights": lights}
 
 
-def _add_loose_stubs(inst: demo.Instance) -> None:
+def _add_ha_lights_stubs(inst: demo.Instance) -> None:
     """The bench's `hue` overlay (the demo's stub plus proxy lights), its
     `matter` stub and `glowcast_bench`, in this instance only."""
     custom = inst.config / "custom_components"
@@ -179,7 +179,7 @@ def start(
     """A fresh config with the entries, Home Assistant started; returns a token.
 
     `proxies` ({"hue": block, "matter": block}, see proxy_block): proxy lights
-    for loose lights under the stub `hue` entry and a stub `matter` entry.
+    for Home Assistant lights under the stub `hue` entry and a stub `matter` entry.
     `hue_api_key`: the stub `hue` entry's key (the bench's own Hue key, for
     the combined suite: Glowcast asks the bridge through it which lights the
     area streams to, #198); only in the instance's private storage.
@@ -210,7 +210,7 @@ def start(
         (inst.config / "configuration.yaml").write_text(
             demo.CONFIGURATION
             + EXTRA_CONFIGURATION
-            + (LOOSE_CONFIGURATION if proxies is not None else "")
+            + (HA_LIGHTS_CONFIGURATION if proxies is not None else "")
         )
         hue_data: dict[str, Any] = {
             "host": bridge_host,
@@ -219,7 +219,7 @@ def start(
         }
         entries = [demo._entry("hue", "Hue Bridge", BRIDGE_UNIQUE_ID, hue_data)]
         if proxies is not None:
-            _add_loose_stubs(inst)
+            _add_ha_lights_stubs(inst)
             if "hue" in proxies:
                 hue_data[PROXY] = proxies["hue"]
             if "matter" in proxies:

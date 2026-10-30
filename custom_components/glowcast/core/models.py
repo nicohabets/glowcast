@@ -26,7 +26,7 @@ class Channel:
     # output cannot read it: the fade-in starts from dark.
     start_rgb: tuple[float, float, float] | None = None
     # Front to back: +1 = the TV side of the room, -1 = the far side; None
-    # when the output has no depth (loose lights).
+    # when the output has no depth (Home Assistant lights).
     y: float | None = None
     # The light this channel is a part of, when a light has several channels
     # (the segments of a gradient lightstrip share it); None otherwise.
