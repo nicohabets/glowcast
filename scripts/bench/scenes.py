@@ -219,7 +219,11 @@ def downscale(image: Image.Image) -> bytes:
 
 def expected(frame: bytes, positions: Sequence[tuple[float, float]]) -> RGB:
     """The colour Glowcast gives a light (0-255): the colour engine on the
-    64x36 frame, for each of the light's channels (x, z), averaged."""
+    64x36 frame, for each of the light's channels (x, z), averaged.
+
+    Without the letterbox bars (no `picture`) and without the stretch of TV
+    strips (the channels have no `y` or `light`), which is fine for the
+    bench: its lights have one channel each and its scenes have no bars."""
     channels = [Channel(str(i), "", x, z) for i, (x, z) in enumerate(positions)]
     colours = color_engine.compute(Frame(WIDTH, HEIGHT, frame), channels, 1.0)
     return tuple(  # type: ignore[return-value]
