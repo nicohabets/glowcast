@@ -18,6 +18,12 @@ The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV a
 
 [Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml){ .md-button .md-button--primary }
 
+### Next to a Hue Sync Box
+
+The blueprint "Follow a Hue Sync Box" turns the switch on when a Philips Hue Play HDMI Sync Box starts syncing and off when it stops, for Home Assistant lights that join the box's own Hue lights. It asks for an entity that is on while the box syncs (the box's "Light sync" switch, or the Hue integration's binary sensor of the box's entertainment area), the Glowcast switch, and optionally a TV that must be on. See [Next to a Hue Sync Box](../guide/lights.md#next-to-a-hue-sync-box) for which lights to use.
+
+[Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Ffollow_sync_box.yaml){ .md-button }
+
 ## Your own automation
 
 Or write the automation yourself:
