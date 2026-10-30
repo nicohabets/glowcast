@@ -314,6 +314,11 @@
     }
   },
   "entity": {
+    "button": {
+      "test_lights": {
+        "name": "Test lights"
+      }
+    },
     "number": {
       "brightness": {
         "name": "Brightness"
