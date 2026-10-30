@@ -47,6 +47,17 @@ def test_a_light_is_found_where_it_brightens_the_picture() -> None:
     assert found["found"] > TH.min_found
 
 
+def test_a_clipping_lens_is_not_taken_for_the_light() -> None:
+    """The camera sees the lamp's own lens: it changes most but clips, so the
+    light is found on the wall it lights instead (#174)."""
+    off = _frame([])
+    on = _frame([(1020, 470, 50, 40, 255), (1170, 440, 40, 40, 180)])
+    found = locate.locate(on, off, (32, 34))
+    x, y, w, h = found["box"]
+    assert x >= 1170 and x + w <= 1210 and y >= 440 and y + h <= 480
+    assert found["found"] > TH.min_found
+
+
 def test_a_region_lit_by_another_light_too_is_avoided() -> None:
     off = _frame([])
     # The uplight lights a wall (left), and some of what the spot lights too.

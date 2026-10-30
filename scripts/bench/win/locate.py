@@ -11,6 +11,10 @@ from typing import Any
 
 import numpy as np
 
+# A pixel at or above this level in any channel is clipped: it shows white
+# whatever the light's colour (a lamp's own lens, #174).
+CLIPPED = 254
+
 
 def change(on: np.ndarray, off: np.ndarray) -> np.ndarray:
     """Per pixel, how much brighter `on` is than `off` (summed over the channels)."""
@@ -51,8 +55,12 @@ def locate(
     `found` is the mean change per pixel in the window (0-765); `contrast`
     is that over the whole picture's median change (plus 1), so a window
     that merely stands on a picture that changed everywhere is not taken.
+    Pixels clipped in `on` do not count (#174).
     """
     score = change(on, off)
+    # A clipped pixel cannot show the light's colour, so it never counts: the
+    # window lands on what the light lights, not on its lens.
+    score[(on >= CLIPPED).any(axis=2)] = 0
     if after is not None:
         score = np.minimum(score, change(on, after))
     if others:
