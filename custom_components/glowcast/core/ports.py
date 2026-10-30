@@ -14,6 +14,21 @@ class SourceAuthFailed(Exception):
     """The source rejected Glowcast's credentials; pair again."""
 
 
+class SourceNotSupported(Exception):
+    """The source refuses to give its picture, and will on every try.
+
+    Unlike SourceUnavailable it is not a passing failure: the pipeline stops at
+    the first one. `not_permitted` is true when the source refuses for lack of
+    permission (pairing again may help), false when it does not offer the
+    capture at all.
+    """
+
+    def __init__(self, message: str, *, not_permitted: bool = False) -> None:
+        """Say why, without secrets."""
+        super().__init__(message)
+        self.not_permitted = not_permitted
+
+
 class OutputBusy(Exception):
     """Another app is streaming on the bridge; nothing was started."""
 
@@ -60,8 +75,8 @@ class FrameSource(Protocol):
     async def start(self) -> None:
         """Connect; may take a few seconds.
 
-        Raises SourceUnavailable, or SourceAuthFailed when the source rejects
-        Glowcast's credentials.
+        Raises SourceUnavailable, SourceAuthFailed when the source rejects
+        Glowcast's credentials, or SourceNotSupported.
         """
 
     def is_on(self) -> bool:
@@ -74,7 +89,8 @@ class FrameSource(Protocol):
     async def capture(self) -> Frame:
         """Return the current picture.
 
-        Raises SourceUnavailable within 5 s, or SourceAuthFailed.
+        Raises SourceUnavailable within 5 s, SourceAuthFailed, or
+        SourceNotSupported when the source refuses to give its picture at all.
         """
 
     async def close(self) -> None:

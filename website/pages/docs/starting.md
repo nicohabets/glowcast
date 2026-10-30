@@ -14,9 +14,15 @@ Glowcast does not start by itself, with one exception: when Home Assistant resta
 
 ## The blueprint
 
-The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off. The button opens the blueprint import dialog in your own Home Assistant:
+The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch. The button opens the blueprint import dialog in your own Home Assistant:
 
 [Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml){ .md-button .md-button--primary }
+
+Its other settings are optional; left off or empty, Glowcast starts every time the TV turns on:
+
+- **Also stop when the TV turns off**: turns the switch off the moment the TV reports "off" (Glowcast stops by itself anyway, a little later).
+- **Only after dark**: starts Glowcast only while the sun is below the horizon, after sunset and before sunrise. It uses Home Assistant's Sun integration (`sun.sun`, part of the default setup); without it, Glowcast never starts. When the sun sets while the TV is already on, Glowcast does not start by itself.
+- **Only for these inputs or apps**: starts Glowcast only when the TV shows one of them, for example "HDMI 2" or "Netflix". Type each name exactly as Home Assistant shows the TV's source (the TV's `source` attribute under Developer tools > States); the names depend on the TV's language and on the names you gave the inputs. Glowcast also starts when you switch to one of them while the TV is on. With **Also stop when the TV turns off** on, switching to an input or app that is not in the list turns the switch off again, but only when this automation started Glowcast: if you switched it on yourself (or it continued after a restart of Home Assistant), it keeps running.
 
 ## Your own automation
 

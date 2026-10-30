@@ -85,7 +85,7 @@ More: [setup](https://nicohabets.github.io/glowcast/docs/setup/), [Home Assistan
 
 ## Starting and stopping
 
-Glowcast adds one device, "Glowcast *TV name*", with a **switch** (for example `switch.glowcast_living_room_tv`): turn it on to start syncing and off to stop. It does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs (after an update, for example), Glowcast continues once Home Assistant is back, if the TV (or computer screen) is still on; otherwise the switch stays off. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, and can also turn the switch off when the TV turns off:
+Glowcast adds one device, "Glowcast *TV name*", with a **switch** (for example `switch.glowcast_living_room_tv`): turn it on to start syncing and off to stop. It does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs (after an update, for example), Glowcast continues once Home Assistant is back, if the TV (or computer screen) is still on; otherwise the switch stays off. The ready-made blueprint "Start Glowcast when the TV turns on" asks for the TV and the Glowcast switch, can start only after dark or only for the inputs or apps you choose (for example "HDMI 2" or "Netflix"), and can also turn the switch off when the TV turns off:
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml)
 
@@ -107,7 +107,7 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 - **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
 - **Home Assistant lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.
 - **A Hue light follows through the entertainment area or as a Home Assistant light, not both**: one added to the area later in the Hue app is left out of the Home Assistant lights, and a repair issue says how to fix it.
-- **The TV's capture call is undocumented** by LG and could stop working after a firmware update.
+- **The TV's capture call is undocumented** by LG and could stop working after a firmware update; a TV that refuses it stops Glowcast with a repair that says so.
 
 More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).
 

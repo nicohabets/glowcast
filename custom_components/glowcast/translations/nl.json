@@ -372,7 +372,9 @@
               "output_unavailable": "Lampen niet bereikbaar",
               "auth_failed": "Sleutel geweigerd",
               "source_unavailable": "Fout in de beeldbron",
-              "source_auth_failed": "Beeldbron weigerde de sleutel"
+              "source_auth_failed": "Beeldbron weigerde de sleutel",
+              "source_not_supported": "Beeldbron staat vastleggen niet toe",
+              "source_not_permitted": "Beeldbron geeft geen toestemming om vast te leggen"
             }
           },
           "dropped_outputs": {
@@ -390,6 +392,14 @@
     "webos_missing": {
       "title": "Glowcast {name}: de tv is niet ingesteld",
       "description": "Glowcast kan niet synchroniseren omdat de tv die het gebruikt niet meer in Home Assistant is ingesteld, of niet geladen is. Stel de tv opnieuw in met de integratie LG webOS TV (Instellingen > Apparaten en diensten) en zet Glowcast daarna weer aan."
+    },
+    "webos_not_supported": {
+      "title": "Glowcast {name}: de tv staat geen schermafbeeldingen toe",
+      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"no such service or method\": dit tv-model, of de softwareversie ervan, kent de opdracht niet waarmee Glowcast het beeld ziet. De tv staat aan en is bereikbaar; Glowcast opnieuw aanzetten helpt niet.\n\n[Open een hardwaremelding]({report_url}) met je tv-model en webOS-versie en voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten), zodat we kunnen kijken of we hem kunnen ondersteunen. Meer bij [problemen oplossen]({help_url})."
+    },
+    "webos_not_permitted": {
+      "title": "Glowcast {name}: de tv geeft geen toestemming voor schermafbeeldingen",
+      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"insufficient permissions\": de koppeling die de integratie LG webOS TV met de tv maakte, staat geen schermafbeeldingen toe.\n\nWerk Home Assistant bij en koppel de tv daarna opnieuw: verwijder de tv uit de integratie LG webOS TV (Instellingen > Apparaten en diensten), voeg hem weer toe en accepteer de vraag op de tv. Zet Glowcast daarna weer aan.\n\nWeigert de tv nog steeds? [Open dan een hardwaremelding]({report_url}) met je tv-model en webOS-versie en voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten). Meer bij [problemen oplossen]({help_url})."
     },
     "hue_entertainment_missing": {
       "title": "Glowcast {name}: de Hue-bridge is niet ingesteld",

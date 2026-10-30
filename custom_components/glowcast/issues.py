@@ -3,7 +3,8 @@
 Each type brings its own: the generic code only raises and removes them.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -17,3 +18,6 @@ class Issue:
     translation_key: str
     # Why Glowcast cannot sync, for the log (no secrets).
     message: str
+    # Fixed placeholders for its description, such as links (translations
+    # hold no URLs); the runtime adds {name}.
+    placeholders: Mapping[str, str] = field(default_factory=dict, hash=False)

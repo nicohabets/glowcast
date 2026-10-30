@@ -45,6 +45,7 @@ from custom_components.glowcast.core.pipeline import (
     StopReason,
     UpdateRate,
 )
+from custom_components.glowcast.core.ports import SourceNotSupported
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
@@ -528,6 +529,60 @@ async def test_settings_problems_raise_a_repair_issue_until_a_start_works(
     await switch(hass, SERVICE_TURN_OFF)
 
 
+@pytest.mark.parametrize(
+    ("reason", "issue", "message"),
+    [
+        (
+            StopReason.SOURCE_NOT_SUPPORTED,
+            "webos_not_supported",
+            "the TV does not offer the screenshot call Glowcast uses",
+        ),
+        (
+            StopReason.SOURCE_NOT_PERMITTED,
+            "webos_not_permitted",
+            "the TV does not permit the screenshot call Glowcast uses",
+        ),
+    ],
+)
+async def test_a_refused_capture_raises_the_source_types_repair_issue(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    caplog: pytest.LogCaptureFixture,
+    reason: StopReason,
+    issue: str,
+    message: str,
+) -> None:
+    """The source type brings the issue, its links and its log line (#214);
+    no reauth; cleared by the next start that works, as an output's."""
+    entry = await setup(hass)
+    FakePipeline.start_error = reason
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_OFF
+    assert issues(hass, entry) == {issue}
+    raised = ir.async_get(hass).async_get_issue(DOMAIN, f"{issue}_{entry.entry_id}")
+    assert raised is not None
+    assert raised.translation_key == issue
+    assert raised.severity is ir.IssueSeverity.ERROR
+    assert raised.translation_placeholders == {
+        "name": "Living room TV",
+        "report_url": (
+            "https://github.com/nicohabets/glowcast/issues/new"
+            "?template=hardware-report.md"
+        ),
+        "help_url": (
+            "https://nicohabets.github.io/glowcast/docs/troubleshooting/"
+            "#the-tv-does-not-allow-screenshots"
+        ),
+    }
+    assert f"Glowcast Living room TV stopped: {message}" in caplog.text
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
+
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_ON
+    assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
+
+
 async def test_a_successful_retry_clears_the_repair_issues(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
@@ -600,13 +655,20 @@ async def test_tv_removed_while_syncing(
     assert issues(hass, entry) == {"source_missing"}
 
 
+@pytest.mark.parametrize(
+    ("reason", "issue"),
+    [
+        (StopReason.OUTPUT_NOT_FOUND, "area_not_found"),
+        (StopReason.SOURCE_NOT_SUPPORTED, "webos_not_supported"),
+    ],
+)
 async def test_removing_the_entry_removes_its_issues(
-    hass: HomeAssistant, fakes: FakeAdapters
+    hass: HomeAssistant, fakes: FakeAdapters, reason: StopReason, issue: str
 ) -> None:
     entry = await setup(hass)
-    FakePipeline.start_error = StopReason.OUTPUT_NOT_FOUND
+    FakePipeline.start_error = reason
     await switch(hass, SERVICE_TURN_ON)
-    assert issues(hass, entry) == {"area_not_found"}
+    assert issues(hass, entry) == {issue}
     await hass.config_entries.async_remove(entry.entry_id)
     await settle(hass)
     assert issues(hass, entry) == set()
@@ -814,3 +876,24 @@ async def test_the_real_pipeline_stopping_by_itself_turns_the_switch_off(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert adapters.log == ["source.start", "output.start", *CLEANUP]
     assert "stopped: the picture source is off or not reachable" in caplog.text
+
+
+async def test_the_real_pipeline_stops_at_once_when_the_source_refuses(
+    hass: HomeAssistant, adapters: FakeAdapters
+) -> None:
+    """A refused capture while syncing stops at once, releasing the lights
+    (#214); a refusal at the start is retried for the startup grace (tested
+    with the fake clock in test_pipeline.py)."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(lambda: "output.start" in adapters.log)
+    [source] = adapters.sources
+    source.default = SourceNotSupported("refused", not_permitted=True)
+    await wait_for(lambda: state(hass) == STATE_OFF)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert "output.stop" in adapters.log
+    assert adapters.log[-1] == "source.close"
+    assert issues(hass, entry) == {"webos_not_permitted"}
+    status = entry.runtime_data.status
+    assert status is not None
+    assert status.stop_reason is StopReason.SOURCE_NOT_PERMITTED

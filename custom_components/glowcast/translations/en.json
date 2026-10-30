@@ -372,7 +372,9 @@
               "output_unavailable": "Lights not reachable",
               "auth_failed": "Key rejected",
               "source_unavailable": "Picture source failed",
-              "source_auth_failed": "Picture source rejected the key"
+              "source_auth_failed": "Picture source rejected the key",
+              "source_not_supported": "Picture source does not allow capturing",
+              "source_not_permitted": "Picture source does not permit capturing"
             }
           },
           "dropped_outputs": {
@@ -390,6 +392,14 @@
     "webos_missing": {
       "title": "Glowcast {name}: the TV is not set up",
       "description": "Glowcast cannot sync because the TV it uses is no longer set up in Home Assistant, or is not loaded. Set up the TV again with the LG webOS TV integration (Settings > Devices & services), then switch Glowcast on again."
+    },
+    "webos_not_supported": {
+      "title": "Glowcast {name}: the TV does not allow screenshots",
+      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"no such service or method\": this TV model, or its software version, does not offer the call Glowcast uses to see the picture. The TV is on and reachable; switching Glowcast on again will not help.\n\nPlease [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at supporting it. More in [troubleshooting]({help_url})."
+    },
+    "webos_not_permitted": {
+      "title": "Glowcast {name}: the TV does not permit screenshots",
+      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"insufficient permissions\": the pairing the LG webOS TV integration made with the TV does not allow screenshots.\n\nUpdate Home Assistant, then pair the TV again: delete the TV in the LG webOS TV integration (Settings > Devices & services), add it again and accept the request on the TV. Then switch Glowcast on again.\n\nIf the TV still refuses, please [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics). More in [troubleshooting]({help_url})."
     },
     "hue_entertainment_missing": {
       "title": "Glowcast {name}: the Hue bridge is not set up",

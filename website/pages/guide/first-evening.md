@@ -44,7 +44,7 @@ Glowcast does not start by itself, with one exception: when Home Assistant resta
 The ready-made blueprint **Start Glowcast when the TV turns on** switches Glowcast on when the TV turns on.
 
 1. Open [Starting automatically](../docs/starting.md#the-blueprint) and click **Import the blueprint**. It opens the import dialog in your own Home Assistant.
-2. Create an automation from the blueprint: choose the **TV** and the **Glowcast switch**. Turn on **Also stop when the TV turns off** if you want the switch to go off the moment the TV reports "off" (Glowcast stops by itself anyway).
+2. Create an automation from the blueprint: choose the **TV** and the **Glowcast switch**. Turn on **Also stop when the TV turns off** if you want the switch to go off the moment the TV reports "off" (Glowcast stops by itself anyway). Optionally, turn on **Only after dark**, or list the inputs or apps under **Only for these inputs or apps** (see [The blueprint](../docs/starting.md#the-blueprint)).
 3. Save the automation.
 
 Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". To write the automation yourself instead, use the example on [Your own automation](../docs/starting.md#your-own-automation).

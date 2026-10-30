@@ -8,7 +8,7 @@ from typing import Any
 
 import aiohttp
 import pytest
-from aiowebostv import WebOsTvState
+from aiowebostv import WebOsClient, WebOsTvState
 from aiowebostv.exceptions import WebOsTvCommandError, WebOsTvPairError
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -19,7 +19,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
 )
 
-from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.core.ports import SourceNotSupported, SourceUnavailable
 from custom_components.glowcast.sources import webos
 from custom_components.glowcast.sources.webos import WebOsFrameSource
 
@@ -498,6 +498,59 @@ async def test_capture_refused_by_tv(
 ) -> None:
     source, client = started
     client.request_result = WebOsTvCommandError("Request failed with response {...}")
+    with pytest.raises(SourceUnavailable, match="refused"):
+        await source.capture()
+
+
+def _tv_error(error: str) -> Exception:
+    """The error aiowebostv itself raises for the TV's error response."""
+    response = {"type": "error", "id": 7, "error": error, "payload": {}}
+    try:
+        WebOsClient._parse_response(None, response)  # type: ignore[arg-type]
+    except Exception as err:  # noqa: BLE001 - the error under test
+        return err
+    raise AssertionError("aiowebostv accepted an error response")
+
+
+@pytest.mark.parametrize(
+    ("error", "not_permitted", "match"),
+    [
+        ("404 no such service or method", False, "does not offer"),
+        ("401 insufficient permissions", True, "does not permit"),
+    ],
+)
+async def test_capture_not_supported_by_tv(
+    started: tuple[WebOsFrameSource, FakeWebOsClient],
+    error: str,
+    not_permitted: bool,
+    match: str,
+) -> None:
+    """A TV that does not know or permit the call is not a passing failure (#214)."""
+    source, client = started
+    client.request_result = _tv_error(error)
+    with pytest.raises(SourceNotSupported, match=match) as err:
+        await source.capture()
+    assert err.value.not_permitted is not_permitted
+    assert not isinstance(err.value, SourceUnavailable)
+    assert err.value.__cause__ is None
+    assert err.value.__context__ is None
+    assert source.is_on()  # the TV is on; it only refuses the call
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        _tv_error("500 Application error"),
+        _tv_error("401 something else"),
+        WebOsTvCommandError("Request failed with response {...}"),
+    ],
+)
+async def test_other_refusals_are_passing_failures(
+    started: tuple[WebOsFrameSource, FakeWebOsClient], result: Exception
+) -> None:
+    """Only the two refusals of #214 stop at once; the rest is as before."""
+    source, client = started
+    client.request_result = result
     with pytest.raises(SourceUnavailable, match="refused"):
         await source.capture()
 
