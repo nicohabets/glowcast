@@ -1,4 +1,4 @@
-"""An entertainment area and loose lights in one entry (#11).
+"""An entertainment area and Home Assistant lights in one entry (#11).
 
 The settings screen that combines them, the stored block, the entities of
 both parts, a light in both, and how the runtime reacts to a part that is
@@ -147,7 +147,7 @@ class Parts:
         self.areas.append(output)
         return output
 
-    def loose(self) -> FakeOutput:
+    def ha_lights(self) -> FakeOutput:
         output = FakeOutput(MonotonicClock(), self.lights_log)
         output.max_rate_hz = 4.0
         self.lights.append(output)
@@ -170,7 +170,7 @@ def parts(monkeypatch: pytest.MonkeyPatch) -> Parts:
         OUTPUTS,
         "ha_lights",
         dataclasses.replace(
-            OUTPUTS["ha_lights"], create=lambda hass, data, options: fakes.loose()
+            OUTPUTS["ha_lights"], create=lambda hass, data, options: fakes.ha_lights()
         ),
     )
     monkeypatch.setitem(
@@ -189,7 +189,7 @@ def parts(monkeypatch: pytest.MonkeyPatch) -> Parts:
 
 @pytest.fixture
 def area_part(monkeypatch: pytest.MonkeyPatch) -> Parts:
-    """A fake area and a fake TV; the loose lights are the real output."""
+    """A fake area and a fake TV; the Home Assistant lights are the real output."""
     fakes = Parts()
     monkeypatch.setitem(
         OUTPUTS,
@@ -227,7 +227,7 @@ def fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> Any:
 # The settings screen
 
 
-async def test_add_loose_lights_to_an_entry_with_an_area(hass: HomeAssistant) -> None:
+async def test_add_ha_lights_to_an_entry_with_an_area(hass: HomeAssistant) -> None:
     lamp = add_light(hass, "floor_lamp")
     entry = glowcast_entry(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -235,7 +235,7 @@ async def test_add_loose_lights_to_an_entry_with_an_area(hass: HomeAssistant) ->
     bridge_block = dict(entry.data["bridge"])
 
     result = await options(hass, entry, "combined_options")
-    # First the area, with the stored one chosen, then the loose lights.
+    # First the area, with the stored one chosen, then the Home Assistant lights.
     assert result["step_id"] == "area"
     schema = result["data_schema"].schema
     assert next(iter(schema)).default() == "area-tv"
@@ -282,7 +282,7 @@ async def test_add_loose_lights_to_an_entry_with_an_area(hass: HomeAssistant) ->
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_loose_lights_entry_pairs_and_adds_an_area(hass: HomeAssistant) -> None:
+async def test_ha_lights_entry_pairs_and_adds_an_area(hass: HomeAssistant) -> None:
     lamp = add_light(hass, "floor_lamp")
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -338,7 +338,7 @@ async def test_the_area_is_kept_when_the_bridge_cannot_give_its_areas(
         bridge.areas_status = 403
 
     result = await options(hass, entry, "combined_options")
-    # A notice, not an abort; then the loose lights' steps.
+    # A notice, not an abort; then the Home Assistant lights' steps.
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "hue_area_kept"
     result = await options_configure(hass, result, {})
@@ -350,7 +350,7 @@ async def test_the_area_is_kept_when_the_bridge_cannot_give_its_areas(
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    # The stored area is kept, the loose lights changed.
+    # The stored area is kept, the Home Assistant lights changed.
     assert entry.options["output"] == {
         "type": "combined",
         "parts": [
@@ -383,7 +383,7 @@ async def test_choosing_both_without_a_stored_area_aborts(
     hass: HomeAssistant,
     bridge: FakeBridge,  # noqa: F811
 ) -> None:
-    """Loose lights paired with a bridge before, but no area to keep."""
+    """Home Assistant lights paired with a bridge before, but no area to keep."""
     lamp = add_light(hass, "floor_lamp")
     entry = glowcast_entry(hass)
     hass.config_entries.async_update_entry(
@@ -411,7 +411,7 @@ def area_with(
     ]
 
 
-async def to_loose_lights_of_combined(
+async def to_ha_lights_of_combined(
     hass: HomeAssistant, entry: MockConfigEntry, follow: str
 ) -> dict[str, Any]:
     result = await options(hass, entry, "combined_options")
@@ -419,7 +419,7 @@ async def to_loose_lights_of_combined(
     return await options_configure(hass, result, {"follow": follow})
 
 
-async def test_a_hue_light_in_the_area_cannot_be_a_loose_light(
+async def test_a_hue_light_in_the_area_cannot_be_a_ha_light(
     hass: HomeAssistant,
     bridge: FakeBridge,  # noqa: F811
 ) -> None:
@@ -428,7 +428,7 @@ async def test_a_hue_light_in_the_area_cannot_be_a_loose_light(
     area_with(bridge, in_area)
     entry = glowcast_entry(hass)
 
-    result = await to_loose_lights_of_combined(hass, entry, "lights")
+    result = await to_ha_lights_of_combined(hass, entry, "lights")
     result = await options_configure(
         hass, result, {"lights": [in_area.entity_id, lamp.entity_id]}
     )
@@ -453,13 +453,13 @@ async def test_an_area_or_group_with_a_light_of_the_area_is_refused(
     area_with(bridge, in_area)
     entry = glowcast_entry(hass)
 
-    result = await to_loose_lights_of_combined(hass, entry, "area")
+    result = await to_ha_lights_of_combined(hass, entry, "area")
     result = await options_configure(hass, result, {"area": room.id})
     assert result["errors"] == {"base": "ha_lights_in_area"}
     assert result["description_placeholders"] == {"lights": "Tv Strip"}
     hass.config_entries.options.async_abort(result["flow_id"])
 
-    result = await to_loose_lights_of_combined(hass, entry, "group")
+    result = await to_ha_lights_of_combined(hass, entry, "group")
     result = await options_configure(hass, result, {"group": group.id})
     assert result["errors"] == {"base": "ha_lights_in_area"}
 
@@ -480,7 +480,7 @@ async def test_an_unreachable_bridge_refuses_nothing(
     assert result["step_id"] == "ha_lights_position"
 
 
-async def test_loose_lights_alone_are_not_checked_against_an_area(
+async def test_ha_lights_alone_are_not_checked_against_an_area(
     hass: HomeAssistant,
     bridge: FakeBridge,  # noqa: F811
 ) -> None:
@@ -529,7 +529,7 @@ async def test_the_entities_refuse_a_light_in_both(
     await hass.async_block_till_done()
     assert entry.options["output"] == combined(lamp, "area-other")
 
-    # With the lights in the area chosen as loose lights, the area is refused.
+    # With the lights in the area chosen as Home Assistant lights, the area is refused.
     hass.config_entries.async_update_entry(
         entry,
         options={
@@ -655,7 +655,7 @@ async def test_a_dropped_part_gets_its_own_follow_up(
     await switch(hass, SERVICE_TURN_ON)
     [pipeline] = FakePipeline.instances
 
-    # The loose lights are gone: their repair issue, while the area runs on.
+    # The Home Assistant lights are gone: their repair issue, while the area runs on.
     dropped = {"ha_lights": StopReason.OUTPUT_NOT_FOUND}
     pipeline.on_status(PipelineStatus(Phase.STREAMING, 3, dropped_parts=dropped))
     await settle(hass)
@@ -802,11 +802,11 @@ async def test_both_parts_are_released_on_unload_while_syncing(
     assert own_state(hass, lamp.entity_id)
 
 
-# A loose light that joined the entertainment area later (#198)
+# A Home Assistant light that joined the entertainment area later (#198)
 
 
 def with_strip(lamp: er.RegistryEntry, strip: er.RegistryEntry) -> dict[str, Any]:
-    """The combined block with the strip as a second loose light."""
+    """The combined block with the strip as a second Home Assistant light."""
     output = combined(lamp)
     output["parts"][1]["lights"].append({"entity": strip.id, "x": 1.0, "z": 0.0})
     return output
@@ -827,7 +827,7 @@ def commands_to(events: list[Any], entity_id: str) -> list[Any]:
     ]
 
 
-async def test_a_loose_light_that_joined_the_area_is_left_out(
+async def test_a_ha_light_that_joined_the_area_is_left_out(
     hass: HomeAssistant,
     area_part: Parts,
     bridge: FakeBridge,  # noqa: F811
@@ -836,7 +836,7 @@ async def test_a_loose_light_that_joined_the_area_is_left_out(
     (lamp,) = await real_lights(hass, "floor_lamp")
     strip = add_light(hass, "tv_strip", "hue", hue_bridge_entry(hass))
     events = async_capture_events(hass, EVENT_CALL_SERVICE)
-    # Chosen as a loose light, then added to the area in the Hue app.
+    # Chosen as a Home Assistant light, then added to the area in the Hue app.
     entry = combined_entry(hass, with_strip(lamp, strip))
     area_with(bridge, strip)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -857,7 +857,7 @@ async def test_a_loose_light_that_joined_the_area_is_left_out(
     assert state.state == "streaming"
     assert "dropped_outputs" not in state.attributes
 
-    # The user chooses the loose lights again without it: the issue goes.
+    # The user chooses the Home Assistant lights again without it: the issue goes.
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, "output": combined(lamp)}
     )
@@ -896,7 +896,7 @@ async def test_the_notice_goes_when_the_light_left_the_area(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_every_loose_light_in_the_area_drops_the_part(
+async def test_every_ha_light_in_the_area_drops_the_part(
     hass: HomeAssistant,
     area_part: Parts,
     bridge: FakeBridge,  # noqa: F811
@@ -918,7 +918,7 @@ async def test_every_loose_light_in_the_area_drops_the_part(
     await switch(hass, SERVICE_TURN_ON)
     await wait_for(lambda: in_area_issue(hass, entry) is not None)
 
-    # The area streams on; the loose lights' part does not run, without the
+    # The area streams on; the Home Assistant lights' part does not run, without the
     # "no colour lights to follow" issue.
     state = hass.states.get(STATUS)
     assert state.state == "streaming"
@@ -943,22 +943,22 @@ async def test_a_group_with_a_member_in_the_area_is_left_out(
     output["parts"][1]["lights"].append({"entity": group.id, "x": 1.0, "z": 0.0})
     entry = combined_entry(hass, output)
     area_with(bridge, strip)
-    loose = OUTPUTS["ha_lights"].create(
+    ha_lights = OUTPUTS["ha_lights"].create(
         hass, entry.data, part_options(entry.options, output["parts"][1])
     )
     for retry in (False, True):
-        channels = await loose.start(retry=retry)
+        channels = await ha_lights.start(retry=retry)
         assert [channel.name for channel in channels] == ["Floor Lamp"]
-    await loose.stop()
+    await ha_lights.stop()
 
     # The bridge cannot be asked: nothing is left out, as in the settings.
     bridge.reachable = False
-    channels = await loose.start()
+    channels = await ha_lights.start()
     assert [channel.name for channel in channels] == ["Floor Lamp", "Tv Corner"]
-    await loose.stop()
+    await ha_lights.stop()
 
 
-async def test_loose_lights_alone_are_never_left_out(
+async def test_ha_lights_alone_are_never_left_out(
     hass: HomeAssistant,
     bridge: FakeBridge,  # noqa: F811
 ) -> None:
@@ -970,11 +970,11 @@ async def test_loose_lights_alone_are_never_left_out(
         "lights": [{"entity": strip.id, "x": 1.0, "z": 0.0}],
     }
     entry = combined_entry(hass, block)
-    loose = OUTPUTS["ha_lights"].create(
+    ha_lights = OUTPUTS["ha_lights"].create(
         hass, entry.data, part_options(entry.options, block)
     )
-    assert [channel.name for channel in await loose.start()] == ["Tv Strip"]
-    await loose.stop()
+    assert [channel.name for channel in await ha_lights.start()] == ["Tv Strip"]
+    await ha_lights.stop()
 
 
 async def test_the_notice_says_what_the_start_left_out(
@@ -991,13 +991,13 @@ async def test_the_notice_says_what_the_start_left_out(
     notice = OUTPUTS["ha_lights"].async_notice
     assert await notice(hass, entry.data, options) is None  # not started yet
 
-    loose = OUTPUTS["ha_lights"].create(hass, entry.data, options)
-    await loose.start()
+    ha_lights = OUTPUTS["ha_lights"].create(hass, entry.data, options)
+    await ha_lights.start()
     bridge.reachable = False
     assert await notice(hass, entry.data, options) == {"lights": "Tv Strip"}
-    await loose.stop()
+    await ha_lights.stop()
 
     # The next start cannot ask the bridge: nothing is left out, no notice.
-    await loose.start()
+    await ha_lights.start()
     assert await notice(hass, entry.data, options) is None
-    await loose.stop()
+    await ha_lights.stop()

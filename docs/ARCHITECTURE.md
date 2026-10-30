@@ -96,6 +96,9 @@ class Channel:
     z: float                 # -1 = floor / bottom of the picture, +1 = ceiling / top
     start_rgb: tuple[float, float, float] | None = None   # what the light shows before the claim,
                              # as the output would send it (0.0 - 1.0, brightness included); None: unknown
+    y: float | None = None   # front/back: +1 = the TV side of the room, -1 = the far side; None: no depth
+    light: str | None = None # the light this channel is a part of, when a light has several channels
+                             # (the segments of a gradient lightstrip share it); None otherwise
 
 @dataclass(frozen=True)
 class ChannelColor:
@@ -103,7 +106,7 @@ class ChannelColor:
     rgb: tuple[float, float, float]   # 0.0 - 1.0
 ```
 
-**A channel with a position is the common language** between outputs and the ColorEngine. The ColorEngine never knows where a position came from. That is what makes Home Assistant lights possible later (section 8.1). The bridge also gives a front/back value (`y`); v0.1 ignores it.
+**A channel with a position is the common language** between outputs and the ColorEngine. The ColorEngine never knows where a position came from. That is what makes Home Assistant lights possible later (section 8.1). The bridge also gives a front/back value (`y`), and tells which channels are segments of one light; the Hue output passes both on (`y`, `light`, #23). Home Assistant lights have neither (`None`), so nothing that uses them changes for those lights.
 
 ### 3.2 Ports (`core/ports.py`)
 
@@ -154,7 +157,7 @@ The regions of all channels are made in one step (`channel_regions()`), so a map
 3. **Black picture:** if almost the whole region is black, return black; the pipeline turns that into the minimal glow (3.5).
 4. **Intensity:** scale saturation (0 = nearly white, 1 = as on screen, up to 2 = boosted).
 
-**Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is issue #23.
+**TV strips reach the edges of the picture (#23):** a gradient lightstrip behind the TV has its channels close to the centre (in the test area x and z between -0.4 and 0.4, see "Verified facts"), so with the linear mapping alone (D12) its segments sampled about 30 % in from the edges. Before the regions are made, each light with several channels (`light`) on the TV side of the room (`y` at least 0.5, `NEAR_TV`) is stretched from the centre, per axis, until its outermost channel reaches the edge of the picture (`x / max |x|`, the same for `z`); an axis where all its channels sit within 0.1 of the centre (`MIN_SPREAD`) is left alone. So the strip's left and right segments sample the picture's left and right edges, and its top segments the top edge. The stretch maps onto the picture inside letterbox bars, like every position. Lights of their own, lights without a depth (Home Assistant lights) and gradient lights further back in the room keep the linear mapping.
 
 **Letterbox bars (#34, `core/letterbox.py`):** films often have black bars above and below the picture (letterbox) or beside it (pillarbox), and their width changes between films and sometimes between scenes. Without help, the regions of the top and bottom lights cover a bar plus a thin strip of picture; when that strip is dim, the light turns grey or shows the glow. So the pipeline keeps a `Letterbox` (pure, with the time as an argument; one per pipeline, so it is kept across a release for no picture) and passes the picture inside the bars to `compute()`, in the same executor job (the capture loop awaits it, so the memory sees one frame at a time):
 - **Measuring one frame** (`measure()`, on the 64x36 frame): from each edge inwards, a column is bar when at most 5 % of its pixels are lit (above the black level), over the whole height; then a row is bar when at most 5 % of the outer 15 % of the picture's width at each side is lit, whatever the middle shows, so subtitles in the middle of the bottom bar do not count as picture. Each side is measured on its own. A black run longer than 25 % of the frame on a side is a dark scene, not a bar: that side is left as it is.
@@ -195,6 +198,7 @@ The regions of all channels are made in one step (`channel_regions()`), so a map
   Glowcast's own application id comes from `GET /auth/v1` with the `hue-application-key` header (response header `hue-application-id`). **Verify early in #4** that `active_streamer.rid` matches this id.
 - Then `session.start(area_id, stop_others=False)` inside `asyncio.timeout(30)`; on timeout raise `OutputUnavailable`. Never stop someone else's stream.
 - **`stop()` always sends a stop for the chosen area** (`stop_entertainment(area_id)`, shielded from cancellation), even when `start()` was cancelled halfway; otherwise the lights stay in entertainment mode.
+- **Channels:** each channel's `position` gives `x`, `z` and the depth `y`; a channel with one member gets that member's entertainment service as `light`, so the segments of a gradient light share it (#23); a channel of several lights has none.
 - At most 20 channels per area (the HueStream limit); above that raise `OutputTooManyChannels` with the number of channels.
 - **Area removed** → `OutputNotFound`. **HTTP 401/403 from the bridge** (key revoked), at start or in `check()` → `OutputAuthFailed`. Bridge or `hue` entry not available → `OutputUnavailable`.
 - `check()`: `session.is_streaming` must be true, and every 5 s `session.remote_status()` must still report `active` with Glowcast as streamer; otherwise raise `OutputLost`. One failed status request is tolerated; two in a row count as lost. This also catches a wrong key, which the handshake does not detect.
@@ -498,6 +502,7 @@ tests/
   conftest.py              # the fixtures that put the fakes into HA
   test_color_engine.py
   test_letterbox.py        # the bars of a frame and over frames, with the time as an argument
+  test_strip_edges.py      # a gradient light around the TV stretched to the edges of the picture (#23)
   test_light_state.py      # fading, hold on black, brightness and glow, with the time as an argument
   test_pipeline.py         # the pipeline with the fakes and a fake clock
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
@@ -595,7 +600,7 @@ A PC or Mac screen becomes a picture source through a small **screen helper** on
 | D9 | Own Hue pairing next to HA's | HA's Hue entry has no `clientkey`, which streaming needs and which cannot be retrieved later |
 | D10 | Refuse when another app streams | Never take lights away from something the user started elsewhere |
 | D11 | Minimal glow on a black picture: a dim warm white, about 2700K, added only to channels darker than the glow level (#43) | The room does not go fully dark between scenes or on black screens, and a warm white feels cosy where a neutral one looks grey; bright colours are not tinted by it |
-| D12 | Linear position mapping in v0.1 | Simple and predictable; stretching TV-strip channels to the screen edges is a later improvement |
+| D12 | Linear position mapping, with the channels of a light around the TV stretched to the edges of the picture (#23) | Simple and predictable; the stretch only touches a gradient light on the TV side, whose own spread says where the screen's edges are |
 | D13 | Pipeline in `core/` with injected runner and clock | Testable with plain fakes, no Home Assistant test framework needed |
 | D14 | Reference other integrations by unique id | Survives removing and re-adding the TV or bridge in HA |
 | D15 | Recovery = stop cleanly, next start works | Predictable; no long waits or fights with the bridge |

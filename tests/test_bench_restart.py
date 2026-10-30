@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from .test_bench_loose import BENCH, CAMERA, REPO, _load, local_ha, rp, suite
+from .test_bench_ha_lights import BENCH, CAMERA, REPO, _load, local_ha, rp, suite
 
 restart_suite = _load("bench_restart_suite", BENCH / "restart_suite.py")
 run = _load("bench_run_for_restart", BENCH / "run.py")

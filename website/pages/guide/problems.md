@@ -40,7 +40,7 @@ For a computer screen it is **Pair with the screen helper again**: enter the 6-d
 ## The lights stutter
 
 - **An entertainment area:** one light in the area passes the stream on to the others. In the Hue app, the area's **Performance** setting decides which light that is; try another light there.
-- **Home Assistant lights:** each light changes about once per second, and less often with more than 4 lights on one Hue bridge or Thread network; see [How fast Home Assistant lights are](lights.md#how-fast-loose-lights-are). For Hue lights, an entertainment area is much smoother.
+- **Home Assistant lights:** each light changes about once per second, and less often with more than 4 lights on one Hue bridge or Thread network; see [How fast Home Assistant lights are](lights.md#how-fast-home-assistant-lights-are). For Hue lights, an entertainment area is much smoother.
 - The TV gives about 3 pictures per second, so the lights follow scenes, not every flash or cut. That is a [known limit](../docs/limits.md).
 
 ## Part of the lights drops out

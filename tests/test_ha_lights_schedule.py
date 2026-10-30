@@ -1,4 +1,4 @@
-"""The loose lights' command schedule: rate limits per light and per network.
+"""The Home Assistant lights' command schedule: rate limits per light and per network.
 
 Plain unit tests with the time as an argument (#9, limits from #125).
 """

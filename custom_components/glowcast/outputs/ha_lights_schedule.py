@@ -1,4 +1,4 @@
-"""When each loose light gets its next command (#9, limits from #125).
+"""When each Home Assistant light gets its next command (#9, limits from #125).
 
 Pure and synchronous, with the time as an argument, so it is tested without
 Home Assistant. The product owner's limits, measured in #125:

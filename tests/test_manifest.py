@@ -23,7 +23,7 @@ async def test_integration_loads(
 
     assert integration.domain == DOMAIN
     assert integration.dependencies == ["webostv"]
-    # Hue is optional since loose lights (#9): set up first when it is there.
+    # Hue is optional since Home Assistant lights (#9): set up first when it is there.
     assert integration.after_dependencies == ["hue"]
     assert integration.requirements == ["hue-entertainment==0.1.2"]
 

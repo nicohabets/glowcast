@@ -128,7 +128,7 @@ Every pattern is 64x36 RGB. Columns are `x` 0-63 from the left, rows are `y` 0-3
 | `letterbox` | rows 0-4 and 31-35 `(0, 0, 0)` (bars of 5 rows, about a 2.39:1 film on a 16:9 screen); rows 5-30 `(0, 255, 0)` |
 | `cycle` | steps through `red`, `green`, `blue`, `white`, `black`, `left-red-right-blue`, `letterbox`, then starts again, `--pattern-interval` seconds each (default 5). Neighbours, including `letterbox` and `red`, always look different at the lights. |
 
-`cycle` reports which pattern is on show and since when, in `/v1/info` (`pattern.showing`, `pattern.since`) and in a `pattern` event on every change. The `since` times follow from the start: `since = start + n x interval`.
+`cycle` reports which pattern is on show and since when, in `/v1/info` (`pattern.showing`, `pattern.since`) and in a `pattern` event on every change. The `since` times follow from the start: `since = start + n x interval`. n is never negative: if the computer's clock is set back to before the start, `cycle` keeps showing `red` until the clock passes the start again.
 
 ## Events (`--json`)
 
