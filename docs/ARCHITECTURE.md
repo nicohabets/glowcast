@@ -483,6 +483,7 @@ custom_components/glowcast/
   outputs/ha_lights_flow.py  outputs/ha_lights_select.py  # their steps and their Lights entity
   outputs/composite.py  outputs/composite_flow.py  # both together (#11): the output and its settings steps
   outputs/blocks.py                              # a type's block, alone or in a combined one
+  outputs/colors.py  outputs/labels.py           # shared by the types: a light's colour in 0-1, option labels (#199)
 tests/
   fakes.py                 # fake clock, source, output and pipeline, shared by the tests (no HA imports)
   conftest.py              # the fixtures that put the fakes into HA
