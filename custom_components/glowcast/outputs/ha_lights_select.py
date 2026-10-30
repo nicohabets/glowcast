@@ -7,9 +7,9 @@ the settings screen). Selecting an area or a group stores it in
 `options["output"]`, which restarts a running pipeline on its lights; lights
 that have no position yet follow "ambient".
 
-The list is made again when areas or entities change, when Home Assistant has
-started (the groups' members are in their states) and on every start, stop or
-options change of the entry.
+The list is made again when areas or entities change, when a light appears,
+when Home Assistant has started (the groups' members are in their states) and
+on every start, stop or options change of the entry.
 """
 
 from homeassistant.components.select import SelectEntity
@@ -19,6 +19,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.event import async_track_state_added_domain
 
 from ..const import CONF_OUTPUT
 from ..entity import GlowcastSettingEntity
@@ -29,6 +30,7 @@ from .ha_lights import (
     FOLLOW_AREA,
     FOLLOW_GROUP,
     FOLLOW_LIGHTS,
+    LIGHT_DOMAIN,
     areas_with_lights,
     groups_with_lights,
 )
@@ -102,6 +104,10 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
             er.EVENT_ENTITY_REGISTRY_UPDATED,
         ):
             self.async_on_remove(self.hass.bus.async_listen(event, self._async_event))
+        # A new light's registry entry comes before its first state.
+        self.async_on_remove(
+            async_track_state_added_domain(self.hass, LIGHT_DOMAIN, self._async_event)
+        )
         if not self.hass.is_running:
             self.async_on_remove(
                 self.hass.bus.async_listen_once(
