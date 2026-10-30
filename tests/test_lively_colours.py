@@ -5,7 +5,13 @@ import math
 import random
 from collections.abc import Callable
 
-from custom_components.glowcast.core.color_engine import compute
+import pytest
+
+from custom_components.glowcast.core.color_engine import (
+    BLACK_LEVEL,
+    channel_region,
+    compute,
+)
 from custom_components.glowcast.core.models import Channel, Frame
 
 WIDTH, HEIGHT = 64, 36
@@ -29,11 +35,6 @@ def hsv(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
 def plain_average(frame: Frame) -> tuple[float, float, float]:
     """The lit pixels' plain average in the middle channel's region (the
     colour before #233)."""
-    from custom_components.glowcast.core.color_engine import (
-        BLACK_LEVEL,
-        channel_region,
-    )
-
     col0, col1, row0, row1 = channel_region(MIDDLE, WIDTH, HEIGHT)
     total = [0, 0, 0]
     lit = 0
@@ -69,7 +70,7 @@ def test_a_small_colourful_object_leads_a_dull_region() -> None:
 def test_one_colour_is_that_colour() -> None:
     frame = make_frame(lambda u, v: (200, 120, 40))
     assert colour(frame) == tuple(
-        __import__("pytest").approx(c / 255, abs=0.005) for c in (200, 120, 40)
+        pytest.approx(c / 255, abs=0.005) for c in (200, 120, 40)
     )
 
 
