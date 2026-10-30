@@ -14,7 +14,7 @@ left are no longer used.
 
 import asyncio
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -94,9 +94,18 @@ class HaLightsOutput:
 
     max_rate_hz = MAX_RATE_HZ
 
-    def __init__(self, hass: HomeAssistant, output: Mapping[str, Any]) -> None:
-        """Initialize for the output block in the entry's options."""
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        output: Mapping[str, Any],
+        now: Callable[[], float] | None = None,
+    ) -> None:
+        """Initialize for the output block in the entry's options.
+
+        `now` is the clock in seconds (the event loop's by default).
+        """
         self._hass = hass
+        self._now = now or (lambda: asyncio.get_running_loop().time())
         self._output = dict(output)
         self._lights: dict[str, Light] = {}
         self._schedule: Schedule | None = None
@@ -158,7 +167,7 @@ class HaLightsOutput:
         self._schedule = Schedule(networks)
         self._colors = {}
         self._sent = {}
-        self._next_check = _now() + CHECK_INTERVAL
+        self._next_check = self._now() + CHECK_INTERVAL
         positions = _positions(self._output)
         return [
             Channel(
@@ -178,14 +187,14 @@ class HaLightsOutput:
         for color in colors:
             if color.channel_id in self._lights:
                 self._colors[color.channel_id] = _command(color.rgb)
-        for registry_id in schedule.due(_now(), self._ready):
+        for registry_id in schedule.due(self._now(), self._ready):
             self._async_send(registry_id, schedule.interval(registry_id))
 
     async def check(self) -> None:
         """Raise OutputLost when every light has gone; throttled to every 5 s."""
         if self._schedule is None:
             raise OutputLost("The lights are released")
-        now = _now()
+        now = self._now()
         if now < self._next_check:
             return
         self._next_check = now + CHECK_INTERVAL
@@ -500,6 +509,7 @@ def _positions(output: Mapping[str, Any]) -> dict[str, tuple[float, float]]:
     return {
         light[CONF_ENTITY]: (float(light[CONF_X]), float(light[CONF_Z]))
         for light in output.get(CONF_LIGHTS, [])
+        if CONF_X in light and CONF_Z in light
     }
 
 
@@ -523,7 +533,3 @@ def _command(rgb: tuple[float, float, float]) -> tuple[int, int, int, int]:
         return (255, 255, 255, 1)
     r, g, b = (min(255, max(0, round(value / peak * 255))) for value in rgb)
     return (r, g, b, min(255, max(1, round(peak * 255))))
-
-
-def _now() -> float:
-    return asyncio.get_running_loop().time()
