@@ -245,7 +245,9 @@ class Pipeline:
         try:
             frame = await self._async_wait_for_tv()
             if frame is None:
-                _LOGGER.info("The TV did not come up within the startup grace")
+                _LOGGER.info(
+                    "The picture source did not come up within the startup grace"
+                )
                 return StopReason.TV_OFF
             if await self._async_run_job(is_all_zero, frame):
                 # Nothing is claimed yet, so there is nothing to wait for.
@@ -258,7 +260,9 @@ class Pipeline:
                 try:
                     await self._async_stream()
                 except _NoPicture:
-                    _LOGGER.info("The TV shows no picture; releasing the lights")
+                    _LOGGER.info(
+                        "The picture source shows no picture; releasing the lights"
+                    )
                     await self._async_release_output()
                     frame = await self._async_without_lights()
                     await self._async_set_target(frame)
@@ -320,7 +324,7 @@ class Pipeline:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
-            _LOGGER.exception("Unexpected error from the TV source")
+            _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
 
     async def _async_start_output(self) -> list[Channel]:
@@ -370,7 +374,7 @@ class Pipeline:
         while True:
             begin = self._clock.now()
             if not self._source.is_on():
-                _LOGGER.info("The TV reports that it is off")
+                _LOGGER.info("The picture source reports that it is off")
                 raise _Stop(StopReason.TV_OFF)
             frame = await self._async_unless_stopped(self._async_capture())
             if frame is not None and not await self._async_run_job(is_black, frame):
@@ -468,7 +472,7 @@ class Pipeline:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
-            _LOGGER.exception("Unexpected error from the TV source")
+            _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
         self._failures = 0
         return frame
@@ -491,7 +495,7 @@ class Pipeline:
         try:
             while True:
                 if not self._source.is_on():
-                    _LOGGER.info("The TV reports that it is off")
+                    _LOGGER.info("The picture source reports that it is off")
                     raise _Stop(StopReason.TV_OFF)
                 if check is not None and check.done():
                     _raise_check_result(check)

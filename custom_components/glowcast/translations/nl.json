@@ -156,7 +156,7 @@
           "streaming": "Streamt",
           "black_picture": "Zwart beeld",
           "no_picture": "Geen beeld",
-          "tv_off": "Tv uit",
+          "tv_off": "Beeldbron uit",
           "error": "Fout"
         },
         "state_attributes": {
@@ -164,14 +164,14 @@
             "name": "Reden van stoppen",
             "state": {
               "user": "Uitgezet",
-              "tv_off": "Tv uit",
+              "tv_off": "Beeldbron uit of niet bereikbaar",
               "output_lost": "Lichtstream verloren",
               "output_busy": "Een andere app streamt",
               "output_not_found": "Lampen niet gevonden",
               "output_too_many_channels": "Te veel kanalen",
               "output_unavailable": "Lampen niet bereikbaar",
               "auth_failed": "Sleutel geweigerd",
-              "source_unavailable": "Fout in de tv-bron",
+              "source_unavailable": "Fout in de beeldbron",
               "source_auth_failed": "Beeldbron weigerde de sleutel"
             }
           }

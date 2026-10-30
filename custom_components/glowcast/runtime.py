@@ -34,15 +34,17 @@ _LOGGER = logging.getLogger(__package__)
 # type's repair issues bring their own message for their stop reasons.
 _STOP_MESSAGES = {
     StopReason.USER: "switched off",
-    StopReason.TV_OFF: "the TV is off or not reachable",
+    StopReason.TV_OFF: "the picture source is off or not reachable",
     StopReason.OUTPUT_LOST: "the light stream was lost or taken over by another app",
     StopReason.OUTPUT_BUSY: "another app is streaming to the lights",
     StopReason.OUTPUT_NOT_FOUND: "the chosen lights no longer exist",
     StopReason.OUTPUT_TOO_MANY_CHANNELS: "the chosen lights have too many channels",
     StopReason.OUTPUT_UNAVAILABLE: "the lights could not be reached",
     StopReason.AUTH_FAILED: "the lights rejected Glowcast's key; pair again",
-    StopReason.SOURCE_UNAVAILABLE: "the TV source failed",
-    StopReason.SOURCE_AUTH_FAILED: "the source rejected Glowcast's key; pair again",
+    StopReason.SOURCE_UNAVAILABLE: "the picture source failed",
+    StopReason.SOURCE_AUTH_FAILED: (
+        "the picture source rejected Glowcast's key; pair again"
+    ),
 }
 # Stops the user does not need to act on are logged at info level.
 _ROUTINE_STOPS = {StopReason.USER, StopReason.TV_OFF}

@@ -156,7 +156,7 @@
           "streaming": "Streaming",
           "black_picture": "Black picture",
           "no_picture": "No picture",
-          "tv_off": "TV off",
+          "tv_off": "Picture source off",
           "error": "Error"
         },
         "state_attributes": {
@@ -164,14 +164,14 @@
             "name": "Stop reason",
             "state": {
               "user": "Switched off",
-              "tv_off": "TV off",
+              "tv_off": "Picture source off or not reachable",
               "output_lost": "Light stream lost",
               "output_busy": "Another app is streaming",
               "output_not_found": "Lights not found",
               "output_too_many_channels": "Too many channels",
               "output_unavailable": "Lights not reachable",
               "auth_failed": "Key rejected",
-              "source_unavailable": "TV source failed",
+              "source_unavailable": "Picture source failed",
               "source_auth_failed": "Picture source rejected the key"
             }
           }

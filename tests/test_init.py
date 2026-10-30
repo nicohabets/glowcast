@@ -242,7 +242,7 @@ async def test_switch_on_while_the_tv_is_off(
     await switch(hass, SERVICE_TURN_ON)
     assert state(hass) == STATE_OFF
     assert "output.start" not in fakes.log
-    assert "the TV is off or not reachable" in caplog.text
+    assert "the picture source is off or not reachable" in caplog.text
 
 
 # Settings
@@ -811,4 +811,4 @@ async def test_the_real_pipeline_stopping_by_itself_turns_the_switch_off(
     await wait_for(lambda: state(hass) == STATE_OFF)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert adapters.log == ["source.start", "output.start", *CLEANUP]
-    assert "stopped: the TV is off or not reachable" in caplog.text
+    assert "stopped: the picture source is off or not reachable" in caplog.text

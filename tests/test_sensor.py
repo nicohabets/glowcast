@@ -6,6 +6,7 @@ status it needs. One test runs the real pipeline end to end.
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -374,3 +375,36 @@ async def test_every_value_and_reason_is_translated(
     texts = json.loads((TRANSLATIONS / f"{language}.json").read_text())
     states = texts["entity"]["sensor"]["status"]["state"]
     assert set(states) == {value.value for value in Status}
+
+
+@pytest.mark.parametrize(
+    ("language", "off", "off_reason", "failed"),
+    [
+        (
+            "en",
+            "Picture source off",
+            "Picture source off or not reachable",
+            "Picture source failed",
+        ),
+        (
+            "nl",
+            "Beeldbron uit",
+            "Beeldbron uit of niet bereikbaar",
+            "Fout in de beeldbron",
+        ),
+    ],
+)
+async def test_the_texts_fit_every_source(
+    hass: HomeAssistant, language: str, off: str, off_reason: str, failed: str
+) -> None:
+    """The status names the picture source, not the TV; the keys stay (#155)."""
+    translations = await async_get_translations(hass, language, "entity", {DOMAIN})
+    prefix = f"component.{DOMAIN}.entity.sensor.status"
+    reasons = f"{prefix}.state_attributes.stop_reason.state"
+    assert translations[f"{prefix}.state.tv_off"] == off
+    assert translations[f"{reasons}.tv_off"] == off_reason
+    assert translations[f"{reasons}.source_unavailable"] == failed
+    status_texts = [
+        text for key, text in translations.items() if key.startswith(prefix)
+    ]
+    assert not [text for text in status_texts if re.search(r"\btv\b", text, re.I)]

@@ -83,13 +83,13 @@ Glowcast adds one device, "Glowcast *TV name*", with a **switch** (for example `
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml)
 
-When syncing stops, what the lights do follows the entertainment area's "When syncing stops" setting in the Hue app; choose "Last on-state" to get them back as they were. Glowcast also stops by itself when the TV turns off, when another app streams to the bridge, or when the light stream is lost: the switch turns off, the [status](#seeing-what-glowcast-does) says why, and where you can fix it, Home Assistant shows a repair.
+When syncing stops, what the lights do follows the entertainment area's "When syncing stops" setting in the Hue app; choose "Last on-state" to get them back as they were. Glowcast also stops by itself when the picture source turns off (the TV, or a computer's screen), when another app streams to the bridge, or when the light stream is lost: the switch turns off, the [status](#seeing-what-glowcast-does) says why, and where you can fix it, Home Assistant shows a repair.
 
 More: [starting automatically](https://nicohabets.github.io/glowcast/docs/starting/) (with an automation to write yourself), and [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
 
 ## Seeing what Glowcast does
 
-The **Status** sensor on Glowcast's device shows **Idle**, **Starting**, **Streaming**, **Black picture** (a dark scene), **No picture** (the TV gives no picture, for example a streaming app with DRM; the lights are released until the picture returns), **TV off** or **Error**. For TV off and Error, the **Stop reason** attribute says why, as a fixed key for automations. A diagnostic **Capture rate** sensor (off by default) shows how many pictures per second Glowcast gets from the TV.
+The **Status** sensor on Glowcast's device shows **Idle**, **Starting**, **Streaming**, **Black picture** (a dark scene), **No picture** (the TV gives no picture, for example a streaming app with DRM; the lights are released until the picture returns), **Picture source off** (the TV, or a computer's screen helper, turned off or cannot be reached) or **Error**. For Picture source off and Error, the **Stop reason** attribute says why, as a fixed key for automations. A diagnostic **Capture rate** sensor (off by default) shows how many pictures per second Glowcast gets from the TV.
 
 More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status/), with every status and stop reason.
 

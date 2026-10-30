@@ -18,4 +18,4 @@ If the helper is not discovered (for example when Home Assistant and the compute
 - Each computer can have one Glowcast entry; when it gets a new address, Home Assistant finds it again and updates the address.
 - If the helper no longer accepts Glowcast's key (for example after `--unpair`), Home Assistant asks for a new pairing code; your settings are kept. Pairing again uses the address Glowcast has; if the computer also has a new address that discovery does not find, add it by hand once more instead: that stores the new address and the new pairing, with your settings kept.
 - A screen is followed at up to 4 pictures per second.
-- The [status](status.md) shows TV off when the screen helper stopped or cannot be reached, or the screen is locked, asleep or gone, for 3 seconds in a row.
+- The [status](status.md) shows Picture source off when the screen helper stopped or cannot be reached, or the screen is locked, asleep or gone, for 3 seconds in a row.
