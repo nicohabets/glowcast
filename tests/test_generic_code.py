@@ -59,9 +59,12 @@ def test_no_light_service_details(name: str) -> None:
     assert LIGHT_SERVICE.findall((PACKAGE / name).read_text()) == []
 
 
-@pytest.mark.parametrize("path", CORE, ids=lambda path: path.name)
+@pytest.mark.parametrize(
+    "path", [*CORE, PACKAGE / "outputs/composite.py"], ids=lambda path: path.name
+)
 def test_core_does_not_import_home_assistant(path: Path) -> None:
-    """core/ is tested with plain fakes, without Home Assistant (CLAUDE.md)."""
+    """core/ is tested with plain fakes, without Home Assistant (CLAUDE.md);
+    so is the combined output (#11), as its docstring says."""
     imports = imported_modules(path)
     roots = {module.split(".")[0] for module in imports}
     assert "homeassistant" not in roots
@@ -70,3 +73,16 @@ def test_core_does_not_import_home_assistant(path: Path) -> None:
 def test_the_core_modules_are_found() -> None:
     """This list only guards the glob."""
     assert {"pipeline.py", "ports.py", "models.py"} <= {path.name for path in CORE}
+
+
+# The combined output (#11) and the blocks it is stored in are generic too.
+COMBINED = ["outputs/blocks.py", "outputs/composite.py", "outputs/composite_flow.py"]
+
+
+@pytest.mark.parametrize("name", COMBINED)
+def test_the_combined_output_knows_no_type(name: str) -> None:
+    path = PACKAGE / name
+    imports = imported_modules(path)
+    assert [module for module in imports if TYPE_MODULES.search(module)] == []
+    assert TYPE_WORDS.findall(path.read_text()) == []
+    assert LIGHT_SERVICE.findall(path.read_text()) == []

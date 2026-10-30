@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any
 
 from homeassistant.components.light import (
@@ -37,6 +38,7 @@ from ..core.models import Channel, ChannelColor
 from ..core.ports import OutputLost, OutputNotFound, OutputUnavailable
 from ..issues import Issue
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
+from .hue_entertainment import async_area_lights
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +112,7 @@ class HaLightsOutput:
     """Drives loose lights with light.turn_on, each at its own position."""
 
     max_rate_hz = MAX_RATE_HZ
+    dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
 
     def __init__(
         self,
@@ -405,6 +408,35 @@ def groups_with_lights(hass: HomeAssistant) -> dict[str, str]:
         ):
             groups[entry.id] = _name(hass, entry)
     return groups
+
+
+async def async_lights_in_area(
+    hass: HomeAssistant,
+    data: Mapping[str, Any],
+    area_output: Mapping[str, Any],
+    output: Mapping[str, Any],
+) -> str | None:
+    """The names of the loose lights that are in the entertainment area too.
+
+    For a combined output (#11): `area_output` is the entertainment area's
+    block, `output` the loose lights' (a choice, or what is stored). The area
+    drives its lights already, so such a light would get two colours. A
+    light group counts when one of its members is in the area. None when
+    there are none, or when the bridge cannot be asked.
+    """
+    taken = await async_area_lights(hass, data, area_output)
+    if not taken:
+        return None
+    try:
+        lights = resolve(hass, output)
+    except (OutputNotFound, OutputUnavailable):
+        return None
+    names = sorted(
+        light.name
+        for light in lights
+        if {light.entity_id, *group_lights(hass, light.entity_id)} & taken
+    )
+    return ", ".join(names) or None
 
 
 def area_lights(hass: HomeAssistant, area_id: str) -> list[str]:

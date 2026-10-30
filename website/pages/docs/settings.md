@@ -11,7 +11,7 @@ Under **Configure** (Settings → Devices & services → Glowcast), or on Glowca
 
 The lights always fade smoothly between updates.
 
-**Configure** has three steps: first which lights follow the picture (**Hue entertainment area** or **Loose lights**), then their own settings (the area, or the loose lights and their places), then brightness, intensity and the update rate. Switching from loose lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between the two reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
+**Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Loose lights**, or both: **Entertainment area and loose lights**, see [Together with an entertainment area](loose-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the loose lights and their places), then brightness, intensity and the update rate. Switching from loose lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
 
 ![The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second).](../images/settings.png){ width="400" }
 
@@ -19,7 +19,7 @@ The lights always fade smoothly between updates.
 
 ## Settings on the device page
 
-The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and what follows the picture: **Entertainment area** (the bridge's areas by name), or with loose lights **Lights** (the Home Assistant areas and light groups that have colour lights, or *Chosen lights* while you use single lights, which you pick under **Configure**). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values.
+The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and what follows the picture: **Entertainment area** (the bridge's areas by name), or with loose lights **Lights** (both when you use the two together) (the Home Assistant areas and light groups that have colour lights, or *Chosen lights* while you use single lights, which you pick under **Configure**). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values.
 
 ![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
 

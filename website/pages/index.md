@@ -78,7 +78,7 @@ At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs 
 - **About 3 pictures per second.** That is the TV's limit, so the lights follow scenes, not every flash. Fine as ambient light; not as fast as an HDMI Sync Box.
 - **Protected apps in the TV's own apps give no picture.** Streaming apps with DRM (tested with Prime Video) return a black frame, so the lights let go. The same app on a streaming stick over HDMI works.
 - **One stream per bridge.** A Hue bridge streams to one entertainment area at a time, so two TVs on one bridge cannot sync together.
-- **Only the lights in the entertainment area** follow the picture; other lamps in the room are planned for v0.3.
+- **Lamps outside the entertainment area are slower.** Other colour lamps can follow as [loose lights](docs/loose-lights.md), alone or together with the area, at about one change per second.
 
 All limits are on the [Known limits](docs/limits.md) page.
 

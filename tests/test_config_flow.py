@@ -576,7 +576,11 @@ async def open_area_options(
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "init"
-    assert result["menu_options"] == ["hue_options", "ha_lights_options"]
+    assert result["menu_options"] == [
+        "hue_options",
+        "ha_lights_options",
+        "combined_options",
+    ]
     return await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "hue_options"}
     )

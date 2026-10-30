@@ -10,7 +10,7 @@ to the lights of a streaming area. Judged with numbers only:
   light by its state in the owner's Home Assistant;
 - the rate, from the local HA's `call_service` events: per light at most once
   per its interval, per network at most 4 commands in any second, and
-  `transition` equal to the light's interval;
+  `transition` its actual interval (the time since its command before);
 - the restore after no picture, after a switch off and after the helper
   stops (tv_off): the owner's state as before the switch-on, and the camera
   lights as before the run.
@@ -149,6 +149,7 @@ def colour_step(
     expected: dict[int, str | None],
     start: float,
     stop: float,
+    mode: str = MODE,
 ) -> None:
     """Each loose light shows its colour once settled (Windows times)."""
     a, b = start + bench.th.loose_settle_s, stop - 0.3
@@ -186,7 +187,7 @@ def colour_step(
     bench.report.add(
         Step(
             f"{pattern}: each loose light shows {shown}",
-            MODE,
+            mode,
             (PASS if ok else FAIL) if judged else SKIP,
             numbers=numbers,
             note="" if ok else "another colour than expected",
@@ -195,7 +196,11 @@ def colour_step(
 
 
 def release_step(
-    bench: Any, reference: dict[str, dict[str, Any]], start: float, stop: float
+    bench: Any,
+    reference: dict[str, dict[str, Any]],
+    start: float,
+    stop: float,
+    mode: str = MODE,
 ) -> None:
     """All-zero black: released after the no-picture wait, each light back."""
     timing = suite.TIMING
@@ -211,7 +216,7 @@ def release_step(
         Step(
             "no picture (all-zero black past the no-picture wait): "
             "loose lights released and back",
-            MODE,
+            mode,
             PASS if ok else FAIL,
             numbers=numbers,
             note="" if ok else "not released, or a light not back",
@@ -266,7 +271,7 @@ def networks(bench: Any) -> dict[str, str | None]:
     }
 
 
-def rate_step(bench: Any, start: float, end: float) -> None:
+def rate_step(bench: Any, start: float, end: float, mode: str = MODE) -> None:
     """The rate limits on Glowcast's commands between two WSL times."""
     entity_label = {
         entity_of(bench, light): bench.loose_label[light.index] for light in bench.loose
@@ -285,7 +290,7 @@ def rate_step(bench: Any, start: float, end: float) -> None:
         Step(
             "the rate: per light its interval, per network at most 4 commands "
             "a second, transition = the actual interval",
-            MODE,
+            mode,
             PASS if result.ok else FAIL,
             seconds=end - start,
             numbers=result.numbers,

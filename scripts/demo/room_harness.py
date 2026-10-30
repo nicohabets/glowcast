@@ -22,10 +22,10 @@ import itertools
 import json
 import math
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 from typing import Any
 
 WIDTH, HEIGHT = 64, 36  # as the webOS source delivers them
@@ -264,6 +264,7 @@ class RecordingOutput:
     """Lights at the CHANNELS positions that keep the last colours they got."""
 
     max_rate_hz = float(SEND_HZ)
+    dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
 
     def __init__(self, models: ModuleType) -> None:
         self._models = models

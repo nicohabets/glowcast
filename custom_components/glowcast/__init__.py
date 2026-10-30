@@ -4,8 +4,9 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .const import CONF_OUTPUT, CONF_TYPE, DOMAIN
+from .const import DOMAIN
 from .outputs import OUTPUTS
+from .outputs.blocks import output_types
 from .runtime import GlowcastConfigEntry, GlowcastData, async_remove_issues
 
 PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
@@ -54,10 +55,10 @@ def _remove_other_output_entities(
     After a change of output type (architecture 4.2) the previous type's
     entities would otherwise stay as orphans in the entity registry.
     """
-    current = entry.options[CONF_OUTPUT][CONF_TYPE]
+    current = output_types(entry.options)  # the parts of a combined output
     registry = er.async_get(hass)
     for type_id, output_type in OUTPUTS.items():
-        if type_id == current:
+        if type_id in current:
             continue
         for key in output_type.entity_keys:
             for platform in output_type.entities:

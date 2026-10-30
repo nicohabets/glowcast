@@ -22,6 +22,7 @@ from packaging.requirements import Requirement
 
 from .const import CONF_OUTPUT, CONF_SOURCE, CONF_TYPE, DOMAIN
 from .outputs import OUTPUTS
+from .outputs.blocks import OUTPUT_COMBINED, output_types
 from .runtime import GlowcastConfigEntry, GlowcastData, issue_id, issue_keys
 from .settings import read_settings
 from .sources import SOURCES
@@ -45,6 +46,17 @@ async def async_get_config_entry_diagnostics(
     source_type = data[CONF_SOURCE][CONF_TYPE]
     output_type = options[CONF_OUTPUT][CONF_TYPE]
     issues = ir.async_get(hass)
+    output = {
+        "type": output_type,
+        "device": _device(hass, OUTPUTS[output_type].device_id(hass, data)),
+    }
+    if output_type == OUTPUT_COMBINED:
+        # Each part's type and device (#11).
+        output["parts"] = [
+            {"type": part, "device": _device(hass, OUTPUTS[part].device_id(hass, data))}
+            for part in output_types(options)
+            if part in OUTPUTS
+        ]
     diagnostics = {
         "entry": {
             "version": entry.version,
@@ -66,10 +78,7 @@ async def async_get_config_entry_diagnostics(
             "type": source_type,
             "device": _device(hass, SOURCES[source_type].device_id(hass, data)),
         },
-        "output": {
-            "type": output_type,
-            "device": _device(hass, OUTPUTS[output_type].device_id(hass, data)),
-        },
+        "output": output,
         "syncing": runtime is not None and runtime.is_on,
         "status": None if status is None else dataclasses.asdict(status),
         "repair_issues": [

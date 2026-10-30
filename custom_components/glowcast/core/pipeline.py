@@ -7,9 +7,9 @@ blocking-call runner and the clock are injected.
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -21,6 +21,7 @@ from .ports import (
     LightOutput,
     OutputAuthFailed,
     OutputBusy,
+    OutputGone,
     OutputLost,
     OutputNotFound,
     OutputTooManyChannels,
@@ -97,6 +98,10 @@ class PipelineStatus:
     # dark scene; the lights hold the last colours or show the glow). False
     # otherwise; reported when it changes, never per frame.
     black_picture: bool = False
+    # The parts of a combined output that do not run now, by name, with the
+    # reason (architecture 4.4): reported when it changes. Empty for an
+    # output of one part.
+    dropped_parts: Mapping[str, "StopReason"] = field(default_factory=dict)
 
 
 class UpdateRate(StrEnum):
@@ -199,6 +204,7 @@ class Pipeline:
         self._failing_since = 0.0  # when the first of them began
         self._no_picture_since: float | None = None
         self._black_picture = False
+        self._dropped_parts: dict[str, StopReason] = {}
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the stop once.
@@ -508,6 +514,8 @@ class Pipeline:
                         self._clock.now(), self._settings.brightness / 100
                     )
                 )
+                if self._parts_dropped() != self._dropped_parts:
+                    self._report(Phase.STREAMING)
                 next_tick += tick
                 now = self._clock.now()
                 if next_tick < now:  # behind: skip ticks instead of bursting
@@ -554,18 +562,41 @@ class Pipeline:
             except Exception:
                 _LOGGER.exception("Error while stopping Glowcast")
 
+    def _parts_dropped(self) -> dict[str, StopReason]:
+        """The output's parts that do not run now, with the reason."""
+        return {
+            name: stop_reason_of(error)
+            for name, error in self._output.dropped_parts.items()
+        }
+
     def _report(self, phase: Phase, reason: StopReason | None = None) -> None:
+        self._dropped_parts = self._parts_dropped()
         status = PipelineStatus(
             phase,
             len(self._channels),
             reason,
             self._captures_per_second,
             self._black_picture,
+            dict(self._dropped_parts),
         )
         try:
             self._on_status(status)
         except Exception:
             _LOGGER.exception("Error in the status callback")
+
+
+def stop_reason_of(error: Exception) -> StopReason:
+    """The stop reason for an output's error, as for a single output."""
+    if isinstance(error, (OutputLost, OutputGone)):
+        return StopReason.OUTPUT_LOST
+    return next(
+        (
+            reason
+            for error_type, reason in _START_ERRORS.items()
+            if isinstance(error, error_type)
+        ),
+        StopReason.OUTPUT_UNAVAILABLE,
+    )
 
 
 def _compute(
@@ -582,6 +613,10 @@ def _raise_check_result(check: asyncio.Task[None]) -> None:
     except OutputAuthFailed as err:
         _LOGGER.warning("%s", err)
         raise _Stop(StopReason.AUTH_FAILED) from err
+    except OutputGone as err:
+        # The output's own retry failed: no second retry here.
+        _LOGGER.warning("%s", err)
+        raise _Stop(StopReason.OUTPUT_LOST) from err
     except OutputLost:
         raise
     except Exception as err:

@@ -117,6 +117,12 @@ def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
     return out
 
 
+def beside_area(lights: Sequence[LooseLight]) -> list[LooseLight]:
+    """The loose lights the combined suite drives beside the bench area: the
+    ones the camera does not see (the camera lights are the area's)."""
+    return [light for light in lights if light.camera is None]
+
+
 def labels(lights: Sequence[LooseLight], camera_labels: Mapping[str, str]) -> dict:
     """{index: label}: a camera light's own label ("light 1"), the others
     numbered on after the camera lights ("light 3 (state)")."""
@@ -389,7 +395,9 @@ def judge_rate(
             by_network.setdefault(n, []).extend(t for t, _ in sent.get(entity, []))
     for n, times in by_network.items():
         lights = sum(1 for v in network.values() if v == n)
-        most = max_in_window(times, 1.0 - slack)
+        # Glowcast's bound: 4 commands in any second less its tolerance
+        # (TOLERANCE, 10 ms); a millisecond less for the events' times.
+        most = max_in_window(times, 1.0 - sch.TOLERANCE - 0.001)
         name = network_label[n]
         numbers[f"{name} lights"] = lights
         numbers[f"{name} most commands in 1 s"] = most

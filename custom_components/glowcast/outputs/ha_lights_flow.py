@@ -30,9 +30,10 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from ..const import CONF_OUTPUT, CONF_TYPE
+from ..const import CONF_TYPE
 from ..core.ports import OutputNotFound, OutputUnavailable
 from ..flow import dropdown
+from .blocks import output_block
 from .ha_lights import (
     AMBIENT,
     CONF_AREA_ID,
@@ -51,6 +52,7 @@ from .ha_lights import (
     PRESETS,
     Light,
     areas_with_lights,
+    async_lights_in_area,
     colour_lights,
     crowded_networks,
     groups_with_lights,
@@ -58,7 +60,12 @@ from .ha_lights import (
     resolve,
 )
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND
-from .hue_entertainment import HINT_AREA, HINT_NO_AREA, async_entertainment_hint
+from .hue_entertainment import (
+    HINT_AREA,
+    HINT_NO_AREA,
+    OUTPUT_HUE_ENTERTAINMENT,
+    async_entertainment_hint,
+)
 
 # Form field names.
 FIELD_FOLLOW = "follow"
@@ -132,6 +139,7 @@ class HaLightsSteps(ConfigEntryBaseFlow):
         """Pick single colour lights."""
         choices = colour_lights(self.hass)
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
         if user_input is not None:
             ids = [
                 light_id
@@ -139,14 +147,17 @@ class HaLightsSteps(ConfigEntryBaseFlow):
                 if entity_id in choices
                 and (light_id := registry_id(self.hass, entity_id)) is not None
             ]
-            if ids:
-                return await self._async_ha_lights_chosen(
-                    {
-                        CONF_FOLLOW: FOLLOW_LIGHTS,
-                        CONF_LIGHTS: [{CONF_ENTITY: light_id} for light_id in ids],
-                    }
-                )
-            errors["base"] = "ha_lights_none_chosen"
+            choice = {
+                CONF_FOLLOW: FOLLOW_LIGHTS,
+                CONF_LIGHTS: [{CONF_ENTITY: light_id} for light_id in ids],
+            }
+            if not ids:
+                errors["base"] = "ha_lights_none_chosen"
+            elif names := await self._async_ha_lights_in_area(choice):
+                errors["base"] = "ha_lights_in_area"
+                placeholders["lights"] = names
+            else:
+                return await self._async_ha_lights_chosen(choice)
         current = []
         if self._ha_lights_current.get(CONF_FOLLOW, FOLLOW_LIGHTS) == FOLLOW_LIGHTS:
             current = [
@@ -168,6 +179,7 @@ class HaLightsSteps(ConfigEntryBaseFlow):
                 }
             ),
             errors=errors,
+            description_placeholders=placeholders,
         )
 
     async def async_step_ha_lights_area(
@@ -175,11 +187,16 @@ class HaLightsSteps(ConfigEntryBaseFlow):
     ) -> ConfigFlowResult:
         """Pick a Home Assistant area with colour lights."""
         areas = areas_with_lights(self.hass)
-        if user_input is not None and user_input.get(FIELD_AREA) in areas:
-            return await self._async_ha_lights_chosen(
-                {CONF_FOLLOW: FOLLOW_AREA, CONF_AREA_ID: user_input[FIELD_AREA]}
-            )
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
         current = self._ha_lights_current.get(CONF_AREA_ID)
+        if user_input is not None and user_input.get(FIELD_AREA) in areas:
+            choice = {CONF_FOLLOW: FOLLOW_AREA, CONF_AREA_ID: user_input[FIELD_AREA]}
+            if not (names := await self._async_ha_lights_in_area(choice)):
+                return await self._async_ha_lights_chosen(choice)
+            errors["base"] = "ha_lights_in_area"
+            placeholders["lights"] = names
+            current = user_input[FIELD_AREA]
         return self.async_show_form(
             step_id="ha_lights_area",
             data_schema=vol.Schema(
@@ -190,6 +207,8 @@ class HaLightsSteps(ConfigEntryBaseFlow):
                     ): dropdown(areas)
                 }
             ),
+            errors=errors,
+            description_placeholders=placeholders,
         )
 
     async def async_step_ha_lights_group(
@@ -197,11 +216,16 @@ class HaLightsSteps(ConfigEntryBaseFlow):
     ) -> ConfigFlowResult:
         """Pick a light group with colour lights (for example a Hue room)."""
         groups = groups_with_lights(self.hass)
-        if user_input is not None and user_input.get(FIELD_GROUP) in groups:
-            return await self._async_ha_lights_chosen(
-                {CONF_FOLLOW: FOLLOW_GROUP, CONF_GROUP: user_input[FIELD_GROUP]}
-            )
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
         current = self._ha_lights_current.get(CONF_GROUP)
+        if user_input is not None and user_input.get(FIELD_GROUP) in groups:
+            choice = {CONF_FOLLOW: FOLLOW_GROUP, CONF_GROUP: user_input[FIELD_GROUP]}
+            if not (names := await self._async_ha_lights_in_area(choice)):
+                return await self._async_ha_lights_chosen(choice)
+            errors["base"] = "ha_lights_in_area"
+            placeholders["lights"] = names
+            current = user_input[FIELD_GROUP]
         return self.async_show_form(
             step_id="ha_lights_group",
             data_schema=vol.Schema(
@@ -212,6 +236,8 @@ class HaLightsSteps(ConfigEntryBaseFlow):
                     ): dropdown(groups)
                 }
             ),
+            errors=errors,
+            description_placeholders=placeholders,
         )
 
     async def async_step_ha_lights_hue_hint(
@@ -355,6 +381,18 @@ class HaLightsSteps(ConfigEntryBaseFlow):
         }
         return await self.async_output_chosen({}, output)
 
+    async def _async_ha_lights_in_area(self, choice: dict[str, Any]) -> str | None:
+        """The names of chosen lights that are in the entertainment area too.
+
+        With a combined output (#11), the area chosen before in this flow
+        drives its Hue lights already; a light in both would get two colours.
+        None when there are none, or when the bridge cannot be asked.
+        """
+        for data, output in self.chosen_outputs:
+            if output.get(CONF_TYPE) == OUTPUT_HUE_ENTERTAINMENT:
+                return await async_lights_in_area(self.hass, data, output, choice)
+        return None
+
     def _ha_lights_resolve(self, output: Mapping[str, Any]) -> list[Light]:
         try:
             return resolve(self.hass, output)
@@ -383,10 +421,8 @@ class HaLightsOptionsSteps(HaLightsSteps, OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Start from the stored choice; first a notice if the lights changed."""
-        output = self.config_entry.options[CONF_OUTPUT]
-        self._ha_lights_current = (
-            dict(output) if output.get(CONF_TYPE) == OUTPUT_HA_LIGHTS else {}
-        )
+        output = output_block(self.config_entry.options, OUTPUT_HA_LIGHTS)
+        self._ha_lights_current = {} if output is None else dict(output)
         if changes := self._ha_lights_changes():
             return await self.async_step_ha_lights_changes(changes=changes)
         return await self.async_step_ha_lights()

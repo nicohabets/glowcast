@@ -160,10 +160,11 @@
     "step": {
       "init": {
         "title": "Which lights should follow the picture?",
-        "description": "First the lights and their own settings, then brightness, intensity and the update rate.",
+        "description": "First the lights and their own settings, then brightness, intensity and the update rate. Together: first the entertainment area, then the loose lights.",
         "menu_options": {
           "hue_options": "Hue entertainment area - the smoothest",
-          "ha_lights_options": "Loose lights - any colour light, slower"
+          "ha_lights_options": "Loose lights - any colour light, slower",
+          "combined_options": "Entertainment area and loose lights"
         }
       },
       "settings": {
@@ -274,7 +275,8 @@
       "ha_lights_no_lights": "Home Assistant has no colour lights yet.",
       "ha_lights_no_area": "No area in Home Assistant has colour lights. Assign lights to an area first.",
       "ha_lights_no_group": "Home Assistant has no light groups with colour lights.",
-      "ha_lights_none_chosen": "Choose at least one colour light."
+      "ha_lights_none_chosen": "Choose at least one colour light.",
+      "ha_lights_in_area": "{lights} already follow the TV through the entertainment area, so they cannot also be loose lights. Pick other lights, or an area or group without them."
     }
   },
   "selector": {
@@ -360,6 +362,9 @@
               "source_unavailable": "Picture source failed",
               "source_auth_failed": "Picture source rejected the key"
             }
+          },
+          "dropped_outputs": {
+            "name": "Dropped lights"
           }
         }
       },
@@ -393,6 +398,11 @@
     "ha_lights_not_found": {
       "title": "Glowcast {name}: no colour lights to follow",
       "description": "Glowcast cannot sync because the lights it follows are gone: the area or light group was removed, or it has no colour lights left. Choose other lights in Glowcast's settings, then switch Glowcast on again."
+    }
+  },
+  "exceptions": {
+    "lights_in_area": {
+      "message": "{lights} already follow the TV through the entertainment area, so they cannot also be loose lights."
     }
   }
 }

@@ -160,10 +160,11 @@
     "step": {
       "init": {
         "title": "Welke lampen volgen het beeld?",
-        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo.",
+        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de losse lampen.",
         "menu_options": {
           "hue_options": "Hue-entertainmentruimte - het vloeiendst",
-          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager"
+          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager",
+          "combined_options": "Entertainmentruimte en losse lampen"
         }
       },
       "settings": {
@@ -274,7 +275,8 @@
       "ha_lights_no_lights": "Home Assistant heeft nog geen kleurenlampen.",
       "ha_lights_no_area": "Geen enkele ruimte in Home Assistant heeft kleurenlampen. Wijs eerst lampen toe aan een ruimte.",
       "ha_lights_no_group": "Home Assistant heeft geen lampgroepen met kleurenlampen.",
-      "ha_lights_none_chosen": "Kies minstens één kleurenlamp."
+      "ha_lights_none_chosen": "Kies minstens één kleurenlamp.",
+      "ha_lights_in_area": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn. Kies andere lampen, of een ruimte of groep zonder deze lampen."
     }
   },
   "selector": {
@@ -360,6 +362,9 @@
               "source_unavailable": "Fout in de beeldbron",
               "source_auth_failed": "Beeldbron weigerde de sleutel"
             }
+          },
+          "dropped_outputs": {
+            "name": "Uitgevallen lampen"
           }
         }
       },
@@ -393,6 +398,11 @@
     "ha_lights_not_found": {
       "title": "Glowcast {name}: geen kleurenlampen om te volgen",
       "description": "Glowcast kan niet synchroniseren omdat de lampen die het volgt weg zijn: de ruimte of lampgroep is verwijderd, of heeft geen kleurenlampen meer. Kies andere lampen in de instellingen van Glowcast en zet Glowcast daarna weer aan."
+    }
+  },
+  "exceptions": {
+    "lights_in_area": {
+      "message": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn."
     }
   }
 }

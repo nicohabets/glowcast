@@ -22,14 +22,16 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_added_domain
 
-from ..const import CONF_OUTPUT
+from ..const import CONF_TYPE, DOMAIN
 from ..entity import GlowcastSettingEntity
+from .blocks import output_block, with_output_block
 from .ha_lights import (
     CONF_AREA_ID,
     CONF_FOLLOW,
@@ -38,9 +40,12 @@ from .ha_lights import (
     FOLLOW_GROUP,
     FOLLOW_LIGHTS,
     LIGHT_DOMAIN,
+    OUTPUT_HA_LIGHTS,
     areas_with_lights,
+    async_lights_in_area,
     groups_with_lights,
 )
+from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT
 
 # Its unique id is f"{entry_id}_{ENTITY_KEY}", and its translation key.
 ENTITY_KEY = "loose_lights"
@@ -86,7 +91,7 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
         """The followed area or group; unknown if it no longer has colour lights."""
         if self._follow == FOLLOW_LIGHTS:
             return CHOSEN_LIGHTS
-        output = self._entry.options[CONF_OUTPUT]
+        output = self._output
         key = output.get(CONF_AREA_ID if self._follow == FOLLOW_AREA else CONF_GROUP)
         return next(
             (
@@ -103,14 +108,23 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
             return  # only offered while it is the current option
         follow, key = self._choices[option]
         output = {
-            k: v
-            for k, v in self._entry.options[CONF_OUTPUT].items()
-            if k not in (CONF_AREA_ID, CONF_GROUP)
+            k: v for k, v in self._output.items() if k not in (CONF_AREA_ID, CONF_GROUP)
         }
         output[CONF_FOLLOW] = follow
         output[CONF_AREA_ID if follow == FOLLOW_AREA else CONF_GROUP] = key
+        area = output_block(self._entry.options, OUTPUT_HUE_ENTERTAINMENT)
+        if area is not None and (
+            names := await async_lights_in_area(
+                self.hass, self._entry.data, area, output
+            )
+        ):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="lights_in_area",
+                translation_placeholders={"lights": names},
+            )
         self.hass.config_entries.async_update_entry(
-            self._entry, options={**self._entry.options, CONF_OUTPUT: output}
+            self._entry, options=with_output_block(self._entry.options, output)
         )
 
     async def async_added_to_hass(self) -> None:
@@ -142,8 +156,15 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
             )
 
     @property
+    def _output(self) -> Mapping[str, Any]:
+        """The stored loose-lights block, alone or in a combined output."""
+        return output_block(self._entry.options, OUTPUT_HA_LIGHTS) or {
+            CONF_TYPE: OUTPUT_HA_LIGHTS
+        }
+
+    @property
     def _follow(self) -> str:
-        return self._entry.options[CONF_OUTPUT].get(CONF_FOLLOW, FOLLOW_LIGHTS)
+        return self._output.get(CONF_FOLLOW, FOLLOW_LIGHTS)
 
     @callback
     def _async_runtime_changed(self) -> None:

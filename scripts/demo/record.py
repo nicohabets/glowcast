@@ -624,6 +624,61 @@ def loose_settings(rec: Recorder) -> None:
     rec.step("saved")
 
 
+def combined_settings(rec: Recorder) -> None:
+    """Add loose lights to an entry with an entertainment area (#11): the
+    output menu, the area as it is, the loose lights (an area, a place per
+    light), the common settings, then the device page with both entities."""
+    page = rec.page
+    rec.goto("/config/integrations/integration/glowcast")
+    rec.begin()
+    configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
+    rec.click(page.get_by_role("button", name=configure).first)
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "combined_options"))
+    page.locator(f"{DIALOG} ha-picker-field").wait_for()
+    rec.step("area")
+    rec.submit()  # the stored area stays
+    radio(rec, 0).wait_for()
+    rec.step("follow")
+    rec.click(radio(rec, 1))  # a Home Assistant area
+    rec.step("follow-area")
+    rec.submit()
+    page.locator(f"{DIALOG} ha-picker-field").wait_for()
+    rec.step("lights-area")
+    rec.click(page.locator(f"{DIALOG} ha-picker-field"))
+    rec.click(rec.option(DEMO_AREA_ID))
+    rec.step("lights-area-chosen")
+    rec.submit()
+    radio(rec, 0).wait_for()
+    rec.step("first-light")
+    rec.click(radio(rec, 0))  # left of the screen
+    rec.submit()
+    page.wait_for_timeout(500)
+    rec.step("second-light")
+    rec.click(radio(rec, 1))  # right of the screen
+    rec.submit()
+    page.locator(PRIMARY).wait_for()
+    rec.step("settings")
+    rec.submit()
+    rec.step("saved")
+    rec.submit()
+    # The entry reloads with the entities of both: the area and the lights.
+    page.wait_for_timeout(2000)
+    name = page.evaluate(
+        f"() => Object.values({HASS}.devices)"
+        ".find(d => d.identifiers.some(i => i[0] === 'glowcast')).name"
+    )
+    rec.click(page.get_by_text(name, exact=True).first)
+    page.wait_for_url("**/config/devices/device/**")
+    page.wait_for_timeout(1500)
+    rec.step("device")
+    # Down to Configuration: the entertainment area and the lights.
+    page.mouse.wheel(0, 700)
+    page.wait_for_timeout(800)
+    rec.step("configuration")
+
+
 def create_loose_entry(rec: Recorder) -> None:
     """A Glowcast entry with loose lights, through the setup flow's API."""
     flow = rec.page.evaluate(
@@ -652,7 +707,13 @@ def create_loose_entry(rec: Recorder) -> None:
 
 # Flows that need the glowcast_demo stub: switching Glowcast on needs its fake
 # TV source and lights, a discovery its service.
-SYNCING_FLOWS = {"entities", "screen-discovery", "loose-setup", "loose-settings"}
+SYNCING_FLOWS = {
+    "entities",
+    "screen-discovery",
+    "loose-setup",
+    "loose-settings",
+    "combined-settings",
+}
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
@@ -662,6 +723,7 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "screen-discovery": screen_discovery,
     "loose-setup": loose_setup,
     "loose-settings": loose_settings,
+    "combined-settings": combined_settings,
 }
 # Flows that set Glowcast up themselves: they start without an entry.
 SETUP_FLOWS = {
@@ -673,6 +735,10 @@ SETUP_FLOWS = {
 }
 
 
+# Flows that start from a fresh entry with an entertainment area only.
+AREA_FLOWS = {"combined-settings"}
+
+
 def prepare(rec: Recorder, flow: str) -> None:
     """Glowcast unset up before the setup flow, set up before the others.
 
@@ -680,7 +746,16 @@ def prepare(rec: Recorder, flow: str) -> None:
     entry, and the repair issue a Core install raises.
     """
     entries = rec.ws({"type": "config_entries/get", "domain": "glowcast"})
-    if flow in SETUP_FLOWS:
+    if flow in AREA_FLOWS:
+        # An entry with an entertainment area only, whatever ran before.
+        for entry in entries:
+            rec.page.evaluate(
+                f"id => {HASS}.callApi('DELETE', "
+                "`config/config_entries/entry/${id}`)",
+                entry["entry_id"],
+            )
+        setup(rec)
+    elif flow in SETUP_FLOWS:
         for entry in entries:
             rec.page.evaluate(
                 f"id => {HASS}.callApi('DELETE', "

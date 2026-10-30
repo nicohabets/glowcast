@@ -13,7 +13,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 
 ## Using Glowcast
 
-- [Loose lights](loose-lights.md): any colour light, each at its own place; how fast they follow
+- [Loose lights](loose-lights.md): any colour light, each at its own place, alone or together with an entertainment area; how fast they follow
 - [Settings](settings.md): brightness, intensity, the update rate and which lights follow, on the settings screen and the device page
 - [Status and diagnostics](status.md): what Glowcast is doing, why it stopped, and the diagnostics for a problem report
 - [Troubleshooting](troubleshooting.md): when Glowcast stops by itself, and how to report a problem

@@ -95,6 +95,10 @@ loose_lights:
     z: 0.0
 # Whole cycles of the helper's patterns to judge in the loose suite.
 loose_cycles: 1
+# `--suite combined` (#11): the bench area and, in the same Glowcast entry,
+# the loose lights above WITHOUT `light:` (the ones the camera does not see;
+# the camera lights are the area's). It needs at least one such light.
+combined_cycles: 1
 
 # Windows' uv.exe as a WSL path; empty: found with `where.exe uv`.
 uv: ""

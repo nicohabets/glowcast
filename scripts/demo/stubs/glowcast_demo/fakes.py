@@ -9,6 +9,7 @@ import logging
 import math
 import time
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 from custom_components.glowcast.const import CONF_OUTPUT
@@ -93,6 +94,7 @@ class FakeLightOutput:
     """Lights for the chosen area that accept colours and show them nowhere."""
 
     max_rate_hz = 25.0  # as Hue's entertainment stream
+    dropped_parts: Mapping[str, Exception] = MappingProxyType({})  # one part
 
     def __init__(self, options: Mapping[str, Any]) -> None:
         """For the area in the entry's options."""
