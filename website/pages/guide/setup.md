@@ -16,7 +16,7 @@ Glowcast uses the TV's pairing from the LG webOS Smart TV integration, so the TV
 
 ## 3. Choose the lights
 
-**Which lights should follow the picture?** Choose **Hue entertainment area - the smoothest** or **Home Assistant lights - any colour light, slower**. [Choosing your lights](lights.md) explains the difference; you can change it later.
+**Which lights should follow the picture?** Choose **Hue entertainment area - the smoothest** or **Home Assistant lights - any brand, slower**. [Choosing your lights](lights.md) explains the difference; you can change it later.
 
 ### An entertainment area
 
@@ -67,7 +67,7 @@ The switch is off. Next: [the first evening](first-evening.md).
 
 ## Changing it later
 
-Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights should follow the picture?** (**Hue entertainment area - the smoothest**, **Home Assistant lights - any colour light, slower**, or **Entertainment area and Home Assistant lights**), then the lights' own settings (the area, the Home Assistant lights and their places, or both), then brightness, intensity and the update rate.
+Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights should follow the picture?** (**Hue entertainment area - the smoothest**, **Home Assistant lights - any brand, slower**, or **Entertainment area and Home Assistant lights**), then the lights' own settings (the area, the Home Assistant lights and their places, or both), then brightness, intensity and the update rate.
 
 - Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before. Switching back and forth later needs no new pairing.
 - Switching between these reloads Glowcast, so syncing stops; switch it on again.

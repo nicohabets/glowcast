@@ -66,7 +66,7 @@
         "description": "You can change this later in Glowcast's settings.",
         "menu_options": {
           "bridge": "Hue entertainment area - the smoothest",
-          "ha_lights": "Home Assistant lights - any colour light, slower"
+          "ha_lights": "Home Assistant lights - any brand, slower"
         }
       },
       "ha_lights": {
@@ -163,7 +163,7 @@
         "description": "First the lights and their own settings, then brightness, intensity and the update rate. Together: first the entertainment area, then the Home Assistant lights.",
         "menu_options": {
           "hue_options": "Hue entertainment area - the smoothest",
-          "ha_lights_options": "Home Assistant lights - any colour light, slower",
+          "ha_lights_options": "Home Assistant lights - any brand, slower",
           "combined_options": "Entertainment area and Home Assistant lights"
         },
         "menu_option_descriptions": {
