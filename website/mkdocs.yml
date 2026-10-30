@@ -66,7 +66,7 @@ extra:
   # public by design (it ends up in the page source). Only the publish from
   # main sets GLOWCAST_ANALYTICS=true (.github/workflows/website.yml), so
   # pull request builds and local `mkdocs serve` do not count visits.
-  analytics: !ENV [GLOWCAST_ANALYTICS, false]
+  cloudflare_analytics: !ENV [GLOWCAST_ANALYTICS, false]
   cloudflare_token: b93011ad04024829911b34bf57dc5b2e
 
 plugins:
