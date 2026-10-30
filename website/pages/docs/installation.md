@@ -2,7 +2,7 @@
 
 ## What you need
 
-- Home Assistant 2025.7.2 or newer
+- Home Assistant 2026.8.3 or newer. A TV with webOS 26 (LG's 2026 update) only pairs from that version; it is the minimum that can work there, not a guarantee (a few TVs are reported to still refuse).
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
 - Colour lights, one of:
     - A Hue bridge with an entertainment area: a Philips Hue Bridge v2 or Hue Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas). The smoothest. The original round bridge (sold 2012-2015) cannot stream.
@@ -31,3 +31,7 @@ Add it as a custom repository: in HACS, open the menu (⋮) in the top right cor
 Updates show up in HACS and under Settings → System → Updates. The [releases](https://github.com/nicohabets/glowcast/releases) say what changed in each version.
 
 From Home Assistant 2026.11, HACS is built into Home Assistant as the [Marketplace](https://hacs.xyz/docs/marketplace/) (Settings → Marketplace); custom repositories added in HACS carry over. Updated steps follow in [#57](https://github.com/nicohabets/glowcast/issues/57).
+
+### Home Assistant older than 2026.8.3?
+
+Glowcast 0.5.0 and newer need Home Assistant 2026.8.3 or newer. On an older Home Assistant, HACS will not install the new version: it says the version requires Home Assistant 2026.8.3 or newer. The Glowcast you have keeps working as it is. To get the new version, first update Home Assistant to 2026.8.3 or newer (Settings → System → Updates), then update Glowcast.

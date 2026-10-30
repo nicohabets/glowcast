@@ -10,7 +10,7 @@ blueprint:
   domain: automation
   source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/start_with_tv.yaml
   homeassistant:
-    min_version: 2025.7.2
+    min_version: 2026.8.3
   input:
     tv:
       name: TV
