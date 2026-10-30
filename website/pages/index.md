@@ -40,7 +40,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     **The lights follow the picture**
 
-    Each light gets the colour of the part of the screen beside it: left, right, top and bottom. A gradient lightstrip shows several colours along its length.
+    Each light gets the colour of the part of the screen beside it: left, right, top and bottom. A gradient lightstrip shows several colours along its length, and its ends follow the very edges of the picture.
 
 -   ![A dark picture on the TV: every light keeps a faint warm glow.](images/illustrations/scene-2-dark-scene.svg){ .gc-feature loading=lazy }
 
@@ -78,7 +78,7 @@ At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs 
 - **About 3 pictures per second.** That is the TV's limit, so the lights follow scenes, not every flash. Fine as ambient light; not as fast as an HDMI Sync Box.
 - **Protected apps in the TV's own apps give no picture.** Streaming apps with DRM (tested with Prime Video) return a black frame, so the lights let go. The same app on a streaming stick over HDMI works.
 - **One stream per bridge.** A Hue bridge streams to one entertainment area at a time, so two TVs on one bridge cannot sync together.
-- **Lamps outside the entertainment area are slower.** Other colour lamps can follow as [Home Assistant lights](docs/loose-lights.md), alone or together with the area, at about one change per second.
+- **Lamps outside the entertainment area are slower.** Other colour lamps can follow as [Home Assistant lights](docs/home-assistant-lights.md), alone or together with the area, at about one change per second.
 
 All limits are on the [Known limits](docs/limits.md) page.
 

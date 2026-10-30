@@ -1,5 +1,5 @@
-"""Loose lights behind the switch (#9): the real pipeline, a fake TV, and the
-real loose-lights output with the light services replaced by recorders."""
+"""Home Assistant lights behind the switch (#9): the real pipeline, a fake TV, and the
+real Home Assistant lights output with the light services replaced by recorders."""
 
 from datetime import timedelta
 from typing import Any
@@ -40,7 +40,7 @@ from .test_config_flow import (  # noqa: F401 (fixtures)
     fake_api,
     other_integrations,
 )
-from .test_ha_lights_flow import loose_entry
+from .test_ha_lights_flow import ha_lights_entry
 from .test_ha_lights_output import add_light
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
@@ -114,7 +114,7 @@ async def test_the_list_is_made_once_per_burst_of_changes(
     hass: HomeAssistant, adapters: FakeAdapters, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lamp = add_light(hass, "lamp")
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     scans: list[None] = []
@@ -149,7 +149,7 @@ async def test_the_lights_follow_and_return_to_their_state(
 ) -> None:
     turn_on: list[ServiceCall] = async_mock_service(hass, "light", "turn_on")
     lamp = add_light(hass, "lamp")
-    entry = loose_entry(
+    entry = ha_lights_entry(
         hass, {"follow": "lights", "lights": [{"entity": lamp.id, "x": -1, "z": 0}]}
     )
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -182,7 +182,7 @@ async def test_a_removed_area_stops_with_a_repair_issue(
     async_mock_service(hass, "light", "turn_on")
     area = ar.async_get(hass).async_create("Living room")
     add_light(hass, "lamp", area_id=area.id)
-    entry = loose_entry(hass, {"follow": "area", "area_id": area.id, "lights": []})
+    entry = ha_lights_entry(hass, {"follow": "area", "area_id": area.id, "lights": []})
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     ar.async_get(hass).async_delete(area.id)
@@ -220,7 +220,7 @@ async def test_the_entity_offers_areas_and_groups_and_restarts_on_a_choice(
     add_light(hass, "area_lamp", area_id=area.id)
     ar.async_get(hass).async_create("Empty room")
     add_light(hass, "room", "group", members=[lamp.entity_id])
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
@@ -265,7 +265,7 @@ async def test_the_lights_are_restored_when_home_assistant_stops(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
     (lamp,) = await real_lights(hass, "lamp")
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     await syncing(hass, lamp)
@@ -281,7 +281,7 @@ async def test_the_lights_are_restored_on_unload_while_syncing(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
     (lamp,) = await real_lights(hass, "lamp")
-    entry = loose_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
+    entry = ha_lights_entry(hass, {"follow": "lights", "lights": [{"entity": lamp.id}]})
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     await syncing(hass, lamp)
