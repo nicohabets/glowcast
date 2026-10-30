@@ -272,7 +272,7 @@ async def test_cycle_reports_each_pattern_change(make_helper: MakeHelper) -> Non
     sleep = FakeSleep(clock, wakes=3)
     helper = await make_helper(PatternPicture(source), pattern_sleep=sleep)
     helper.server.start_reporting()
-    await sleep.done.wait()
+    await asyncio.wait_for(sleep.done.wait(), 5)
     await helper.server.stop_reporting()
     patterns = [e for e in helper.events() if e["event"] == "pattern"]
     assert [p["showing"] for p in patterns] == ["red", "green", "blue", "white"]
@@ -287,7 +287,7 @@ async def test_cycle_never_reports_a_pattern_twice(make_helper: MakeHelper) -> N
     sleep = FakeSleep(clock, wakes=6, early=0.005)
     helper = await make_helper(PatternPicture(source), pattern_sleep=sleep)
     helper.server.start_reporting()
-    await sleep.done.wait()
+    await asyncio.wait_for(sleep.done.wait(), 5)
     await helper.server.stop_reporting()
     shown = [e["showing"] for e in helper.events() if e["event"] == "pattern"]
     assert sleep.early_wakes == 3
