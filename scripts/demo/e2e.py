@@ -466,14 +466,16 @@ def steps(
     run.required("switch on: streaming", switch_on)
 
     def wait_for_cycle() -> dict[str, Any]:
-        # The first red after streaming started: then white is streamed
-        # before black, so the hold on black shows white.
+        # The first red whose settled stretch starts while streaming (it may
+        # have begun just before): then white is streamed before black, so
+        # the hold on black shows white, without waiting for a whole cycle.
+        earliest = found["streaming_since"] - (SETTLE - MARGIN)
         deadline = time.time() + len(CYCLE) * INTERVAL + 10
         while time.time() < deadline:
             reds = [
                 since
                 for name, since in helper.patterns()
-                if name == "red" and since >= found["streaming_since"]
+                if name == "red" and since >= earliest
             ]
             if reds:
                 found["cycle"] = reds[0]
@@ -522,8 +524,12 @@ def steps(
             ),
         )
     run.step(
-        "stream: decrypted, 8-bit, only to the claimed area",
-        lambda: check_stream(bridge, found.get("cycle", 0.0) + len(CYCLE) * INTERVAL),
+        "stream: decrypted, with the right key, only to the claimed area",
+        lambda: check_stream(
+            bridge,
+            found.get("cycle", 0.0),
+            found.get("cycle", 0.0) + len(CYCLE) * INTERVAL,
+        ),
     )
     run.step(
         "helper stops: switch off with tv_off",
@@ -670,9 +676,14 @@ def check_black(
     return {"hold": hold, "released_after_s": round(delay, 2), "status": "no_picture"}
 
 
-def check_stream(bridge: Bridge, until: float) -> dict[str, Any]:
-    """Every record decrypted, every handshake with the right key, values
-    8-bit, messages only for the claimed area, and a new claim after black."""
+def check_stream(bridge: Bridge, cycle: float, until: float) -> dict[str, Any]:
+    """Every record decrypted, every handshake with the right key, messages
+    only for the claimed area, and a new claim after black in the cycle.
+
+    Not whether the values are 8-bit: hue-entertainment writes an 8-bit value
+    twice and shifts a 16-bit one down, so the wire looks the same (the unit
+    tests cover Glowcast's 8-bit rule).
+    """
     if errors := [e for e in bridge.events("dtls_error") if e["time"] < until]:
         raise Failed(f"{len(errors)} DTLS errors, the first: {errors[0]['reason']}")
     handshakes = [e for e in bridge.events("handshake") if e["time"] < until]
@@ -686,35 +697,46 @@ def check_stream(bridge: Bridge, until: float) -> dict[str, Any]:
         for e in frames
         if e["area"] != TV_AREA_ID
         or not e["active"]
-        or not e["pairs_equal"]
+        or not e["whole"]
         or e["color_space"] != 0
         or sorted(e["channels"]) != CHANNELS
     ]
     if bad:
         raise Failed(f"{len(bad)} of {len(frames)} messages wrong, the first: {bad[0]}")
-    starts = bridge.actions("start", 0, until)
-    if len(handshakes) < 2 or len(starts) < 2:
+    black = cycle + CYCLE.index("black") * INTERVAL
+    claims = bridge.actions("start", black, black + 2 * INTERVAL)
+    reclaim = [e for e in handshakes if black <= e["time"] < black + 2 * INTERVAL]
+    if len(claims) != 1 or len(reclaim) != 1:
         raise Failed(
-            f"{len(starts)} claims and {len(handshakes)} handshakes; expected a "
-            "second one after the black pattern"
+            f"{len(claims)} claims and {len(reclaim)} handshakes after the black "
+            "pattern; expected one of each"
         )
     return {
         "messages": len(frames),
         "handshakes": len(handshakes),
-        "claims": len(starts),
+        "reclaim_after_black_s": round(claims[0] - black, 2),
     }
 
 
 def helper_stops(bridge: Bridge, helper: Helper, watcher: Watcher) -> dict[str, Any]:
     """A computer that goes away: the switch turns off with tv_off."""
-    # Stop while a picture streams (the cycle's next red), not during black.
-    now = time.time()
-    patterns = helper.patterns()
-    name, since = patterns[-1]
-    if name in ("white", "black") or now - since > INTERVAL - 2:
-        time.sleep(max(0.0, since + INTERVAL + 1 - now))
-    if (current := watcher.timeline[-1])["status"] != "streaming":
-        raise Failed(f"not streaming before the helper stops: {current}")
+    # Stop while a picture streams: never during black (or white, just
+    # before it), nor during the claim at the start of a pattern, and with at
+    # least 2 s of the pattern left.
+    deadline = time.monotonic() + 2 * len(CYCLE) * INTERVAL
+    while True:
+        name, since = helper.patterns()[-1]
+        shown = time.time() - since
+        current = watcher.timeline[-1]
+        if (
+            name not in ("white", "black")
+            and 1.0 <= shown <= INTERVAL - 2.0
+            and current["status"] == "streaming"
+        ):
+            break
+        if time.monotonic() > deadline:
+            raise Failed(f"no moment to stop the helper while streaming: {current}")
+        time.sleep(0.1)
     stopped = helper.stop()
     state = watcher.wait(
         lambda s: s["switch"] == "off" and s["status"] == "tv_off", timeout=20

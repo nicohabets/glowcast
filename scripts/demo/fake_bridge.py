@@ -504,13 +504,13 @@ class DtlsServer:
         )
         body = message[HUESTREAM_HEADER + AREA_ID_LENGTH :]
         channels: dict[str, list[int]] = {}
-        # hue-entertainment writes each 8-bit value twice (as 16 bits); a pair
-        # that differs means a value that was not 8-bit.
-        pairs_equal = len(body) % 7 == 0
+        # 7 bytes per channel: its id, then each colour as 16 bits. Only the
+        # high byte is kept: hue-entertainment writes an 8-bit value twice and
+        # shifts a 16-bit one down, so the wire cannot tell the two apart
+        # (Glowcast's 8-bit rule is covered by the unit tests).
         for at in range(0, len(body) - 6, 7):
-            channel, r1, r2, g1, g2, b1, b2 = body[at : at + 7]
-            pairs_equal &= r1 == r2 and g1 == g2 and b1 == b2
-            channels[str(channel)] = [r1, g1, b1]
+            channel, red, _, green, _, blue, _ = body[at : at + 7]
+            channels[str(channel)] = [red, green, blue]
         self._events.add(
             "stream",
             client=address[1],
@@ -518,7 +518,7 @@ class DtlsServer:
             active=area == self._bridge.active_area,
             sequence=message[11],
             color_space=message[14],
-            pairs_equal=pairs_equal,
+            whole=len(body) % 7 == 0,
             channels=channels,
         )
 

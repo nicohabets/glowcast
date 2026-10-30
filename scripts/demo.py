@@ -321,7 +321,7 @@ def start(instance: Instance, *, fake_sync: bool = True, e2e: bool = False) -> s
     with _lock():
         if _running(instance):
             sys.exit(f"Instance {instance.name} is already running; run `stop` first.")
-        _install()
+        _install(browser=not e2e)
         try:
             ha_port, bridge_port = _pick_ports(instance)
             dtls_port = (
@@ -678,11 +678,31 @@ def _free_udp_port(preferred: int, taken: set[int | None]) -> int:
     sys.exit(f"No free UDP port from {preferred} up.")
 
 
-def _install() -> None:
-    """Install the pinned requirements; again only when a pin changed."""
+def _install(*, browser: bool = True) -> None:
+    """Install the pinned requirements; again only when a pin changed.
+
+    Playwright's Chromium (for `record`) only with `browser`: `e2e` does not
+    need it, which saves CI a download.
+    """
     marker = VENV / "glowcast-demo.json"
-    if marker.exists() and json.loads(marker.read_text()) == REQUIREMENTS:
-        return
+    if not marker.exists() or json.loads(marker.read_text()) != REQUIREMENTS:
+        _install_requirements(marker)
+    # In ~/.cache/ms-playwright, not in the environment: safe while
+    # instances run.
+    browser_marker = VENV / "glowcast-demo-chromium.json"
+    playwright = [r for r in REQUIREMENTS if r.startswith("playwright==")]
+    if browser and (
+        not browser_marker.exists()
+        or json.loads(browser_marker.read_text()) != playwright
+    ):
+        subprocess.run(
+            [str(_python()), "-m", "playwright", "install", "chromium"], check=True
+        )
+        browser_marker.write_text(json.dumps(playwright))
+
+
+def _install_requirements(marker: Path) -> None:
+    """Install REQUIREMENTS into the shared environment."""
     if running := [i.name for i in _instances() if _running(i)]:
         sys.exit(
             f"The shared environment in {VENV} needs other versions, but "
@@ -708,9 +728,6 @@ def _install() -> None:
     else:
         install = [str(_python()), "-m", "pip", "install"]
     subprocess.run([*install, *REQUIREMENTS], check=True)
-    subprocess.run(
-        [str(_python()), "-m", "playwright", "install", "chromium"], check=True
-    )
     marker.write_text(json.dumps(REQUIREMENTS))
 
 
