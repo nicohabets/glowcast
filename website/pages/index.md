@@ -25,7 +25,7 @@ hide:
 - **Colour lights**, one of:
     - A **Hue bridge with an entertainment area**: a Philips Hue Bridge v2 or Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area set up in the Hue app
     - Or **Home Assistant lights**: any colour light in Home Assistant, of any brand, no Hue bridge needed
-- **Home Assistant 2025.7.2** or newer
+- **Home Assistant 2026.8.3** or newer (TVs with webOS 26 need it to pair)
 - **[HACS](https://hacs.xyz/)** to install Glowcast
 
 If you already run Home Assistant with the LG webOS integration and colour lights, you have everything you need.
