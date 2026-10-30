@@ -65,6 +65,9 @@ PLAN = {
         "long black glow: skipped (all zero is no picture; checked in screen mode)",
         "switch off: area stops, lights back (camera, bridge)",
         "switch on, stop the helper: tv_off, area stops, lights back",
+        "Test lights pressed while off, the helper stopped (#182): the area\n"
+        "    streams, each light its side (red, blue), then green or white; area\n"
+        "    released, lights back (camera), the switch stays off",
     ],
     "screen": [
         "show a full-screen window on the monitor with Glowcast's rest screen,\n"

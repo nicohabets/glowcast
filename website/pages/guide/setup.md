@@ -69,7 +69,8 @@ Glowcast adds one device, "Glowcast *TV name*", with:
 
 - a **switch** to start and stop syncing, for example `switch.glowcast_living_room_tv`;
 - a **Status** sensor that says what Glowcast is doing ([Status and diagnostics](../docs/status.md));
-- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with Home Assistant lights, **Lights** (both when you use the two together) ([Settings](../docs/settings.md)).
+- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with Home Assistant lights, **Lights** (both when you use the two together) ([Settings](../docs/settings.md));
+- a **Test lights** button under **Configuration**, which shows red on the left, blue on the right, then green at the top and white below, so you can check where each light sits ([Test the lights](../docs/settings.md#test-lights)).
 
 The switch is off. Next: [the first evening](first-evening.md).
 

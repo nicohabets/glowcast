@@ -26,7 +26,7 @@ Each light gets its place, one light per page: **Left of the screen**, **Right o
 
 *The place of one light: a part of the picture, or Fine-tune for the sliders.*
 
-A light that joins the area or group later follows the middle of the picture until you place it. A light that leaves is no longer used. The settings screen lists both before you go on, and the places of the lights that left are removed when you save. A light that is unavailable when Glowcast starts is skipped until the next start. If the area or group has no colour lights left, or was removed, Glowcast does not start and a repair says so.
+To check the places, press **Test lights** on Glowcast's device ([Test the lights](settings.md#test-lights)). A light that joins the area or group later follows the middle of the picture until you place it. A light that leaves is no longer used. The settings screen lists both before you go on, and the places of the lights that left are removed when you save. A light that is unavailable when Glowcast starts is skipped until the next start. If the area or group has no colour lights left, or was removed, Glowcast does not start and a repair says so.
 
 ## On the device page
 

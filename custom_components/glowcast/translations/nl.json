@@ -314,6 +314,11 @@
     }
   },
   "entity": {
+    "button": {
+      "test_lights": {
+        "name": "Lampen testen"
+      }
+    },
     "number": {
       "brightness": {
         "name": "Helderheid"
