@@ -20,7 +20,9 @@ from pytest_homeassistant_custom_component.common import (
     async_mock_service,
 )
 
+from custom_components.glowcast.core.light_test import STEP
 from custom_components.glowcast.core.models import ChannelColor
+from custom_components.glowcast.core.pipeline import run_light_test
 from custom_components.glowcast.core.ports import (
     OutputLost,
     OutputNotFound,
@@ -37,6 +39,8 @@ from custom_components.glowcast.outputs.ha_lights import (
     light_networks,
     resolve,
 )
+
+from .fakes import FakeClock
 
 ON = {"color_mode": "xy", "xy_color": [0.3, 0.3], "brightness": 100}
 
@@ -662,6 +666,69 @@ async def test_a_new_output_soon_after_a_release_restores_the_state_from_before(
     await second.stop()
     assert len(turn_off) == 2
     assert [call for call in turn_on if "hs_color" in call.data] == []
+
+
+async def test_the_light_test_while_off_restores_then_a_switch_on_claims_again(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    """The light test while Glowcast is off (#182, #270): each light its side,
+    then white; the lights back as before; and a switch-on soon after, whose
+    new output must not save the test's colour as the lights' state."""
+    left = add_light(hass, "left")
+    right = add_light(hass, "right", state="off")
+    block = lights_output(left, right, left=(-1.0, 0.0), right=(1.0, 0.0))
+    clock = FakeClock()
+    output = HaLightsOutput(hass, block, now=clock.now)
+
+    async def runner(func: Any, *args: Any) -> Any:
+        return func(*args)
+
+    test = asyncio.ensure_future(run_light_test(output, 1.0, runner, clock))
+    await clock.advance(1.0)
+    await hass.async_block_till_done()
+    # The lights report the test's colour (Home Assistant's state lags).
+    for light in (left, right):
+        hass.states.async_set(light.entity_id, "on", GLOWCAST_RED)
+    await clock.advance(2 * STEP)
+    await hass.async_block_till_done()
+    assert await test is None
+
+    shown: dict[str, list[list[int]]] = {}
+    for call in turn_on:
+        if "rgb_color" in call.data:
+            shown.setdefault(call.data["entity_id"], []).append(call.data["rgb_color"])
+    assert shown[left.entity_id][0] == [255, 0, 0]
+    assert shown[right.entity_id][0] == [0, 0, 255]
+    for entity_id in (left.entity_id, right.entity_id):
+        assert shown[entity_id][-1] == [255, 255, 255]
+    # Back as before: the one that was on gets its colour, the other is off.
+    restores = [call.data for call in turn_on if "rgb_color" not in call.data]
+    assert restores == [
+        {"entity_id": left.entity_id, "brightness": 100, "xy_color": [0.3, 0.3]}
+    ]
+    assert [call.data["entity_id"] for call in turn_off] == [right.entity_id]
+
+    # Switched on before the lights report their restored state.
+    turn_on.clear()
+    pipeline = HaLightsOutput(hass, block, now=Clock())
+    channels = await pipeline.start()
+    colors(pipeline, channels)
+    await hass.async_block_till_done()
+    assert {call.data["entity_id"] for call in turn_on} == {
+        left.entity_id,
+        right.entity_id,
+    }
+    turn_on.clear()
+    await pipeline.stop()
+    await pipeline.close()
+    # Still the state from before the test, not the test's colour.
+    assert [call.data for call in turn_on] == [
+        {"entity_id": left.entity_id, "brightness": 100, "xy_color": [0.3, 0.3]}
+    ]
+    assert [call.data["entity_id"] for call in turn_off] == [
+        right.entity_id,
+        right.entity_id,
+    ]
 
 
 async def test_a_stop_before_the_light_reports_its_colour_still_restores(
