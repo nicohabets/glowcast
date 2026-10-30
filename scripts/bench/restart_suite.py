@@ -174,13 +174,19 @@ async def resumed(bench: Any, done: local_ha.Restarted, stopping: float) -> None
         await bench.bridge.wait_status(
             bench.cfg["bench_area_id"], "active", th.stream_within_s
         )
-    first = bench.bridge.first("active", done.running_at)
+    # Glowcast may stream again before the bench sees HA running (it looks
+    # for the picture source as soon as HA has started): the first stream
+    # after the release during the restart counts.
+    released_at = bench.bridge.first("inactive", stopping)
+    first = bench.bridge.first(
+        "active", done.running_at if released_at is None else released_at
+    )
     if first is not None:
         # Long enough for the colours to settle (left_right_step).
         await sleep(max(0.0, first + 9 - time.time()))
     end = time.time()
     good, released, polls = streamed_again(
-        bench.bridge.statuses(stopping, done.running_at),
+        bench.bridge.statuses(stopping, first or done.running_at),
         [] if first is None else bench.bridge.statuses(first + 1.0, end),
     )
     streaming = None if first is None else round(max(0.0, first - done.running_at), 2)
