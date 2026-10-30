@@ -120,6 +120,8 @@ homeassistant:
   language: en
 frontend:
 config:
+# For the blueprint flow: Glowcast's blueprint, linked from the working copy.
+automation:
 logger:
   default: warning
   logs:
@@ -840,6 +842,10 @@ def _write_config(instance: Instance) -> None:
     for stub in _stubs(instance):
         shutil.copytree(DEMO / "stubs" / stub, custom / stub)
     (custom / "glowcast").symlink_to(REPO / "custom_components" / "glowcast")
+    # Home Assistant does not look into a linked folder, so link the file.
+    blueprint = Path("blueprints", "automation", "glowcast", "start_with_tv.yaml")
+    (config / blueprint).parent.mkdir(parents=True)
+    (config / blueprint).symlink_to(REPO / blueprint)
 
 
 def _stubs(instance: Instance) -> list[str]:
