@@ -186,8 +186,12 @@ class HomeAssistant:
 
     async def call(self, domain: str, service: str, data: dict[str, Any]) -> None:
         await self.command(
-            {"type": "call_service", "domain": domain, "service": service,
-             "service_data": data}
+            {
+                "type": "call_service",
+                "domain": domain,
+                "service": service,
+                "service_data": data,
+            }
         )
 
 
@@ -229,14 +233,18 @@ def is_group(state: dict) -> bool:
     )
 
 
-async def run_one(ha: HomeAssistant, run: Run, targets: list[str],
-                  seconds: float) -> Run:
+async def run_one(
+    ha: HomeAssistant, run: Run, targets: list[str], seconds: float
+) -> Run:
     interval = 1 / run.rate
     in_flight: set[asyncio.Task] = set()
 
     async def send(entity_id: str, hue: float) -> None:
-        data: dict[str, Any] = {"entity_id": entity_id, "hs_color": [hue, SATURATION],
-                                "brightness": BRIGHTNESS}
+        data: dict[str, Any] = {
+            "entity_id": entity_id,
+            "hs_color": [hue, SATURATION],
+            "brightness": BRIGHTNESS,
+        }
         if run.transition:
             data["transition"] = interval
         start = time.monotonic()
@@ -294,7 +302,8 @@ def row(run: Run) -> str:
     last = [d for t, d in run.delays if t >= half]
     growth = (
         f"{_ms(statistics.median(last) - statistics.median(first)):>6}"
-        if first and last else "     -"
+        if first and last
+        else "     -"
     )
     return (
         f"| {run.mode:<9} | {run.rate:>4g} | {'yes' if run.transition else 'no':<3} "
@@ -316,8 +325,12 @@ HEADER = (
 
 
 async def measure_kind(
-    ha: HomeAssistant, label: str, lights: list[str], group: str | None,
-    args: argparse.Namespace, confirm: Callable[[str], Awaitable[None]],
+    ha: HomeAssistant,
+    label: str,
+    lights: list[str],
+    group: str | None,
+    args: argparse.Namespace,
+    confirm: Callable[[str], Awaitable[None]],
 ) -> list[str]:
     modes = [("per light", lights)] + ([("group", [group])] if group else [])
     total = len(modes) * len(args.rates) * 2 * (args.seconds + SETTLE + args.pause)
@@ -331,8 +344,9 @@ async def measure_kind(
             for transition in (False, True):
                 for rate in args.rates:
                     run = Run(label, mode, rate, transition, set(lights))
-                    print(f"  {mode}, {rate:g}/s, transition {transition} ...",
-                          flush=True)
+                    print(
+                        f"  {mode}, {rate:g}/s, transition {transition} ...", flush=True
+                    )
                     await run_one(ha, run, targets, args.seconds)
                     lines.append(row(run))
                     print(lines[-1], flush=True)
@@ -361,15 +375,19 @@ async def _main(ha: HomeAssistant, args: argparse.Namespace) -> None:
         start = time.monotonic()
         await ha.command({"type": "ping"})
         pings.append(time.monotonic() - start)
-    print(f"Websocket round trip: median {_ms(statistics.median(pings))} ms "
-          "(included in the call and delay times)")
+    print(
+        f"Websocket round trip: median {_ms(statistics.median(pings))} ms "
+        "(included in the call and delay times)"
+    )
     lights, states = await discover(ha, args.area, args.extra)
     if args.list:
         for entity_id, platform in sorted(lights.items()):
             state = states.get(entity_id)
-            print(f"{entity_id}: {platform}, {state and state['state']}, "
-                  f"colour: {is_colour_light(state)}, "
-                  f"group: {bool(state and is_group(state))}")
+            print(
+                f"{entity_id}: {platform}, {state and state['state']}, "
+                f"colour: {is_colour_light(state)}, "
+                f"group: {bool(state and is_group(state))}"
+            )
         if args.group:
             group = states.get(args.group)
             members = group and group["attributes"].get("entity_id")
@@ -395,9 +413,17 @@ async def _main(ha: HomeAssistant, args: argparse.Namespace) -> None:
         group_kind = next((k for k, v in kinds.items() if members & set(v)), None)
         if group_kind:
             # The group's unavailable members are not measured, its others are.
-            kinds[group_kind] = sorted(set(kinds[group_kind]) | (
-                members & {e for e, p in lights.items() if p == group_kind
-                           and is_colour_light(states.get(e))}))
+            kinds[group_kind] = sorted(
+                set(kinds[group_kind])
+                | (
+                    members
+                    & {
+                        e
+                        for e, p in lights.items()
+                        if p == group_kind and is_colour_light(states.get(e))
+                    }
+                )
+            )
 
     async def confirm(what: str) -> None:
         print(f"\nNext: {what}.")
@@ -405,8 +431,9 @@ async def _main(ha: HomeAssistant, args: argparse.Namespace) -> None:
             await asyncio.to_thread(input, "Press Enter to start, Ctrl+C to stop: ")
 
     snapshot = sorted(itertools.chain.from_iterable(kinds.values()))
-    await ha.call("scene", "create", {"scene_id": args.scene,
-                                      "snapshot_entities": snapshot})
+    await ha.call(
+        "scene", "create", {"scene_id": args.scene, "snapshot_entities": snapshot}
+    )
     print(f"Snapshot of {len(snapshot)} light(s) taken.")
     report: list[str] = []
     try:

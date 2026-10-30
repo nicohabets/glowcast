@@ -8,7 +8,7 @@ A USB webcam watches the monitor and the bench lights. Every run writes a
 report (Markdown and JSON, numbers only) to ~/.cache/glowcast-bench/reports/.
 
 Usage (from the repository root, in WSL on the bench's Windows computer):
-    python3 scripts/bench/run.py [--suite basic|extended|loose|combined]
+    python3 scripts/bench/run.py [--suite basic|extended|loose|combined|restart]
                                  [--mode pattern|screen|both]
                                  [--dry-run] [--keep-images] [--wait SECONDS]
                                  [--config FILE]
@@ -137,7 +137,23 @@ PLAN = {
         "switch off; switch on again, stop the helper: tv_off, area released,\n"
         "    every light back",
     ],
+    # Glowcast continues after Home Assistant restarts (#183): restart_suite.py.
+    "restart": [
+        "the calibration, as in every suite",
+        "steady picture (left-red-right-blue), switch on: the bench area\n"
+        "    streams, each light the colour of its side",
+        "the local Home Assistant (never the owner's) stopped gracefully\n"
+        "    (SIGTERM) and started again on the same config: the switch stored\n"
+        "    resume, it is on again within 45 s of HA running, the area streams\n"
+        "    again with one stream, each light its side again, the log says\n"
+        "    Glowcast continues; the time from HA running to streaming",
+        "switch off: area released, lights back (camera)",
+        "restarted the same way: the switch stored no resume, it stays off and\n"
+        "    the area inactive for 30 s",
+    ],
 }
+# The suites that run in pattern mode only.
+PATTERN_ONLY = ("loose", "combined", "restart")
 END = (
     "At the end, also after Ctrl+C or a failure: the bench Glowcast off, the bench\n"
     "lights set back to their state from before the run (checked with the camera),\n"
@@ -180,7 +196,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--suite",
-        choices=["basic", "extended", "loose", "combined"],
+        choices=["basic", "extended", "loose", "combined", "restart"],
         default="basic",
     )
     parser.add_argument("--mode", choices=["pattern", "screen", "both"], default="both")
@@ -203,7 +219,7 @@ def main() -> None:
         ensure_environment()
         sys.exit(pair_bridge(args))
     modes = ["pattern", "screen"] if args.mode == "both" else [args.mode]
-    if args.suite in ("loose", "combined"):
+    if args.suite in PATTERN_ONLY:
         if args.mode == "screen":
             print(
                 f"Configuration error: the {args.suite} suite runs in pattern "
@@ -215,10 +231,13 @@ def main() -> None:
     if args.dry_run:
         print(f"Dry run: suite {args.suite}, modes {', '.join(modes)}.")
         print("Nothing is touched.")
-        if args.suite in ("loose", "combined"):
+        if args.suite in PATTERN_ONLY:
             print(f"\n{args.suite} (pattern mode):")
             for step in PLAN[args.suite]:
                 print(f"  - {step}")
+            if args.suite == "restart":
+                print("\n" + END)
+                return
             print("\nNeeds `loose_lights:` in the config (config.example.yaml).")
             print("\n" + END)
             print(
@@ -498,6 +517,12 @@ async def run(
 
                 print("the area and loose lights together...", flush=True)
                 await combined_suite.run(bench)
+                return
+            if suite_name == "restart":
+                import restart_suite
+
+                print("Home Assistant restarts...", flush=True)
+                await restart_suite.run(bench)
                 return
             for mode in modes:
                 print(f"{mode} mode...", flush=True)

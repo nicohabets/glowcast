@@ -14,11 +14,15 @@ folder, so the demo's `clean --all` does not remove them.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import os
 import shutil
+import signal
 import sys
+import time
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -232,11 +236,7 @@ def start(
         )
         _private(inst.home)
         inst.run.mkdir(parents=True, exist_ok=True)
-        demo._spawn(
-            inst,
-            "homeassistant",
-            ["-m", "homeassistant", "--config", str(inst.config), "--skip-pip"],
-        )
+        demo._spawn(inst, "homeassistant", ha_args(inst))
     try:
         demo._wait_for_ha(inst)
         token = demo._onboard(inst)
@@ -246,6 +246,139 @@ def start(
         stop()
         raise
     return inst, token
+
+
+def ha_args(inst: demo.Instance) -> list[str]:
+    """Home Assistant's command line (after the shared environment's Python)."""
+    return ["-m", "homeassistant", "--config", str(inst.config), "--skip-pip"]
+
+
+@dataclasses.dataclass(frozen=True)
+class Restarted:
+    """What a restart did: how the stop went and when HA ran again."""
+
+    stop_s: float  # from SIGTERM until the process had gone
+    graceful: bool  # gone by itself (not killed): its stop stages ran
+    resume: bool | None  # the switch's stored `resume`; None: not stored
+    running_at: float  # time.time() when HA was running again
+
+
+def restart(switch: str) -> tuple[demo.Instance, str, Restarted]:
+    """Stop Home Assistant gracefully and start it again on the same config
+    (#183): its entries, storage and restore state stay. Returns the
+    instance, a new token and what happened.
+
+    `switch`: Glowcast's switch, whose stored `resume` is read between the
+    stop and the start (HA writes the restore state again once it runs).
+    """
+    inst = instance()
+    if not inst.state:
+        sys.exit("The bench instance has no state: it was never started")
+    stop_s, graceful = stop_gracefully(inst)
+    resume = stored_resume(inst.config, switch)
+    with demo._lock():
+        _private(inst.home)
+        demo._spawn(inst, "homeassistant", ha_args(inst))
+    try:
+        _wait_for_http(inst)
+        token = login(inst)
+        demo._wait_until_running(inst, token)
+        running_at = time.time()
+        _check_own(inst, token)
+    except BaseException:
+        stop()
+        raise
+    return inst, token, Restarted(stop_s, graceful, resume, running_at)
+
+
+# SIGTERM runs Home Assistant's stop stages (the restore state is written at
+# EVENT_HOMEASSISTANT_STOP); demo.stop kills after 30 s, this waits longer.
+STOP_WITHIN = 90.0
+
+
+def stop_gracefully(
+    inst: demo.Instance, within: float = STOP_WITHIN, poll: float = 0.5
+) -> tuple[float, bool]:
+    """SIGTERM, then wait until Home Assistant has gone; SIGKILL after
+    `within`. Returns the seconds it took and whether it went by itself."""
+    pid = demo._pid(inst, "homeassistant")
+    if pid is None:
+        return 0.0, False
+    start = time.monotonic()
+    os.kill(pid, signal.SIGTERM)
+    graceful = True
+    while demo._pid(inst, "homeassistant") is not None:
+        if time.monotonic() - start > within:
+            os.kill(pid, signal.SIGKILL)
+            graceful = False
+            break
+        time.sleep(poll)
+    (inst.run / "homeassistant.pid").unlink(missing_ok=True)
+    return round(time.monotonic() - start, 2), graceful
+
+
+def stored_resume(config: Path, switch: str) -> bool | None:
+    """The switch's stored `resume` (the extra data in core.restore_state)."""
+    with contextlib.suppress(OSError, ValueError):
+        stored = json.loads((config / ".storage" / "core.restore_state").read_text())
+        for item in stored.get("data") or []:
+            if (item.get("state") or {}).get("entity_id") == switch:
+                value = (item.get("extra_data") or {}).get("resume")
+                return value if isinstance(value, bool) else None
+    return None
+
+
+def _wait_for_http(inst: demo.Instance, within: float = 900) -> None:
+    """Until HA answers. Not demo._wait_for_ha: once onboarded, HA has no
+    /api/onboarding (404), so that wait would never end."""
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        if demo._pid(inst, "homeassistant") is None:
+            sys.exit(f"Home Assistant stopped; see {inst.run / 'homeassistant.log'}")
+        try:
+            demo._request(inst, "GET", "/auth/providers")
+            return
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            time.sleep(2)
+    sys.exit("Home Assistant did not start in time")
+
+
+def login(inst: demo.Instance) -> str:
+    """An access token for the demo's user on an onboarded config (the user
+    exists, so demo._onboard cannot make it): the login flow, then a code."""
+    client_id = f"{inst.url}/"
+    flow = demo._request(
+        inst,
+        "POST",
+        "/auth/login_flow",
+        {
+            "client_id": client_id,
+            "handler": ["homeassistant", None],
+            "redirect_uri": client_id,
+        },
+    )
+    done = demo._request(
+        inst,
+        "POST",
+        f"/auth/login_flow/{flow['flow_id']}",
+        {
+            "client_id": client_id,
+            "username": demo.USERNAME,
+            "password": demo.PASSWORD,
+        },
+    )
+    if done.get("type") != "create_entry":
+        sys.exit("The local Home Assistant refused the bench's login")
+    return demo._request(
+        inst,
+        "POST",
+        "/auth/token",
+        form={
+            "grant_type": "authorization_code",
+            "code": done["result"],
+            "client_id": client_id,
+        },
+    )["access_token"]
 
 
 def _taken_ports(inst: demo.Instance) -> set[int | None]:
