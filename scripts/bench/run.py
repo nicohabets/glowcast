@@ -8,7 +8,8 @@ A USB webcam watches the monitor and the bench lights. Every run writes a
 report (Markdown and JSON, numbers only) to ~/.cache/glowcast-bench/reports/.
 
 Usage (from the repository root, in WSL on the bench's Windows computer):
-    python3 scripts/bench/run.py [--suite basic|extended] [--mode pattern|screen|both]
+    python3 scripts/bench/run.py [--suite basic|extended|loose]
+                                 [--mode pattern|screen|both]
                                  [--dry-run] [--keep-images] [--wait SECONDS]
                                  [--config FILE]
     python3 scripts/bench/run.py snapshot [--config FILE]
@@ -88,6 +89,29 @@ PLAN = {
         "screen mode: red and blue pure at brightness 20 % and 80 %",
         "screen mode: brightness changed while off is stored; Glowcast stays off",
     ],
+    # Loose lights (#9): loose_suite.py; pattern mode only.
+    "loose": [
+        "the calibration as above (the camera lights, through the bench area)",
+        "start the helper with the cycle pattern",
+        "the local Home Assistant with a proxy light per loose light, under a\n"
+        "    stub `hue` entry (one Hue network) or a stub `matter` entry (one\n"
+        "    Thread network), mirroring the owner's light; Glowcast's loose-lights\n"
+        "    output on them, stored by entity registry id",
+        "the bench area does not stream (the bridge ignores commands to the\n"
+        "    lights of a streaming area): checked before and during the steps",
+        "each loose light's state in the owner's Home Assistant before the switch-on",
+        "switch on: Glowcast syncs",
+        "per colour (red, green, blue, white, letterbox): each loose light shows\n"
+        "    it (a camera light with the camera, the others by their state in the\n"
+        "    owner's Home Assistant)",
+        "left-red-right-blue: each loose light the colour of its band (skipped for\n"
+        "    a light whose band takes from both halves)",
+        "black (all zero): released after the no-picture wait, each light back",
+        "the rate (the local HA's light.turn_on calls): per light its interval,\n"
+        "    per network at most 4 commands in any second, transition = interval",
+        "switch off: each loose light back (owner state; camera)",
+        "switch on, stop the helper: tv_off, each loose light back",
+    ],
 }
 END = (
     "At the end, also after Ctrl+C or a failure: the bench Glowcast off, the bench\n"
@@ -129,7 +153,9 @@ def main() -> None:
         default="run",
         choices=["run", "snapshot", "pair-bridge"],
     )
-    parser.add_argument("--suite", choices=["basic", "extended"], default="basic")
+    parser.add_argument(
+        "--suite", choices=["basic", "extended", "loose"], default="basic"
+    )
     parser.add_argument("--mode", choices=["pattern", "screen", "both"], default="both")
     parser.add_argument(
         "--dry-run", action="store_true", help="print the steps, touch nothing"
@@ -150,9 +176,28 @@ def main() -> None:
         ensure_environment()
         sys.exit(pair_bridge(args))
     modes = ["pattern", "screen"] if args.mode == "both" else [args.mode]
+    if args.suite == "loose":
+        if args.mode == "screen":
+            print(
+                "Configuration error: the loose suite runs in pattern mode only",
+                file=sys.stderr,
+            )
+            sys.exit(rp.EXIT_USAGE)
+        modes = ["pattern"]
     if args.dry_run:
         print(f"Dry run: suite {args.suite}, modes {', '.join(modes)}.")
         print("Nothing is touched.")
+        if args.suite == "loose":
+            print("\nloose lights (pattern mode):")
+            for step in PLAN["loose"]:
+                print(f"  - {step}")
+            print("\nNeeds `loose_lights:` in the config (config.example.yaml).")
+            print("\n" + END)
+            print(
+                "The loose lights are set back too, and their states in the\n"
+                "owner's Home Assistant compared with the ones from before the run."
+            )
+            return
         for mode in modes:
             print(f"\n{mode} mode:")
             for step in PLAN[mode]:
@@ -166,7 +211,7 @@ def main() -> None:
     ensure_environment()
     try:
         cfg, _path = load_config(args.config)
-        keys, token = check_config(cfg, modes)
+        keys, token = check_config(cfg, modes, args.suite)
     except (SystemExit, ConfigError) as err:
         print(f"Configuration error: {err}", file=sys.stderr)
         sys.exit(rp.EXIT_USAGE)
@@ -186,7 +231,9 @@ class ConfigError(Exception):
     """The configuration is incomplete or a file it names cannot be read."""
 
 
-def check_config(cfg: dict[str, Any], modes: list[str]) -> tuple[dict[str, str], str]:
+def check_config(
+    cfg: dict[str, Any], modes: list[str], suite: str = "basic"
+) -> tuple[dict[str, str], str]:
     """Check the configuration; return the bench's Hue keys and the HA token."""
     if not isinstance(cfg, dict):
         raise ConfigError("the file is not a mapping")
@@ -212,6 +259,13 @@ def check_config(cfg: dict[str, Any], modes: list[str]) -> tuple[dict[str, str],
             raise ConfigError("`monitor` must be [left, top, width, height]")
         if cfg.get("monitor_region") is not None and not _box(cfg["monitor_region"]):
             raise ConfigError("`monitor_region` must be [x, y, w, h]")
+    if suite == "loose":
+        import loose
+
+        try:
+            loose.parse(cfg)
+        except ValueError as err:
+            raise ConfigError(str(err)) from None
     helper = cfg["helper"]
     if not str(helper.get("pairing_code", "")).isdigit() or not helper.get("port"):
         raise ConfigError("`helper` needs a `port` and a 6-digit `pairing_code`")
@@ -363,6 +417,7 @@ async def run(
     )
     bench = suite.Bench(cfg, suite_name, report, images, keys)
     bench.tokens.append(token)
+    bench.owner_token = token
     ha_cfg = cfg["home_assistant"]
     loop = asyncio.get_running_loop()
     aborted = False
@@ -373,7 +428,8 @@ async def run(
             session,
             ha_cfg["url"],
             token,
-            [light["entity_id"] for light in cfg["lights"].values()],
+            [light["entity_id"] for light in cfg["lights"].values()]
+            + [light.entity_id for light in bench.loose],
             ha_cfg.get("tv_switch"),
         )
         bench.bridge = clients.Bridge(
@@ -398,6 +454,12 @@ async def run(
             await bench.start_ha()
             assert bench.bridge is not None
             bench.bridge.follow(cfg["bench_area_id"])
+            if suite_name == "loose":
+                import loose_suite
+
+                print("loose lights...", flush=True)
+                await loose_suite.run(bench)
+                return
             for mode in modes:
                 print(f"{mode} mode...", flush=True)
                 await (
@@ -537,6 +599,8 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
     async def clients() -> None:
         if bench.ha is not None:
             await bench.ha.close()
+        if hasattr(bench.owner, "close"):
+            await bench.owner.close()
         await bench.bridge.close()
 
     async def local() -> None:
@@ -609,10 +673,32 @@ async def _restore(bench: Any) -> None:
     numbers: dict[str, Any] = {
         f"{bench.label[k]} back after s": v for k, v in back.items()
     }
+    if getattr(bench, "loose", None):
+        loose_ok, loose_numbers = await _loose_restored(bench)
+        ok &= loose_ok
+        numbers.update(loose_numbers)
     with contextlib.suppress(Exception):
         numbers.update(await bench.bridge_restore_numbers())
     report.add(rp.Step(name, "-", rp.PASS if ok else rp.FAIL, numbers=numbers))
     await bench.save_image("after-run")
+
+
+async def _loose_restored(bench: Any) -> tuple[bool, dict[str, Any]]:
+    """The loose lights' states in the owner's HA as before the run (read now)."""
+    import loose
+
+    numbers: dict[str, Any] = {}
+    ok = True
+    for light in bench.loose:
+        before = bench.pre_states.get(light.entity_id)
+        if before is None:
+            continue
+        back, _ = loose.restored(before, await bench.owner.state(light.entity_id))
+        numbers[f"{bench.loose_label[light.index]} state as before the run"] = (
+            "yes" if back else "no"
+        )
+        ok &= back
+    return ok, numbers
 
 
 async def _tv_back_on(bench: Any, cfg: dict[str, Any]) -> None:

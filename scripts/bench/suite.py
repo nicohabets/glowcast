@@ -25,6 +25,7 @@ from typing import Any
 import aiohttp
 import clients
 import local_ha
+import loose
 import report as rp
 import winproc
 from report import FAIL, PASS, SKIP, Step
@@ -148,6 +149,15 @@ class Bench:
         self.tokens: list[str] = []
         # Picture changes on the Windows clock: [mode, picture, time].
         self.changes: list[list[Any]] = []
+        # Loose lights (#9, suite `loose`): the config, their labels, their
+        # proxies in the local HA (index -> entity id, registry entry) and
+        # the owner's token for the proxies (written into the private storage).
+        self.loose: list[loose.LooseLight] = (
+            loose.parse(cfg) if suite == "loose" else []
+        )
+        self.loose_label: dict[int, str] = loose.labels(self.loose, self.label)
+        self.proxies: dict[int, dict[str, Any]] = {}
+        self.owner_token = ""
 
     # ---- the private values the report must never contain -------------
     def raw(self) -> dict[str, Any]:
@@ -182,6 +192,12 @@ class Bench:
             ha.get("tv_switch") or "",
             self.app_id,
             *[light["entity_id"] for light in self.lights.values()],
+            *[light.entity_id for light in self.loose],
+            *[
+                str(state.get("attributes", {}).get("friendly_name") or "")
+                for state in self.pre_states.values()
+            ],
+            *[str(p.get("id", "")) for p in self.proxies.values()],
             *self.light_rids,
             str(Path.home()),
             getpass.getuser(),
@@ -350,10 +366,11 @@ class Bench:
 
     async def read_pre_run(self) -> None:
         assert self.owner is not None and self.bridge is not None
-        for light in self.lights.values():
-            self.pre_states[light["entity_id"]] = await self.owner.state(
-                light["entity_id"]
-            )
+        for entity in dict.fromkeys(
+            [light["entity_id"] for light in self.lights.values()]
+            + [light.entity_id for light in self.loose]
+        ):
+            self.pre_states[entity] = await self.owner.state(entity)
         for rid in self.light_rids:
             self.pre_bridge[rid] = await self.bridge.light(rid)
 
@@ -878,20 +895,42 @@ class Bench:
     async def start_ha(self) -> None:
         assert self.helper is not None and self.session is not None
         port = int(self.cfg["helper"]["port"])
-        entry = local_ha.glowcast_entry(
-            helper={
-                "helper_id": self.helper.helper_id,
-                "host": "127.0.0.1",
-                "port": port,
-                "token": self.helper.token,
-            },
-            app_key=self.keys["app_key"],
-            client_key=self.keys["client_key"],
-            area_id=self.cfg["bench_area_id"],
-            settings={"brightness": 80, "intensity": 100, "update_rate": "high"},
-        )
+        helper = {
+            "helper_id": self.helper.helper_id,
+            "host": "127.0.0.1",
+            "port": port,
+            "token": self.helper.token,
+        }
+        settings = {"brightness": 80, "intensity": 100, "update_rate": "high"}
+        proxies: dict[str, dict[str, Any]] | None = None
+        if self.loose:
+            # Glowcast's loose-lights output on proxy lights (stubs/proxy.py).
+            entry = local_ha.loose_glowcast_entry(helper=helper, settings=settings)
+            proxies = {}
+            for kind in loose.KINDS:
+                lights = [
+                    {
+                        "unique_id": light.unique_id,
+                        "name": light.name,
+                        "source": light.entity_id,
+                    }
+                    for light in self.loose
+                    if light.kind == kind
+                ]
+                if lights:
+                    proxies[kind] = local_ha.proxy_block(
+                        self.cfg["home_assistant"]["url"], self.owner_token, lights
+                    )
+        else:
+            entry = local_ha.glowcast_entry(
+                helper=helper,
+                app_key=self.keys["app_key"],
+                client_key=self.keys["client_key"],
+                area_id=self.cfg["bench_area_id"],
+                settings=settings,
+            )
         self.ha_start = asyncio.ensure_future(
-            asyncio.to_thread(local_ha.start, self.keys["host"], entry)
+            asyncio.to_thread(local_ha.start, self.keys["host"], entry, proxies)
         )
         try:
             inst, token = await asyncio.shield(self.ha_start)
@@ -915,7 +954,45 @@ class Bench:
             raise BenchError(
                 "Glowcast's entities did not appear in the local Home Assistant"
             )
+        if self.loose:
+            await self.place_loose_lights()
         await self.ha.follow()
+
+    async def place_loose_lights(self) -> None:
+        """Find the proxy lights in the local HA's entity registry and store
+        them, with their positions, as Glowcast's loose-lights output."""
+        assert self.ha is not None
+        wanted = {light.unique_id: light for light in self.loose}
+        for _ in range(60):
+            found = {
+                entry["unique_id"]: entry
+                for entry in await self.ha.registry()
+                if entry.get("platform") in loose.KINDS
+                and entry.get("unique_id") in wanted
+            }
+            if found.keys() == wanted.keys():
+                break
+            await asyncio.sleep(1)
+        else:
+            raise BenchError("the proxy lights did not appear in the local HA")
+        self.proxies = {wanted[u].index: entry for u, entry in found.items()}
+        output = {
+            "type": "ha_lights",
+            "follow": "lights",
+            "lights": [
+                {
+                    "entity": self.proxies[light.index]["id"],
+                    "x": light.x,
+                    "z": light.z,
+                }
+                for light in self.loose
+            ],
+        }
+        await self.ha.call(
+            "glowcast_bench",
+            "set_output",
+            {"entry_id": local_ha.ENTRY_ID, "output": output},
+        )
 
     # ---- switching -------------------------------------------------------
     async def switch_on(

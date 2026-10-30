@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,14 @@ TITLE = "Bench"
 EXTRA_CONFIGURATION = """\
 diagnostics:
 """
+# Loose lights (#9): proxy lights under stub `hue` and `matter` entries
+# (stubs/proxy.py), and the service that stores Glowcast's lights.
+STUBS = Path(__file__).resolve().parent / "stubs"
+PROXY = "bench_proxy"  # the stub entries' data key (stubs/proxy.py)
+LOOSE_CONFIGURATION = """\
+glowcast_bench:
+"""
+MATTER_UNIQUE_ID = "bench-thread"
 
 
 def instance() -> demo.Instance:
@@ -80,8 +89,53 @@ def glowcast_entry(
     return entry
 
 
-def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, str]:
-    """A fresh config with the entries, Home Assistant started; returns a token."""
+def loose_glowcast_entry(
+    *, helper: dict[str, Any], settings: dict[str, Any]
+) -> dict[str, Any]:
+    """Glowcast's entry with the loose-lights output (no `bridge` in data).
+
+    No lights yet: they are stored by entity registry id, known only once
+    Home Assistant has added the proxy lights (`glowcast_bench.set_output`).
+    """
+    entry = demo._entry(
+        "glowcast",
+        TITLE,
+        helper["helper_id"],
+        {"source": {"type": "screen", **helper}},
+    )
+    entry["entry_id"] = ENTRY_ID
+    entry["options"] = {
+        "output": {"type": "ha_lights", "follow": "lights", "lights": []},
+        **settings,
+    }
+    return entry
+
+
+def proxy_block(url: str, token: str, lights: list[dict[str, str]]) -> dict[str, Any]:
+    """A stub entry's proxy lights: [{"unique_id", "name", "source"}]."""
+    return {"url": url, "token": token, "lights": lights}
+
+
+def _add_loose_stubs(inst: demo.Instance) -> None:
+    """The bench's `hue` overlay (the demo's stub plus proxy lights), its
+    `matter` stub and `glowcast_bench`, in this instance only."""
+    custom = inst.config / "custom_components"
+    for name in ("hue", "matter", "glowcast_bench"):
+        shutil.copytree(STUBS / name, custom / name, dirs_exist_ok=True)
+    for name in ("hue", "matter"):
+        shutil.copy(STUBS / "proxy.py", custom / name / "proxy.py")
+
+
+def start(
+    bridge_host: str,
+    glowcast: dict[str, Any],
+    proxies: dict[str, dict[str, Any]] | None = None,
+) -> tuple[demo.Instance, str]:
+    """A fresh config with the entries, Home Assistant started; returns a token.
+
+    `proxies` ({"hue": block, "matter": block}, see proxy_block): proxy lights
+    for loose lights under the stub `hue` entry and a stub `matter` entry.
+    """
     inst = instance()
     stop()
     with demo._lock():
@@ -104,18 +158,30 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
         # the bench's own entries over its entries.
         demo._write_config(inst)
         (inst.config / "configuration.yaml").write_text(
-            demo.CONFIGURATION + EXTRA_CONFIGURATION
+            demo.CONFIGURATION
+            + EXTRA_CONFIGURATION
+            + (LOOSE_CONFIGURATION if proxies is not None else "")
         )
-        hue = demo._entry(
-            "hue",
-            "Hue Bridge",
-            BRIDGE_UNIQUE_ID,
-            {"host": bridge_host, "api_key": "unused-by-glowcast", "api_version": 2},
-        )
+        hue_data: dict[str, Any] = {
+            "host": bridge_host,
+            "api_key": "unused-by-glowcast",
+            "api_version": 2,
+        }
+        entries = [demo._entry("hue", "Hue Bridge", BRIDGE_UNIQUE_ID, hue_data)]
+        if proxies is not None:
+            _add_loose_stubs(inst)
+            if "hue" in proxies:
+                hue_data[PROXY] = proxies["hue"]
+            if "matter" in proxies:
+                entries.append(
+                    demo._entry(
+                        "matter", "Matter", MATTER_UNIQUE_ID, {PROXY: proxies["matter"]}
+                    )
+                )
         demo._write_storage(
             inst.config,
             "core.config_entries",
-            {"entries": [hue, glowcast]},
+            {"entries": [*entries, glowcast]},
             minor_version=5,
         )
         _private(inst.home)
