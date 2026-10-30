@@ -6,8 +6,11 @@ from collections.abc import Callable
 
 from custom_components.glowcast.core.color_engine import channel_region, compute
 from custom_components.glowcast.core.letterbox import (
+    EXPIRE,
+    MAX_BAR,
     NO_BARS,
     STABLE,
+    TOLERANCE,
     Bars,
     Letterbox,
     measure,
@@ -93,6 +96,35 @@ def test_a_black_run_longer_than_a_quarter_is_not_a_bar() -> None:
     assert measure(letterbox(HEIGHT // 2, 0)) == (None, 0, 0, 0)
 
 
+def test_a_bar_is_at_most_a_quarter_of_the_frame() -> None:
+    """MAX_BAR: 9 of 36 rows is a bar, 10 is not; 16 of 64 columns, 17 not."""
+    rows, cols = int(MAX_BAR * HEIGHT), int(MAX_BAR * WIDTH)
+    assert (rows, cols) == (9, 16)
+    assert measure(letterbox(rows, rows))[:2] == (rows, rows)
+    assert measure(letterbox(rows + 1, rows + 1))[:2] == (None, None)
+    assert measure(pillarbox(cols, cols))[2:] == (cols, cols)
+    assert measure(pillarbox(cols + 1, cols + 1))[2:] == (None, None)
+
+
+def windowbox(top: int, bottom: int, left: int, right: int) -> Frame:
+    return make_frame(
+        lambda col, row: (
+            GREY
+            if top <= row < HEIGHT - bottom and left <= col < WIDTH - right
+            else BLACK
+        )
+    )
+
+
+def test_a_windowbox_has_bars_on_all_four_sides() -> None:
+    """A 4:3 picture in a letterboxed frame: black all around."""
+    frame = windowbox(4, 3, 8, 6)
+    assert measure(frame) == (4, 3, 8, 6)
+    box = Letterbox()
+    assert feed(box, frame, 0.0, STABLE + 0.5) == Bars(4, 3, 8, 6)
+    assert box.bars.picture(WIDTH, HEIGHT) == (8, WIDTH - 6, 4, HEIGHT - 3)
+
+
 # Over frames
 
 
@@ -109,7 +141,9 @@ def test_a_new_width_follows_after_it_was_stable() -> None:
     assert feed(box, letterbox(1, 2), 4.0, STABLE - 0.4) == Bars(5, 3, 0, 0)
     # The top bar follows (5 to 1); the bottom one (3 to 2) is within the
     # tolerance, so it stays.
-    assert feed(box, letterbox(1, 2), 4.0 + STABLE, 1.0) == Bars(1, 3, 0, 0)
+    # Both bars follow: the top one from 5 to 1, the bottom one from 3 to 2,
+    # since a narrower bar is taken even within the tolerance.
+    assert feed(box, letterbox(1, 2), 4.0 + STABLE, 1.0) == Bars(1, 2, 0, 0)
 
 
 def test_a_short_dark_scene_does_not_move_the_picture() -> None:
@@ -153,6 +187,70 @@ def test_a_bar_edge_halfway_through_a_row_settles() -> None:
     for step in range(12):
         box.update(letterbox(4 + step % 2, 0), step / 3)
     assert box.bars == Bars(4, 0, 0, 0)
+
+
+def test_a_narrower_bar_is_always_taken() -> None:
+    """Bars at 5 rows, then a film whose bars are 4: the 4 is taken after
+    STABLE, so the row of picture is not cut off (architecture 3.3)."""
+    box = Letterbox()
+    feed(box, letterbox(5, 5), 0.0, 3.0)
+    assert box.bars == Bars(5, 5, 0, 0)
+    assert feed(box, letterbox(5 - TOLERANCE, 5), 4.0, STABLE - 0.4) == Bars(5, 5, 0, 0)
+    assert feed(box, letterbox(4, 5), 4.0 + STABLE, 1.0) == Bars(4, 5, 0, 0)
+
+
+def test_a_wider_reading_within_the_tolerance_is_ignored() -> None:
+    box = Letterbox()
+    feed(box, letterbox(4, 4), 0.0, 3.0)
+    assert feed(box, letterbox(4 + TOLERANCE, 4), 4.0, 3 * STABLE) == Bars(4, 4, 0, 0)
+
+
+def test_an_edge_halfway_through_the_row_above_the_bar_settles_narrower() -> None:
+    """Bars at 5, then readings of 4 and 5 in turn: the narrower 4 is taken."""
+    box = Letterbox()
+    feed(box, letterbox(5, 0), 0.0, 3.0)
+    for step in range(12):
+        box.update(letterbox(4 + step % 2, 0), 4.0 + step / 3)
+    assert box.bars == Bars(4, 0, 0, 0)
+
+
+def test_a_single_narrower_reading_is_forgotten() -> None:
+    """One frame of 4 between frames of the bar's 5 does not move it."""
+    box = Letterbox()
+    feed(box, letterbox(5, 0), 0.0, 3.0)
+    box.update(letterbox(4, 0), 3.5)
+    assert feed(box, letterbox(5, 0), 3.8, 3 * STABLE) == Bars(5, 0, 0, 0)
+
+
+def test_a_pending_width_expires_over_black_frames() -> None:
+    """One frame with a 7-row bar, 5 s of black, then one more: no switch."""
+    box = Letterbox()
+    dark_top = letterbox(7, 0, RED)
+    box.update(dark_top, 0.0)
+    feed(box, make_frame(lambda col, row: BLACK), 1 / 3, 5.0)
+    assert box.update(dark_top, 5.5) == NO_BARS
+    # The second frame starts a new wait.
+    assert feed(box, dark_top, 5.5 + 1 / 3, STABLE - 0.5) == NO_BARS
+
+
+def test_a_pending_width_expires_over_dark_scene_sides() -> None:
+    """Sides measured as a dark scene (None) do not keep a width pending."""
+    box = Letterbox()
+    dark_top = letterbox(7, 0, RED)
+    dark_half = letterbox(HEIGHT // 2, 0, RED)
+    box.update(dark_top, 0.0)
+    feed(box, dark_half, 1 / 3, EXPIRE + 1.0)
+    assert box.update(dark_top, EXPIRE + 2.0) == NO_BARS
+
+
+def test_bars_are_taken_at_the_low_update_rate() -> None:
+    """One capture per second, a little late each time: the width stays
+    pending from one capture to the next."""
+    box = Letterbox()
+    frame = letterbox(5, 3)
+    for step in range(4):
+        bars = box.update(frame, step * 1.1)
+    assert bars == Bars(5, 3, 0, 0)
 
 
 def test_positions_map_onto_the_picture_inside_the_bars() -> None:
