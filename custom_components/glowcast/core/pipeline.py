@@ -332,23 +332,28 @@ class Pipeline:
         return None
 
     async def _async_try_tv(self, started: bool) -> tuple[bool, Frame | None]:
-        """One attempt: start if needed, then capture. Returns (started, frame)."""
-        self._refusal = None
+        """One attempt: start if needed, then capture. Returns (started, frame).
+
+        `_refusal` is the answer of the last attempt that ended, so an attempt
+        the end of the grace cuts off leaves it as it was (#253).
+        """
+        frame = None
         try:
             if not started:
                 await self._source.start()
                 started = True
-            if not self._source.is_on():
-                return started, None
-            return started, await self._source.capture()
+            if self._source.is_on():
+                frame = await self._source.capture()
         except SourceUnavailable:
-            return started, None
+            pass
         except SourceNotSupported as err:
             # Unlike while syncing, only recorded: the startup grace asks again.
             self._refusal = err
             return started, None
         except Exception as err:
             raise _source_stop(err) from err
+        self._refusal = None
+        return started, frame
 
     async def _async_start_output(self) -> list[Channel]:
         try:
