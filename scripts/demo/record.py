@@ -27,6 +27,7 @@ import time
 import traceback
 import urllib.request
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -508,6 +509,66 @@ def entities(rec: Recorder) -> None:
     rec.step("off")
 
 
+def refused(rec: Recorder) -> None:
+    """A TV that refuses the screenshot call (#214): switched on, Glowcast
+    asks again for the startup grace (10 s), then stops with Error, and
+    Repairs explains why.
+
+    Needs an instance started with GLOWCAST_DEMO_REFUSE (scripts/README.md).
+    """
+    registry = [
+        entry
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast"
+    ]
+    (switch,) = [e for e in registry if e["entity_id"].startswith("switch.")]
+    device = rec.ws(
+        {"type": "config/entity_registry/get", "entity_id": switch["entity_id"]}
+    )
+    rec.goto(f"/config/devices/device/{device['device_id']}")
+    rec.begin()
+    toggle = row(rec, switch["entity_id"]).locator("ha-entity-toggle")
+    (status,) = [e["entity_id"] for e in registry if e["unique_id"].endswith("_status")]
+    since = datetime.now(UTC)
+    rec.click(toggle)
+    deadline = time.monotonic() + 20
+    while not stopped_since(rec, status, since):
+        if time.monotonic() > deadline:
+            raise RuntimeError("Glowcast did not stop with an error")
+        rec.wait(250)
+    rec.wait(1000)
+    rec.step("stopped")
+    # An earlier run's prepare() ignored the issue; this run raised it again.
+    for issue in rec.ws({"type": "repairs/list_issues"})["issues"]:
+        if issue["domain"] == "glowcast" and issue["ignored"]:
+            rec.ws(
+                {
+                    "type": "repairs/ignore_issue",
+                    "domain": issue["domain"],
+                    "issue_id": issue["issue_id"],
+                    "ignore": False,
+                }
+            )
+    name = rec.page.evaluate(
+        f"id => {HASS}.states[id].attributes.friendly_name", switch["entity_id"]
+    )
+    rec.goto("/config/repairs")
+    issue = rec.page.get_by_text(f"{name}:").first
+    issue.wait_for()
+    rec.step("repairs")
+    rec.click(issue)
+    rec.page.locator("#dialog-repairs-issue-description").wait_for()
+    rec.step("issue")
+
+
+def stopped_since(rec: Recorder, status: str, since: datetime) -> bool:
+    """Whether the status sensor turned to error after `since`."""
+    state = rec.page.evaluate(f"id => {HASS}.states[id]", status)
+    return state["state"] == "error" and (
+        datetime.fromisoformat(state["last_changed"]) >= since
+    )
+
+
 def wait_for_streaming(
     rec: Recorder, entry_id: str, channels: int | None = None
 ) -> None:
@@ -714,6 +775,7 @@ SYNCING_FLOWS = {
     "ha-lights-setup",
     "ha-lights-settings",
     "combined-settings",
+    "refused",
 }
 
 DEMO_TV = "Living room TV"  # the TV's name in demo.py
@@ -763,7 +825,10 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "ha-lights-settings": ha_lights_settings,
     "combined-settings": combined_settings,
     "blueprint": blueprint,
+    "refused": refused,
 }
+# Flows that need an instance started for them, so only run when named.
+NAMED_ONLY = {"refused"}
 # Flows that set Glowcast up themselves: they start without an entry.
 SETUP_FLOWS = {
     "setup",
@@ -967,7 +1032,7 @@ def main() -> None:
     args = parser.parse_args()
     if unknown := [flow for flow in args.flows if flow not in FLOWS]:
         parser.error(f"unknown flow {unknown}; the flows are {list(FLOWS)}")
-    flows = args.flows or list(FLOWS)
+    flows = args.flows or [flow for flow in FLOWS if flow not in NAMED_ONLY]
     if not args.fake_sync and (syncing := SYNCING_FLOWS.intersection(flows)):
         if args.flows:
             parser.error(

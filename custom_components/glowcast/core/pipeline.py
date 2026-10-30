@@ -28,6 +28,7 @@ from .ports import (
     OutputTooManyChannels,
     OutputUnavailable,
     SourceAuthFailed,
+    SourceNotSupported,
     SourceUnavailable,
 )
 
@@ -70,6 +71,10 @@ class StopReason(StrEnum):
     AUTH_FAILED = "auth_failed"
     SOURCE_UNAVAILABLE = "source_unavailable"
     SOURCE_AUTH_FAILED = "source_auth_failed"
+    # The source refuses to give its picture (#214): it does not offer the
+    # capture, or it does not permit it.
+    SOURCE_NOT_SUPPORTED = "source_not_supported"
+    SOURCE_NOT_PERMITTED = "source_not_permitted"
 
 
 class Phase(StrEnum):
@@ -202,6 +207,8 @@ class Pipeline:
         # Where the picture sits inside letterbox bars, over frames (#34).
         self._letterbox = Letterbox()
         self._retried_at: float | None = None
+        # The last refusal in the startup grace, if its last attempt was one.
+        self._refusal: SourceNotSupported | None = None
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
         self._failing_since = 0.0  # when the first of them began
@@ -293,6 +300,9 @@ class Pipeline:
         """Start the source and get one good frame within the startup grace."""
         deadline = self._clock.now() + STARTUP_GRACE
         started = False
+        # A refusal is retried like any failure while the source may still be
+        # starting its services; it stops only when the grace ends on it (#214).
+        self._refusal = None
         while (remaining := deadline - self._clock.now()) > 0:
             if self._stop_requested.is_set():
                 raise _Stop(StopReason.USER)
@@ -312,15 +322,18 @@ class Pipeline:
             if self._stop_requested.is_set():
                 raise _Stop(StopReason.USER)
             if attempt.cancelled():
-                return None  # the startup grace ran out
+                break  # the startup grace ran out
             started, frame = attempt.result()
             if frame is not None:
                 return frame
             await self._clock.sleep(min(START_RETRY_INTERVAL, max(remaining, 0)))
+        if self._refusal is not None:
+            raise _not_supported(self._refusal)
         return None
 
     async def _async_try_tv(self, started: bool) -> tuple[bool, Frame | None]:
         """One attempt: start if needed, then capture. Returns (started, frame)."""
+        self._refusal = None
         try:
             if not started:
                 await self._source.start()
@@ -333,6 +346,9 @@ class Pipeline:
         except SourceAuthFailed as err:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
+        except SourceNotSupported as err:
+            self._refusal = err
+            return started, None
         except Exception as err:
             _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -482,6 +498,8 @@ class Pipeline:
         except SourceAuthFailed as err:
             _LOGGER.warning("%s", err)
             raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
+        except SourceNotSupported as err:
+            raise _not_supported(err) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the picture source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -607,6 +625,14 @@ def stop_reason_of(error: Exception) -> StopReason:
         ),
         StopReason.OUTPUT_UNAVAILABLE,
     )
+
+
+def _not_supported(error: SourceNotSupported) -> _Stop:
+    """Stop at the first refusal: the source will refuse every capture."""
+    _LOGGER.warning("%s", error)
+    if error.not_permitted:
+        return _Stop(StopReason.SOURCE_NOT_PERMITTED)
+    return _Stop(StopReason.SOURCE_NOT_SUPPORTED)
 
 
 def _starts(channels: list[Channel]) -> dict[str, tuple[float, float, float] | None]:

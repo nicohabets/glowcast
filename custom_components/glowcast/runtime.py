@@ -23,7 +23,7 @@ from .const import (
     REAUTH_SOURCE,
 )
 from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
-from .core.ports import SourceAuthFailed, SourceUnavailable
+from .core.ports import SourceAuthFailed, SourceNotSupported, SourceUnavailable
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType, part_options
 from .outputs.blocks import output_blocks, output_types
@@ -47,6 +47,10 @@ _STOP_MESSAGES = {
     StopReason.SOURCE_UNAVAILABLE: "the picture source failed",
     StopReason.SOURCE_AUTH_FAILED: (
         "the picture source rejected Glowcast's key; pair again"
+    ),
+    StopReason.SOURCE_NOT_SUPPORTED: "the picture source does not allow capturing",
+    StopReason.SOURCE_NOT_PERMITTED: (
+        "the picture source does not permit Glowcast to capture"
     ),
 }
 # Stops the user does not need to act on are logged at info level.
@@ -209,7 +213,7 @@ class GlowcastData:
                     return False
                 await source.capture()
             return True
-        except (TimeoutError, SourceUnavailable, SourceAuthFailed):
+        except (TimeoutError, SourceUnavailable, SourceAuthFailed, SourceNotSupported):
             return False
         except Exception:
             # Not on, as far as the restart goes; the next look tries again.
@@ -479,7 +483,9 @@ class GlowcastData:
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
-        issue = output_type.stop_issues.get(reason)
+        issue = output_type.stop_issues.get(reason) or source_type.stop_issues.get(
+            reason
+        )
         message = _STOP_MESSAGES[reason] if issue is None else issue.message
         if reason is StopReason.USER and self._hass.is_stopping:
             # HA cancels background tasks on shutdown; the pipeline then
@@ -512,7 +518,7 @@ class GlowcastData:
     ) -> None:
         """Raise the repair issue with this key of the entry's source or outputs."""
         source_type = SOURCES[self._entry.data[CONF_SOURCE][CONF_TYPE]]
-        issues = [source_type.missing]
+        issues = [source_type.missing, *source_type.stop_issues.values()]
         for _, output_type, _ in self._parts():
             issues.extend(
                 (
@@ -532,6 +538,7 @@ class GlowcastData:
             severity=ir.IssueSeverity.ERROR,
             translation_key=issue.translation_key,
             translation_placeholders={
+                **issue.placeholders,
                 **(placeholders or {}),
                 "name": self._entry.title,
             },
@@ -552,6 +559,11 @@ def issue_keys() -> list[str]:
     return _keys(
         [
             *(source_type.missing for source_type in SOURCES.values()),
+            *(
+                issue
+                for source_type in SOURCES.values()
+                for issue in source_type.stop_issues.values()
+            ),
             *(output_type.missing for output_type in OUTPUTS.values()),
             *(
                 issue
