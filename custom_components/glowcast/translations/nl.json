@@ -1,7 +1,16 @@
 {
   "config": {
+    "flow_title": "Glowcast - {name}",
     "step": {
       "user": {
+        "title": "Wat moeten de lampen volgen?",
+        "description": "Kies het beeld dat de lampen volgen.",
+        "menu_options": {
+          "tv": "LG webOS-tv",
+          "screen": "Computerscherm"
+        }
+      },
+      "tv": {
         "title": "Kies de tv",
         "description": "Glowcast gebruikt het beeld van een LG webOS-tv die is ingesteld in de integratie LG webOS Smart TV.",
         "data": {
@@ -29,6 +38,28 @@
       "reauth_confirm": {
         "title": "Opnieuw koppelen met de Hue Bridge",
         "description": "De Hue Bridge accepteert de sleutel van Glowcast niet meer. Druk op de koppelknop van je bridge en klik daarna op Verzenden. Je instellingen blijven bewaard."
+      },
+      "screen": {
+        "title": "Verbinden met de schermhelper",
+        "description": "Start de Glowcast-schermhelper op de computer en vul dan het IP-adres of de hostnaam van de computer in. De helper gebruikt poort 8488, tenzij hij met een andere is gestart.",
+        "data": {
+          "host": "Adres",
+          "port": "Poort"
+        }
+      },
+      "screen_code": {
+        "title": "Koppelen met de schermhelper",
+        "description": "Vul de koppelcode van 6 cijfers in die de schermhelper op {computer} toont.",
+        "data": {
+          "code": "Koppelcode"
+        }
+      },
+      "screen_reauth": {
+        "title": "Opnieuw koppelen met de schermhelper",
+        "description": "De schermhelper op {computer} accepteert de sleutel van Glowcast niet meer. Vul de koppelcode van 6 cijfers in die de helper nu toont. Je instellingen blijven bewaard.",
+        "data": {
+          "code": "Koppelcode"
+        }
       }
     },
     "progress": {
@@ -37,7 +68,12 @@
     "error": {
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
       "button_not_pressed": "De koppelknop is niet op tijd ingedrukt. Druk erop en klik daarna opnieuw op Verzenden.",
-      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes) en klik daarna op Verzenden."
+      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes) en klik daarna op Verzenden.",
+      "screen_cannot_connect": "De schermhelper is niet bereikbaar. Controleer of hij op de computer draait, het adres en de poort, en of de firewall van de computer hem toelaat.",
+      "screen_wrong_code": "De code klopt niet; controleer de code die de helper toont.",
+      "screen_pairing_unavailable": "De schermhelper toont geen koppelcode. Start hem zonder --non-interactive, of met --pairing-code, en probeer het opnieuw.",
+      "screen_other_helper": "Op dit adres antwoordt een andere schermhelper. Controleer het adres.",
+      "screen_unsupported": "Deze schermhelper spreekt een andere versie van het protocol. Werk Glowcast en de helper bij."
     },
     "abort": {
       "no_tv": "Geen LG webOS-tv gevonden. Stel je tv eerst in met de integratie LG webOS Smart TV.",
@@ -47,7 +83,10 @@
       "reauth_successful": "Glowcast is weer gekoppeld met de Hue Bridge.",
       "already_in_progress": "Glowcast wordt al ingesteld voor deze tv. Rond die installatie eerst af of sluit hem.",
       "all_tvs_configured": "Glowcast is al ingesteld voor elke LG webOS-tv in Home Assistant.",
-      "reauth_unavailable": "Opnieuw koppelen kan voor deze beeldbron nog niet. Verwijder de vermelding van Glowcast en stel hem opnieuw in."
+      "reauth_unavailable": "Opnieuw koppelen kan voor deze beeldbron nog niet. Verwijder de vermelding van Glowcast en stel hem opnieuw in.",
+      "screen_already_configured": "Glowcast is al ingesteld voor deze computer. Het adres is bijgewerkt.",
+      "screen_reauth_successful": "Glowcast is opnieuw gekoppeld met de schermhelper.",
+      "screen_unsupported": "Deze schermhelper spreekt een andere versie van het protocol. Werk Glowcast en de helper bij."
     }
   },
   "options": {

@@ -1,7 +1,16 @@
 {
   "config": {
+    "flow_title": "Glowcast - {name}",
     "step": {
       "user": {
+        "title": "What should the lights follow?",
+        "description": "Choose the picture the lights follow.",
+        "menu_options": {
+          "tv": "LG webOS TV",
+          "screen": "Computer screen"
+        }
+      },
+      "tv": {
         "title": "Choose the TV",
         "description": "Glowcast uses the picture of an LG webOS TV that is set up in the LG webOS Smart TV integration.",
         "data": {
@@ -29,6 +38,28 @@
       "reauth_confirm": {
         "title": "Pair with the Hue bridge again",
         "description": "The Hue bridge no longer accepts Glowcast's key. Press the link button on your bridge, then click Submit. Your settings are kept."
+      },
+      "screen": {
+        "title": "Connect to the screen helper",
+        "description": "Start the Glowcast screen helper on the computer, then enter the computer's IP address or host name. The helper uses port 8488 unless it was started with another one.",
+        "data": {
+          "host": "Address",
+          "port": "Port"
+        }
+      },
+      "screen_code": {
+        "title": "Pair with the screen helper",
+        "description": "Enter the 6-digit pairing code that the screen helper on {computer} shows.",
+        "data": {
+          "code": "Pairing code"
+        }
+      },
+      "screen_reauth": {
+        "title": "Pair with the screen helper again",
+        "description": "The screen helper on {computer} no longer accepts Glowcast's key. Enter the 6-digit pairing code that the helper shows now. Your settings are kept.",
+        "data": {
+          "code": "Pairing code"
+        }
       }
     },
     "progress": {
@@ -37,7 +68,12 @@
     "error": {
       "cannot_connect": "Could not reach the Hue bridge. Check that it is on and connected to the network.",
       "button_not_pressed": "The link button was not pressed in time. Press it, then click Submit again.",
-      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then click Submit."
+      "no_areas": "This Hue bridge has no entertainment areas yet. Create one in the Hue app (Settings, Entertainment areas), then click Submit.",
+      "screen_cannot_connect": "Could not reach the screen helper. Check that it runs on the computer, the address and the port, and that the computer's firewall allows it.",
+      "screen_wrong_code": "The code is not correct; check the code the helper shows.",
+      "screen_pairing_unavailable": "The screen helper shows no pairing code. Start it without --non-interactive, or with --pairing-code, then try again.",
+      "screen_other_helper": "Another screen helper answers at this address. Check the address.",
+      "screen_unsupported": "This screen helper speaks another version of the protocol. Update Glowcast and the helper."
     },
     "abort": {
       "no_tv": "No LG webOS TV found. Set up your TV with the LG webOS Smart TV integration first.",
@@ -47,7 +83,10 @@
       "reauth_successful": "Glowcast is paired with the Hue bridge again.",
       "already_in_progress": "Glowcast is already being set up for this TV. Finish or close that setup first.",
       "all_tvs_configured": "Glowcast is already set up for every LG webOS TV in Home Assistant.",
-      "reauth_unavailable": "Pairing again is not available for this picture source yet. Remove Glowcast's entry and set it up again."
+      "reauth_unavailable": "Pairing again is not available for this picture source yet. Remove Glowcast's entry and set it up again.",
+      "screen_already_configured": "Glowcast is already set up for this computer. Its address is updated.",
+      "screen_reauth_successful": "Glowcast is paired with the screen helper again.",
+      "screen_unsupported": "This screen helper speaks another version of the protocol. Update Glowcast and the helper."
     }
   },
   "options": {

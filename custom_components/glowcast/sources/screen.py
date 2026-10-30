@@ -30,6 +30,8 @@ SOURCE_SCREEN = "screen"
 CONF_HELPER_ID = "helper_id"
 # The helper's protocol version this source speaks (architecture 8.3).
 PROTOCOL = 1
+# The helper's port unless it was started with another one.
+DEFAULT_PORT = 8488
 
 WIDTH, HEIGHT = 64, 36
 FRAME_BYTES = WIDTH * HEIGHT * 3
@@ -40,6 +42,8 @@ REQUEST_TIMEOUT = 2.0
 CAPTURE_TIMEOUT = 5.0
 # The helper hands out one grab for 50 ms; the retry asks for a new one.
 RETRY_DELAY = 0.1
+# A wrong pairing code costs 1 s at the helper, one attempt at a time.
+PAIR_TIMEOUT = 10.0
 # No picture for this long after a frame turns the source off (product owner's
 # decision, #110), so a few slow grabs on a busy computer do not stop syncing.
 NO_PICTURE_WAIT = 3.0
@@ -68,8 +72,9 @@ class ScreenFrameSource:
         self._hass = hass
         self._now = now
         self._helper_id = helper_id
-        self._base = URL.build(scheme="http", host=host, port=port)
-        self._headers = {"Authorization": f"Bearer {token}"}
+        self._host = host
+        self._port = port
+        self._token = token
         self._on = False
         # A frame came since start(): only then does no picture turn it off,
         # so the pipeline's startup grace keeps asking while the computer
@@ -87,30 +92,15 @@ class ScreenFrameSource:
         self._on = False
         self._delivered = False
         self._no_picture_since = None
-        reason: str
-        try:
-            async with asyncio.timeout(REQUEST_TIMEOUT):
-                async with self._get("/v1/info") as response:
-                    if response.status == 401:
-                        raise SourceAuthFailed(
-                            "The screen helper rejected Glowcast's token; pair again"
-                        )
-                    info = await response.json() if response.status == 200 else None
-            if not isinstance(info, dict):
-                reason = "The screen helper gave an unexpected answer"
-            elif info.get("id") != self._helper_id:
-                reason = "Another screen helper or service answers at this address"
-            elif info.get("protocol") != PROTOCOL:
-                reason = "The screen helper speaks another protocol version"
-            else:
-                self._on = True
-                return
-        except TimeoutError:
-            reason = "The screen helper did not respond in time"
-        except (OSError, ValueError, aiohttp.ClientError):
-            # ValueError: an answer that is not JSON.
-            reason = "Could not connect to the screen helper"
-        raise SourceUnavailable(reason)
+        # Raises SourceAuthFailed (401) or SourceUnavailable itself.
+        info = await async_info(self._hass, self._host, self._port, self._token)
+        if info.get("id") != self._helper_id:
+            raise SourceUnavailable(
+                "Another screen helper or service answers at this address"
+            )
+        if info.get("protocol") != PROTOCOL:
+            raise SourceUnavailable("The screen helper speaks another protocol version")
+        self._on = True
 
     def is_on(self) -> bool:
         """Return whether the helper answers with a picture.
@@ -190,9 +180,114 @@ class ScreenFrameSource:
         """A GET request to the helper, with the token; never logged."""
         session = async_get_clientsession(self._hass)
         async with session.get(
-            self._base.with_path(path), headers=self._headers
+            _url(self._host, self._port, path), headers=_auth(self._token)
         ) as response:
             yield response
+
+
+class PairingRefused(Exception):
+    """The helper refused the pairing code.
+
+    `reason` is the helper's error: "wrong_code", or "pairing_unavailable"
+    when it has no code (started with --non-interactive).
+    """
+
+    def __init__(self, reason: str) -> None:
+        """Initialize with the helper's reason."""
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def async_reachable(hass: HomeAssistant, host: str, port: int) -> bool:
+    """Whether something answers HTTP at this address.
+
+    Without a token the helper answers 401, which counts as an answer.
+    """
+    try:
+        async with asyncio.timeout(REQUEST_TIMEOUT):
+            async with async_get_clientsession(hass).get(_url(host, port, "/v1/info")):
+                return True
+    except (TimeoutError, OSError, ValueError, aiohttp.ClientError):
+        # ValueError: an address that is not a valid host name.
+        return False
+
+
+async def async_pair(
+    hass: HomeAssistant, host: str, port: int, code: str
+) -> tuple[str, str]:
+    """Pair with the helper's pairing code; return (token, helper id).
+
+    Raises PairingRefused for a refused code, SourceUnavailable when the helper
+    cannot be reached or gives an unexpected answer.
+    """
+    reason: str
+    try:
+        async with asyncio.timeout(PAIR_TIMEOUT):
+            async with async_get_clientsession(hass).post(
+                _url(host, port, "/v1/pair"), json={"code": code}
+            ) as response:
+                status = response.status
+                answer = await response.json(content_type=None)
+        if status == 403 and isinstance(answer, dict):
+            raise PairingRefused(str(answer.get("error")))
+        if status == 400:
+            # A code the helper cannot read is a wrong code too.
+            raise PairingRefused("wrong_code")
+        if (
+            status == 200
+            and isinstance(answer, dict)
+            and isinstance(answer.get("token"), str)
+            and isinstance(answer.get("id"), str)
+        ):
+            return answer["token"], answer["id"]
+        reason = "The screen helper gave an unexpected answer"
+    except TimeoutError:
+        reason = "The screen helper did not respond in time"
+    except (OSError, ValueError, aiohttp.ClientError):
+        # ValueError: an answer that is not JSON.
+        reason = "Could not connect to the screen helper"
+    raise SourceUnavailable(reason)
+
+
+async def async_info(
+    hass: HomeAssistant, host: str, port: int, token: str
+) -> dict[str, Any]:
+    """The helper's /v1/info, asked with Glowcast's token.
+
+    Raises SourceAuthFailed for a rejected token, SourceUnavailable when the
+    helper cannot be reached or gives an unexpected answer.
+    """
+    reason: str
+    try:
+        async with asyncio.timeout(REQUEST_TIMEOUT):
+            async with async_get_clientsession(hass).get(
+                _url(host, port, "/v1/info"),
+                headers=_auth(token),
+            ) as response:
+                if response.status == 401:
+                    raise SourceAuthFailed(
+                        "The screen helper rejected Glowcast's token; pair again"
+                    )
+                info = await response.json() if response.status == 200 else None
+        if isinstance(info, dict):
+            return info
+        reason = "The screen helper gave an unexpected answer"
+    except TimeoutError:
+        reason = "The screen helper did not respond in time"
+    except (OSError, ValueError, aiohttp.ClientError):
+        # ValueError: an answer that is not JSON.
+        reason = "Could not connect to the screen helper"
+    raise SourceUnavailable(reason)
+
+
+def _url(host: str, port: int, path: str) -> URL:
+    """The helper's URL for this path."""
+    return URL.build(scheme="http", host=host, port=port, path=path)
+
+
+def _auth(token: str) -> dict[str, str]:
+    """The header with Glowcast's token; never logged."""
+    return {"Authorization": f"Bearer {token}"}
 
 
 def create(

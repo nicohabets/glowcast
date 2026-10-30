@@ -8,13 +8,23 @@ It replaces the `create` of the `webos` and `hue_entertainment` entries in
 Glowcast's SOURCES and OUTPUTS registries. Everything else in those entries
 (checks, device links, setup steps, entities) stays Glowcast's own, so the
 real pipeline, runtime, entities and status run unchanged.
+
+It also has a service, `glowcast_demo.discover_screen_helper`, that hands
+Glowcast a zeroconf discovery of a screen helper, as Home Assistant's zeroconf
+integration would. The demo loads no discovery integration (nothing is looked
+for on the network); the recorder calls this service for a helper it started
+on 127.0.0.1, which does not announce itself.
 """
 
 import dataclasses
 import logging
+from ipaddress import ip_address
 
 import homeassistant.helpers.config_validation as cv
-from homeassistant.core import HomeAssistant
+import voluptuous as vol
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import discovery_flow
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
@@ -49,4 +59,39 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # No reload needed: `start` writes a config without a Glowcast entry, and
     # a pipeline is only built when the switch is turned on.
     _LOGGER.warning("demo: fake TV source and fake light output active")
+
+    async def discover_screen_helper(call: ServiceCall) -> None:
+        host = ip_address(call.data["host"])
+        discovery_flow.async_create_flow(
+            hass,
+            GLOWCAST,
+            {"source": "zeroconf"},
+            ZeroconfServiceInfo(
+                ip_address=host,
+                ip_addresses=[host],
+                port=call.data["port"],
+                hostname="demo-helper.local.",
+                type="_glowcast._tcp.local.",
+                name=f"{call.data['name']}._glowcast._tcp.local.",
+                properties={
+                    "id": call.data["id"],
+                    "name": call.data["name"],
+                    "protocol": "1",
+                },
+            ),
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        "discover_screen_helper",
+        discover_screen_helper,
+        vol.Schema(
+            {
+                vol.Required("host"): str,
+                vol.Required("port"): int,
+                vol.Required("id"): str,
+                vol.Required("name"): str,
+            }
+        ),
+    )
     return True

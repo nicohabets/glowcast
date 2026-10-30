@@ -16,14 +16,17 @@ Files: <lang>-<theme>-<flow>.gif, or <lang>-<theme>-<flow>-<nn>-<name>.png.
 import argparse
 import contextlib
 import json
+import shutil
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -51,6 +54,12 @@ DIALOG = "dialog-data-entry-flow ha-dialog"
 PRIMARY = f"{DIALOG} ha-button[slot=primaryAction]"
 CONFIRM = "dialog-box ha-dialog ha-button[slot=primaryAction]"
 HASS = "document.querySelector('home-assistant').hass"
+ROOT = Path(__file__).resolve().parents[2]
+# The screen helper the screen flows start: a generic name, never the
+# computer's own, and a fixed pairing code.
+HELPER_NAME = "Test PC"
+HELPER_PORT = 8488
+PAIRING_CODE = "123456"
 # A ring where the next click lands, removed with the click so it never shows
 # on the next screen. A popover sits in the top layer, so it shows above Home
 # Assistant's modal dialogs too.
@@ -192,14 +201,38 @@ class Recorder:
 def setup(rec: Recorder) -> None:
     """The setup flow: TV, bridge, link button, pairing, area, done."""
     page = rec.page
+    open_setup(rec)
+    rec.click(menu_item(rec, "tv"))
+    page.locator(PRIMARY).wait_for()
+    rec.step("tv")
+    rec.submit()
+    hue_steps(rec)
+
+
+def open_setup(rec: Recorder) -> None:
+    """From "Do you want to set up Glowcast?" to the menu of source types."""
+    page = rec.page
     rec.goto("/config/integrations/dashboard/add?domain=glowcast")
     # "Do you want to set up Glowcast?" over the integrations page.
     page.locator(CONFIRM).wait_for()
     rec.begin()
     rec.click(page.locator(CONFIRM))
-    page.locator(PRIMARY).wait_for()
-    rec.step("tv")
-    rec.submit()
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("menu")
+
+
+def menu_item(rec: Recorder, step: str) -> Locator:
+    """The item of the open flow menu that goes to this step."""
+    items = rec.page.locator(f"{DIALOG} step-flow-menu ha-list-item")
+    index = items.evaluate_all("(items, s) => items.findIndex(i => i.step === s)", step)
+    if index < 0:
+        raise LookupError(f"No menu item for the step {step!r}")
+    return items.nth(index)
+
+
+def hue_steps(rec: Recorder) -> None:
+    """The output's steps, after the source's: bridge, link, area, done."""
+    page = rec.page
     rec.step("bridge")
     rec.submit()
     rec.step("link")
@@ -215,6 +248,154 @@ def setup(rec: Recorder) -> None:
     rec.step("done")
     rec.submit()
     rec.step("integration")
+
+
+@contextlib.contextmanager
+def screen_helper() -> Iterator[dict[str, Any]]:
+    """Run the screen helper with test patterns on 127.0.0.1; yield its
+    `started` event (id, port).
+
+    A fixed pairing code and its own config directory, so it never touches the
+    computer's own helper id or pairings. On a loopback address it does not
+    announce itself, so nothing is found on the network.
+    """
+    uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
+    with socket.socket() as probe:
+        # As the helper's server: connections of an earlier run that are
+        # still closing do not count as in use.
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", HELPER_PORT))
+            port = HELPER_PORT
+        except OSError:
+            port = 0  # another session's helper: any free port
+    with tempfile.TemporaryDirectory() as config:
+        process = subprocess.Popen(
+            [
+                uv,
+                "run",
+                "--project",
+                str(ROOT / "screen_helper"),
+                "glowcast-screen",
+                "--pattern",
+                "cycle",
+                "--name",
+                HELPER_NAME,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--non-interactive",
+                "--pairing-code",
+                PAIRING_CODE,
+                "--json",
+                "--config-dir",
+                config,
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert process.stdout is not None
+            started = None
+            for line in process.stdout:
+                event = json.loads(line)
+                if event["event"] == "started":
+                    started = event
+                    break
+            if started is None:
+                raise RuntimeError("The screen helper did not start")
+            # It keeps writing events (frames, patterns); read them away so a
+            # full pipe never blocks it during a long recording.
+            threading.Thread(
+                target=process.stdout.read, name="screen helper output", daemon=True
+            ).start()
+            yield started
+        finally:
+            process.terminate()
+            process.wait(10)
+
+
+def fill(rec: Recorder, index: int, text: str) -> None:
+    """Type into the open form's text field with this index."""
+    field = rec.page.locator(f"{DIALOG} ha-form input").nth(index)
+    rec.click(field)
+    field.fill(text)
+    rec.wait(300)
+
+
+def screen_setup(rec: Recorder) -> None:
+    """Set up a computer screen by hand: the address, the pairing code, up to
+    the output's first step (#109).
+
+    The output's steps are the same as for a TV (the `setup` and
+    `screen-discovery` flows show them), so the GIF stays short; the flow is
+    left open and aborted when the recording ends.
+    """
+    page = rec.page
+    with screen_helper() as helper:
+        open_setup(rec)
+        rec.click(menu_item(rec, "screen"))
+        page.locator(f"{DIALOG} ha-form input").first.wait_for()
+        rec.step("address")
+        fill(rec, 0, "127.0.0.1")
+        if helper["port"] != HELPER_PORT:  # the form's default
+            fill(rec, 1, str(helper["port"]))
+        rec.step("address-filled")
+        rec.submit()
+        pairing_code(rec, through_output=False)
+        rec.step("bridge")
+
+
+def screen_discovery(rec: Recorder) -> None:
+    """A discovered screen helper: Add, a wrong code, the right code, then
+    the output's steps (#109)."""
+    page = rec.page
+    with screen_helper() as helper:
+        # A discovery left by an earlier run (another helper id each run).
+        for flow in rec.ws({"type": "config_entries/flow/progress"}):
+            if flow["handler"] == "glowcast":
+                page.evaluate(
+                    f"id => {HASS}.callApi('DELETE', "
+                    "`config/config_entries/flow/${id}`)",
+                    flow["flow_id"],
+                )
+        rec.goto("/config/integrations/dashboard")
+        rec.page.evaluate(
+            f"data => {HASS}.callService('glowcast_demo', "
+            "'discover_screen_helper', data)",
+            {
+                "host": "127.0.0.1",
+                "port": helper["port"],
+                "id": helper["id"],
+                "name": HELPER_NAME,
+            },
+        )
+        card = page.locator("ha-config-flow-card").filter(has_text=HELPER_NAME)
+        card.wait_for(timeout=15000)
+        rec.begin()
+        rec.click(card.locator("ha-button[appearance=filled]"))
+        pairing_code(rec, wrong_first=True)
+
+
+def pairing_code(
+    rec: Recorder, wrong_first: bool = False, through_output: bool = True
+) -> None:
+    """The pairing code step, then (or up to) the output's steps."""
+    page = rec.page
+    page.locator(f"{DIALOG} ha-form input").first.wait_for()
+    rec.step("code")
+    if wrong_first:
+        fill(rec, 0, "000000")
+        rec.submit()
+        page.locator(f"{DIALOG} ha-alert").wait_for(timeout=15000)
+        rec.step("wrong-code")
+    fill(rec, 0, PAIRING_CODE)
+    rec.step("code-filled")
+    rec.submit()
+    page.locator(f"{DIALOG} ha-picker-field").wait_for(timeout=15000)
+    if through_output:
+        hue_steps(rec)
 
 
 def settings(rec: Recorder) -> None:
@@ -351,14 +532,19 @@ def row(rec: Recorder, entity_id: str) -> Locator:
     return rows.nth(index)
 
 
-# Flows that switch Glowcast on: they need the demo's fake TV source and lights.
-SYNCING_FLOWS = {"entities"}
+# Flows that need the glowcast_demo stub: switching Glowcast on needs its fake
+# TV source and lights, a discovery its service.
+SYNCING_FLOWS = {"entities", "screen-discovery"}
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
     "device": device,
     "entities": entities,
+    "screen-setup": screen_setup,
+    "screen-discovery": screen_discovery,
 }
+# Flows that set Glowcast up themselves: they start without an entry.
+SETUP_FLOWS = {"setup", "screen-setup", "screen-discovery"}
 
 
 def prepare(rec: Recorder, flow: str) -> None:
@@ -368,7 +554,7 @@ def prepare(rec: Recorder, flow: str) -> None:
     entry, and the repair issue a Core install raises.
     """
     entries = rec.ws({"type": "config_entries/get", "domain": "glowcast"})
-    if flow == "setup":
+    if flow in SETUP_FLOWS:
         for entry in entries:
             rec.page.evaluate(
                 f"id => {HASS}.callApi('DELETE', "

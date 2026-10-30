@@ -18,11 +18,7 @@ class WebOsSteps(ConfigFlow):
     async def async_step_tv(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the TV; TVs that already have a Glowcast entry are not offered.
-
-        Shown as the flow's first screen ("user"): the only source type needs
-        no choice before it.
-        """
+        """Pick the TV; TVs that already have a Glowcast entry are not offered."""
         loaded = tvs(self.hass)
         if not loaded:
             return self.async_abort(reason="no_tv")
@@ -39,6 +35,6 @@ class WebOsSteps(ConfigFlow):
                 available[unique_id],
             )
         return self.async_show_form(
-            step_id="user",
+            step_id="tv",
             data_schema=vol.Schema({vol.Required(FIELD_TV): dropdown(available)}),
         )

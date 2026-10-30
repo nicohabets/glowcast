@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 
 from ..core.ports import FrameSource
 from ..issues import Issue
-from . import screen, webos, webos_flow
+from . import screen, screen_flow, webos, webos_flow
 
 
 @dataclass(frozen=True)
@@ -46,12 +46,15 @@ SOURCES = {
         setup_step="tv",
         missing=webos.MISSING,
     ),
-    # Its setup and reauth steps (discovery and the pairing code) are #109.
+    # Also set up through Home Assistant's zeroconf discovery (manifest.json).
     screen.SOURCE_SCREEN: SourceType(
         screen.create,
         screen.is_missing,
         screen.device_identifier,
         screen.device_id,
+        steps=screen_flow.ScreenSteps,
+        setup_step="screen",
+        reauth_step="screen_reauth",
     ),
 }
 
