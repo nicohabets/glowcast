@@ -13,6 +13,7 @@ left are no longer used.
 """
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -95,6 +96,9 @@ COMMAND_TIMEOUT = 5.0
 RESTORE_TIMEOUT = 10.0
 # Home Assistant's own light groups, whose members follow their commands.
 GROUP_PLATFORM = "group"
+# What each start left out because the entertainment area streams to it
+# (#198), for the notice: {_left_out_key(): names, or None} (hass.data key).
+LEFT_OUT = "glowcast_ha_lights_left_out"
 # Where the states restored at a release are kept, per light entity, across
 # outputs: every start of the pipeline builds a new output (hass.data key).
 RESTORED = "glowcast_ha_lights_restored"
@@ -130,17 +134,20 @@ class HaLightsOutput:
         output: Mapping[str, Any],
         now: Callable[[], float] | None = None,
         area_lights: Callable[[], Awaitable[set[str]]] | None = None,
+        left_out_key: str = "",
     ) -> None:
         """Initialize for the output block in the entry's options.
 
         `now` is the clock in seconds (the event loop's by default).
         `area_lights` gives the entity ids of the lights an entertainment area
-        in the same entry streams to (#198): they are left out.
+        in the same entry streams to (#198): they are left out, and their
+        names kept under `left_out_key` for the notice.
         """
         self._hass = hass
         self._now = now or (lambda: asyncio.get_running_loop().time())
         self._output = dict(output)
         self._area_lights = area_lights
+        self._left_out_key = left_out_key
         self._lights: dict[str, Light] = {}
         self._schedule: Schedule | None = None
         self._colors: dict[str, tuple[int, int, int, int]] = {}
@@ -166,14 +173,17 @@ class HaLightsOutput:
         if self._saved is not None:
             await self.stop()
         candidates = resolve(self._hass, self._output)
-        if self._area_lights is not None and (
-            in_area := lights_in(self._hass, candidates, await self._area_lights())
-        ):
+        in_area: list[Light] = []
+        if self._area_lights is not None:
+            in_area = lights_in(self._hass, candidates, await self._area_lights())
+            names = ", ".join(sorted(light.name for light in in_area))
+            _left_out(self._hass)[self._left_out_key] = names or None
+        if in_area:
             _LOGGER.warning(
                 "%s follow the picture through the entertainment area, so they "
                 "are left out of the loose lights; choose the loose lights again "
                 "in Glowcast's settings",
-                ", ".join(sorted(light.name for light in in_area)),
+                names,
             )
             candidates = [light for light in candidates if light not in in_area]
             if not candidates:
@@ -357,6 +367,7 @@ def create(
         hass,
         options[CONF_OUTPUT],
         area_lights=partial(async_area_lights, hass, data, area),
+        left_out_key=_left_out_key(area, options[CONF_OUTPUT]),
     )
 
 
@@ -497,13 +508,23 @@ def lights_in(
 async def async_in_area_notice(
     hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> Mapping[str, str] | None:
-    """The placeholders of IN_AREA when loose lights are in the entertainment
-    area of the same entry, else None (also when the bridge cannot be asked)."""
+    """The placeholders of IN_AREA when the last start of these loose lights
+    left lights out because the entertainment area streams to them, else None
+    (also when the bridge could not be asked)."""
     area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
     if area is None:
         return None
-    names = await async_lights_in_area(hass, data, area, options[CONF_OUTPUT])
+    names = _left_out(hass).get(_left_out_key(area, options[CONF_OUTPUT]))
     return None if names is None else {"lights": names}
+
+
+def _left_out(hass: HomeAssistant) -> dict[str, str | None]:
+    return hass.data.setdefault(LEFT_OUT, {})
+
+
+def _left_out_key(area: Mapping[str, Any], output: Mapping[str, Any]) -> str:
+    """The same for the same area and loose lights, whichever entry has them."""
+    return json.dumps([area, output], sort_keys=True)
 
 
 def area_lights(hass: HomeAssistant, area_id: str) -> list[str]:
