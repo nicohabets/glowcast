@@ -491,3 +491,35 @@ async def test_start_again_after_stop_and_close(
     await hass.async_block_till_done()
     assert len(turn_on) == 1
     await output.stop()
+
+
+async def test_a_claim_soon_after_a_release_restores_the_state_from_before(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    """A light reports its restored state late (Hue: about once per second,
+    #125); a claim before then must not save Glowcast's colour as its state."""
+    was_off = add_light(hass, "was_off", state="off")
+    output = HaLightsOutput(hass, lights_output(was_off), now=Clock())
+    await output.start()
+    glowcast_red = {
+        "supported_color_modes": ["xy", "color_temp"],
+        "color_mode": "hs",
+        "hs_color": [0, 100],
+        "brightness": 204,
+    }
+    hass.states.async_set(was_off.entity_id, "on", glowcast_red)
+    await output.stop()  # no picture: released, the state not yet reported
+    assert len(turn_off) == 1
+
+    await output.start()  # the picture is back
+    await output.stop()
+    assert len(turn_off) == 2
+
+    # A state reported after the release is the light's own again.
+    hass.states.async_set(was_off.entity_id, "on", {**glowcast_red, **ON})
+    await output.start()
+    hass.states.async_set(was_off.entity_id, "on", glowcast_red)
+    turn_on.clear()
+    await output.stop()
+    assert [call.data.get("xy_color") for call in turn_on] == [[0.3, 0.3]]
+    assert len(turn_off) == 2

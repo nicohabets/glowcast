@@ -16,6 +16,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.light import color_supported, get_supported_color_modes
@@ -26,6 +27,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.state import async_reproduce_state
+from homeassistant.util import dt as dt_util
 
 from ..const import CONF_OUTPUT
 from ..core.models import Channel, ChannelColor
@@ -114,6 +116,11 @@ class HaLightsOutput:
         self._in_flight: dict[str, asyncio.Task[None]] = {}
         # Each light's state from before Glowcast claimed it; None once restored.
         self._saved: list[State] | None = None
+        # The states restored at the last release, and when: a light that has
+        # not reported a state since still shows Glowcast's colour in Home
+        # Assistant (a Hue light reports about once per second, #125).
+        self._restored: dict[str, State] = {}
+        self._restored_at: datetime | None = None
         self._next_check = 0.0
         self._release: asyncio.Task[None] | None = None
 
@@ -159,9 +166,7 @@ class HaLightsOutput:
                 max(crowded.values()),
             )
         self._saved = [
-            state
-            for light in lights
-            if (state := self._hass.states.get(light.entity_id)) is not None
+            state for light in lights if (state := self._state(light)) is not None
         ]
         self._lights = {light.registry_id: light for light in lights}
         self._schedule = Schedule(networks)
@@ -211,6 +216,24 @@ class HaLightsOutput:
 
     async def close(self) -> None:
         """Nothing to close: Home Assistant owns the lights' connections."""
+
+    def _state(self, light: Light) -> State | None:
+        """The light's state to restore later: its own, not Glowcast's colour.
+
+        Claimed again soon after a release (the picture is back, or a retry),
+        a light may not have reported its restored state yet; then the state
+        restored at that release is saved again.
+        """
+        state = self._hass.states.get(light.entity_id)
+        restored = self._restored.get(light.entity_id)
+        if (
+            state is not None
+            and restored is not None
+            and self._restored_at is not None
+            and state.last_updated <= self._restored_at
+        ):
+            return restored
+        return state
 
     def _ready(self, registry_id: str) -> bool:
         """A light gets a command for a new colour, one at a time, if available."""
@@ -271,6 +294,8 @@ class HaLightsOutput:
                 await async_reproduce_state(self._hass, saved)
         except (HomeAssistantError, TimeoutError) as err:
             _LOGGER.warning("Could not restore the lights' state: %s", err)
+        self._restored = {state.entity_id: state for state in saved}
+        self._restored_at = dt_util.utcnow()
 
 
 def create(
