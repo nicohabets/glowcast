@@ -60,6 +60,69 @@
         "data": {
           "code": "Koppelcode"
         }
+      },
+      "output": {
+        "title": "Welke lampen volgen het beeld?",
+        "description": "Je kunt dit later wijzigen in de instellingen van Glowcast.",
+        "menu_options": {
+          "bridge": "Hue-entertainmentruimte - het vloeiendst",
+          "ha_lights": "Losse lampen - elke kleurenlamp, trager"
+        }
+      },
+      "ha_lights": {
+        "title": "Kies de losse lampen",
+        "description": "Glowcast kan losse lampen volgen, de lampen van een ruimte in Home Assistant, of de lampen van een lampgroep (bijvoorbeeld een Hue-ruimte of -zone). Elke lamp krijgt een eigen plek naast het scherm.",
+        "data": {
+          "follow": "Volgen"
+        }
+      },
+      "ha_lights_lights": {
+        "title": "Kies de lampen",
+        "description": "Alleen kleurenlampen staan in de lijst. Een lampgroep (bijvoorbeeld een Hue-ruimte) die je hier kiest, krijgt één kleur voor al zijn lampen.",
+        "data": {
+          "lights": "Lampen"
+        }
+      },
+      "ha_lights_area": {
+        "title": "Kies de ruimte",
+        "description": "Elke kleurenlamp in deze ruimte volgt het beeld, elk op een eigen plek. Lampen die later bij de ruimte komen, volgen het midden van het beeld tot je ze een plek geeft.",
+        "data": {
+          "area": "Ruimte"
+        }
+      },
+      "ha_lights_group": {
+        "title": "Kies de lampgroep",
+        "description": "Elke kleurenlamp in deze groep volgt het beeld, elk op een eigen plek. Lampen die later bij de groep komen, volgen het midden van het beeld tot je ze een plek geeft.",
+        "data": {
+          "group": "Lampgroep"
+        }
+      },
+      "ha_lights_hue_hint": {
+        "title": "Een entertainmentruimte is vloeiender",
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+      },
+      "ha_lights_hue_no_area": {
+        "title": "Een entertainmentruimte is vloeiender",
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+      },
+      "ha_lights_position": {
+        "title": "Waar staat {light}?",
+        "description": "Lamp {number} van {total}. De lamp volgt dit deel van het beeld. Kies Fijn afstellen om de plek zelf in te stellen.",
+        "data": {
+          "position": "Plek"
+        }
+      },
+      "ha_lights_fine_tune": {
+        "title": "{light} fijn afstellen",
+        "description": "Lamp {number} van {total}. -100% is de linker- of onderrand van het beeld, 100% de rechter- of bovenrand, 0% het midden.",
+        "data": {
+          "x": "Links - rechts",
+          "z": "Onder - boven"
+        }
+      },
+      "ha_lights_rate": {
+        "title": "Veel lampen op één netwerk",
+        "description": "{count} van deze lampen delen één Hue-bridge of Thread-netwerk. Glowcast stuurt elk daarvan hoogstens {limit} opdrachten per seconde, dus deze lampen veranderen ongeveer elke {seconds} seconden in plaats van elke seconde. Voor Hue-lampen volgt een entertainmentruimte het beeld veel vloeiender. Klik op Verzenden om toch op te slaan."
       }
     },
     "progress": {
@@ -73,7 +136,11 @@
       "screen_wrong_code": "De code klopt niet; controleer de code die de helper toont.",
       "screen_pairing_unavailable": "De schermhelper toont geen koppelcode. Start hem zonder --non-interactive, of met --pairing-code, en probeer het opnieuw.",
       "screen_other_helper": "Op dit adres antwoordt een andere schermhelper. Controleer het adres.",
-      "screen_unsupported": "Deze schermhelper spreekt een andere versie van het protocol. Werk Glowcast en de helper bij."
+      "screen_unsupported": "Deze schermhelper spreekt een andere versie van het protocol. Werk Glowcast en de helper bij.",
+      "ha_lights_no_lights": "Home Assistant heeft nog geen kleurenlampen.",
+      "ha_lights_no_area": "Geen enkele ruimte in Home Assistant heeft kleurenlampen. Wijs eerst lampen toe aan een ruimte.",
+      "ha_lights_no_group": "Home Assistant heeft geen lampgroepen met kleurenlampen.",
+      "ha_lights_none_chosen": "Kies minstens één kleurenlamp."
     },
     "abort": {
       "no_tv": "Geen LG webOS-tv gevonden. Stel je tv eerst in met de integratie LG webOS Smart TV.",
@@ -92,26 +159,122 @@
   "options": {
     "step": {
       "init": {
+        "title": "Welke lampen volgen het beeld?",
+        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo.",
+        "menu_options": {
+          "hue_options": "Hue-entertainmentruimte - het vloeiendst",
+          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager"
+        }
+      },
+      "settings": {
         "title": "Instellingen van Glowcast",
         "description": "Deze instellingen staan ook op de apparaatpagina van Glowcast, onder Configuratie. Daar kun je ze tijdens het synchroniseren wijzigen en in automatiseringen gebruiken.",
         "data": {
-          "area": "Entertainmentruimte",
           "brightness": "Helderheid",
           "intensity": "Intensiteit",
           "update_rate": "Updatefrequentie"
         },
         "data_description": {
-          "area": "De lampen in deze ruimte volgen het beeld.",
           "brightness": "Hoe fel de lampen maximaal zijn.",
           "intensity": "Hoe levendig de kleuren zijn: 0% is bijna wit, 100% is zoals op het scherm, 200% is extra levendig.",
           "update_rate": "Hoe vaak het beeld wordt gelezen. De lampen faden er altijd vloeiend tussendoor."
         }
+      },
+      "bridge": {
+        "title": "Kies de Hue Bridge",
+        "description": "Glowcast stuurt kleuren naar een Hue Bridge die is ingesteld in de integratie Philips Hue.",
+        "data": {
+          "bridge": "Hue Bridge"
+        }
+      },
+      "link": {
+        "title": "Koppelen met de Hue Bridge",
+        "description": "Voor streamen is een eigen sleutel van de bridge nodig. Druk op de koppelknop van je bridge en klik daarna op Verzenden. Je hebt dan 30 seconden."
+      },
+      "area": {
+        "title": "Kies de entertainmentruimte",
+        "description": "De lampen in deze ruimte volgen het beeld. Welke lampen meedoen en waar ze staan, stel je in de Hue-app in.",
+        "data": {
+          "area": "Entertainmentruimte"
+        }
+      },
+      "ha_lights": {
+        "title": "Kies de losse lampen",
+        "description": "Glowcast kan losse lampen volgen, de lampen van een ruimte in Home Assistant, of de lampen van een lampgroep (bijvoorbeeld een Hue-ruimte of -zone). Elke lamp krijgt een eigen plek naast het scherm.",
+        "data": {
+          "follow": "Volgen"
+        }
+      },
+      "ha_lights_lights": {
+        "title": "Kies de lampen",
+        "description": "Alleen kleurenlampen staan in de lijst. Een lampgroep (bijvoorbeeld een Hue-ruimte) die je hier kiest, krijgt één kleur voor al zijn lampen.",
+        "data": {
+          "lights": "Lampen"
+        }
+      },
+      "ha_lights_area": {
+        "title": "Kies de ruimte",
+        "description": "Elke kleurenlamp in deze ruimte volgt het beeld, elk op een eigen plek. Lampen die later bij de ruimte komen, volgen het midden van het beeld tot je ze een plek geeft.",
+        "data": {
+          "area": "Ruimte"
+        }
+      },
+      "ha_lights_group": {
+        "title": "Kies de lampgroep",
+        "description": "Elke kleurenlamp in deze groep volgt het beeld, elk op een eigen plek. Lampen die later bij de groep komen, volgen het midden van het beeld tot je ze een plek geeft.",
+        "data": {
+          "group": "Lampgroep"
+        }
+      },
+      "ha_lights_hue_hint": {
+        "title": "Een entertainmentruimte is vloeiender",
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+      },
+      "ha_lights_hue_no_area": {
+        "title": "Een entertainmentruimte is vloeiender",
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+      },
+      "ha_lights_position": {
+        "title": "Waar staat {light}?",
+        "description": "Lamp {number} van {total}. De lamp volgt dit deel van het beeld. Kies Fijn afstellen om de plek zelf in te stellen.",
+        "data": {
+          "position": "Plek"
+        }
+      },
+      "ha_lights_fine_tune": {
+        "title": "{light} fijn afstellen",
+        "description": "Lamp {number} van {total}. -100% is de linker- of onderrand van het beeld, 100% de rechter- of bovenrand, 0% het midden.",
+        "data": {
+          "x": "Links - rechts",
+          "z": "Onder - boven"
+        }
+      },
+      "ha_lights_rate": {
+        "title": "Veel lampen op één netwerk",
+        "description": "{count} van deze lampen delen één Hue-bridge of Thread-netwerk. Glowcast stuurt elk daarvan hoogstens {limit} opdrachten per seconde, dus deze lampen veranderen ongeveer elke {seconds} seconden in plaats van elke seconde. Voor Hue-lampen volgt een entertainmentruimte het beeld veel vloeiender. Klik op Verzenden om toch op te slaan."
+      },
+      "ha_lights_changes": {
+        "title": "De lampen zijn veranderd",
+        "description": "Lampen die erbij zijn gekomen sinds je ze een plek gaf, en die het midden van het beeld volgen tot je ze een plek geeft: {joined}.\n\nLampen die weg zijn en niet meer worden gebruikt: {left}. Hun plekken worden verwijderd als je opslaat."
       }
     },
     "abort": {
       "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en is ingesteld in de integratie Philips Hue.",
       "no_areas": "Deze Hue Bridge heeft geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes).",
-      "reauth_required": "De Hue Bridge accepteert de sleutel van Glowcast niet meer. Home Assistant vraagt je om opnieuw te koppelen."
+      "reauth_required": "De Hue Bridge accepteert de sleutel van Glowcast niet meer. Home Assistant vraagt je om opnieuw te koppelen.",
+      "no_bridge": "Geen Hue Bridge gevonden die kan streamen. Stel eerst een Hue Bridge v2 of Hue Bridge Pro in met de integratie Philips Hue."
+    },
+    "progress": {
+      "pair": "Wachten op de koppelknop van de Hue Bridge (maximaal 30 seconden)."
+    },
+    "error": {
+      "cannot_connect": "De Hue Bridge is niet bereikbaar. Controleer of hij aan staat en met het netwerk is verbonden.",
+      "button_not_pressed": "De koppelknop is niet op tijd ingedrukt. Druk erop en klik daarna opnieuw op Verzenden.",
+      "no_areas": "Deze Hue Bridge heeft nog geen entertainmentruimtes. Maak er een aan in de Hue-app (Instellingen, Entertainmentruimtes) en klik daarna op Verzenden.",
+      "ha_lights_no_lights": "Home Assistant heeft nog geen kleurenlampen.",
+      "ha_lights_no_area": "Geen enkele ruimte in Home Assistant heeft kleurenlampen. Wijs eerst lampen toe aan een ruimte.",
+      "ha_lights_no_group": "Home Assistant heeft geen lampgroepen met kleurenlampen.",
+      "ha_lights_none_chosen": "Kies minstens één kleurenlamp."
     }
   },
   "selector": {
@@ -121,6 +284,23 @@
         "medium": "Middel (2 per seconde)",
         "high": "Hoog (3 per seconde)",
         "maximum": "Maximaal (zo snel als de tv toelaat)"
+      }
+    },
+    "ha_lights_follow": {
+      "options": {
+        "lights": "Losse lampen",
+        "area": "Een ruimte in Home Assistant",
+        "group": "Een lampgroep"
+      }
+    },
+    "ha_lights_position": {
+      "options": {
+        "left": "Links van het scherm",
+        "right": "Rechts van het scherm",
+        "top": "Boven het scherm",
+        "bottom": "Onder het scherm",
+        "ambient": "Sfeer (het midden van het beeld)",
+        "custom": "Fijn afstellen"
       }
     }
   },
@@ -145,6 +325,12 @@
       },
       "entertainment_area": {
         "name": "Entertainmentruimte"
+      },
+      "loose_lights": {
+        "name": "Lampen",
+        "state": {
+          "chosen_lights": "Gekozen lampen"
+        }
       }
     },
     "sensor": {
@@ -203,6 +389,10 @@
     "hue_entertainment_bridge_app_left": {
       "title": "Glowcast {name}: verwijder ook de app van de Hue-bridge",
       "description": "Glowcast is uit Home Assistant verwijderd, maar de app van Glowcast staat nog op de Hue-bridge. De sleutel van die app geeft volledige toegang tot de bridge. Verwijder hem in de Hue-app: ga naar **Instellingen → Toepassingen → Netwerk-gebaseerd**, tik op de infoknop naast **glowcast** en verwijder hem."
+    },
+    "ha_lights_not_found": {
+      "title": "Glowcast {name}: geen kleurenlampen om te volgen",
+      "description": "Glowcast kan niet synchroniseren omdat de lampen die het volgt weg zijn: de ruimte of lampgroep is verwijderd, of heeft geen kleurenlampen meer. Kies andere lampen in de instellingen van Glowcast en zet Glowcast daarna weer aan."
     }
   }
 }

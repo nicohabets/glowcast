@@ -84,6 +84,12 @@ class Thresholds:
     clip_p95: float = 240.0
     min_white_lift: float = 60.0
     max_ambient: float = 0.35
+    # Loose lights (#9): a colour counts once this long after a change (the
+    # engine's smoothing, a command per second with a 1 s fade and the light's
+    # report about once per second); commands may come this much early
+    # (the send loop's tick and the event's time).
+    loose_settle_s: float = 4.0
+    rate_slack_s: float = 0.15
 
 
 @dataclasses.dataclass(frozen=True)

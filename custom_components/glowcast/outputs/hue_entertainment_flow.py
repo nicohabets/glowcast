@@ -1,7 +1,8 @@
 """The Hue entertainment-area output type's steps (architecture 4.1 and 4.2).
 
 Setup: pick the bridge, press its link button, pair, pick the area. Reauth:
-press the link button again. The options screen: the area.
+press the link button again. The options screen: the area, or the same steps
+as at setup when the entry has not paired with a bridge yet (#9).
 """
 
 import asyncio
@@ -16,7 +17,6 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from ..const import CONF_OUTPUT, CONF_TYPE, CONF_UNIQUE_ID
@@ -46,9 +46,8 @@ class HueEntertainmentSteps(ConfigEntryBaseFlow):
     """Pair with a Hue bridge and pick an entertainment area.
 
     Uses only what the setup flow and the options flow both have, plus the
-    hooks in flow.py (`entry_title`, `async_output_chosen`). The setup flow
-    provides those; the options flow must add them before it runs these steps
-    to pair from the settings (#9).
+    hooks in flow.py (`entry_title`, `async_output_chosen`), which both flows
+    provide, so the options flow pairs from the settings with these steps (#9).
     """
 
     _hue_bridge_unique_id = ""
@@ -56,6 +55,8 @@ class HueEntertainmentSteps(ConfigEntryBaseFlow):
     _hue_keys: tuple[str, str] = ("", "")
     _hue_pair_task: asyncio.Task[tuple[str, str]] | None = None
     _hue_error: str | None = None
+    # The area shown as chosen on the area form (the stored one, in the options).
+    _hue_area_default: str | None = None
     # Where pairing goes on: the step after a new key, and the step that asks
     # for the link button again when pairing failed.
     _hue_paired_step = "area"
@@ -161,9 +162,21 @@ class HueEntertainmentSteps(ConfigEntryBaseFlow):
             )
         if not areas:
             return self.async_show_form(step_id="area", errors={"base": "no_areas"})
+        return self._hue_area_form(areas)
+
+    def _hue_area_form(self, areas: dict[str, str]) -> ConfigFlowResult:
+        """The area form; a removed area is not offered, so the user picks another."""
+        default = self._hue_area_default
         return self.async_show_form(
             step_id="area",
-            data_schema=vol.Schema({vol.Required(FIELD_AREA): dropdown(areas)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        FIELD_AREA,
+                        default=default if default in areas else vol.UNDEFINED,
+                    ): dropdown(areas)
+                }
+            ),
         )
 
     @callback
@@ -225,34 +238,43 @@ class HueEntertainmentConfigSteps(HueEntertainmentSteps, ConfigFlow):
         return self.async_abort(reason="reauth_successful")
 
 
-async def async_options_fields(flow: OptionsFlow) -> dict[vol.Marker, Any]:
-    """The area on the options screen, from the bridge's current list.
+class HueEntertainmentOptionsSteps(HueEntertainmentSteps, OptionsFlow):
+    """The settings screen's steps: the area, or pairing first (#9)."""
 
-    Raises AbortFlow when the list cannot be read. Tells the area entity the
-    list it read, so both show the same areas.
-    """
-    entry = flow.config_entry
-    bridge = entry.data[CONF_BRIDGE]
-    host = bridge_host(flow.hass, bridge[CONF_UNIQUE_ID])
-    if host is None:
-        raise AbortFlow("cannot_connect")
-    try:
-        areas = await async_areas(flow.hass, host, bridge[CONF_APP_KEY])
-    except OutputAuthFailed:
-        entry.async_start_reauth(flow.hass)
-        raise AbortFlow("reauth_required") from None
-    except OutputUnavailable:
-        raise AbortFlow("cannot_connect") from None
-    async_dispatcher_send(flow.hass, signal_areas_read(entry.entry_id), areas)
-    if not areas:
-        raise AbortFlow("no_areas")
-    area_id = entry.options[CONF_OUTPUT][CONF_AREA_ID]
-    return {
-        # A removed area is not offered, so the user must pick another.
-        vol.Required(
-            FIELD_AREA, default=area_id if area_id in areas else vol.UNDEFINED
-        ): dropdown(areas),
-    }
+    async def async_step_hue_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the area from the bridge's current list; pair first if needed.
+
+        An entry set up with another output type has no `bridge` block yet:
+        then the setup's steps pair with a bridge. Aborts when the list cannot
+        be read, and starts reauth when the bridge rejects the key. Tells the
+        area entity the list it read, so both show the same areas.
+        """
+        entry = self.config_entry
+        if CONF_BRIDGE not in entry.data:
+            return await self.async_step_bridge()
+        bridge = entry.data[CONF_BRIDGE]
+        output = entry.options[CONF_OUTPUT]
+        if output.get(CONF_TYPE) == OUTPUT_HUE_ENTERTAINMENT:
+            self._hue_area_default = output.get(CONF_AREA_ID)
+        host = bridge_host(self.hass, bridge[CONF_UNIQUE_ID])
+        if host is None:
+            return self.async_abort(reason="cannot_connect")
+        try:
+            areas = await async_areas(self.hass, host, bridge[CONF_APP_KEY])
+        except OutputAuthFailed:
+            entry.async_start_reauth(self.hass)
+            return self.async_abort(reason="reauth_required")
+        except OutputUnavailable:
+            return self.async_abort(reason="cannot_connect")
+        async_dispatcher_send(self.hass, signal_areas_read(entry.entry_id), areas)
+        if not areas:
+            return self.async_abort(reason="no_areas")
+        self._hue_bridge_unique_id = bridge[CONF_UNIQUE_ID]
+        self._hue_host = host
+        self._hue_keys = (bridge[CONF_APP_KEY], bridge[CONF_CLIENT_KEY])
+        return self._hue_area_form(areas)
 
 
 def options_output(user_input: Mapping[str, Any]) -> dict[str, Any]:

@@ -1,9 +1,10 @@
 {
   "domain": "glowcast",
   "name": "Glowcast",
+  "after_dependencies": ["hue"],
   "codeowners": ["@nicohabets"],
   "config_flow": true,
-  "dependencies": ["webostv", "hue"],
+  "dependencies": ["webostv"],
   "documentation": "https://nicohabets.github.io/glowcast/docs/",
   "integration_type": "service",
   "iot_class": "local_polling",

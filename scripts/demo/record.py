@@ -232,8 +232,13 @@ def menu_item(rec: Recorder, step: str) -> Locator:
 
 
 def hue_steps(rec: Recorder) -> None:
-    """The output's steps, after the source's: bridge, link, area, done."""
+    """The output's steps, after the source's: the output menu, bridge, link,
+    area, done."""
     page = rec.page
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "bridge"))
+    page.locator(PRIMARY).wait_for()
     rec.step("bridge")
     rec.submit()
     rec.step("link")
@@ -406,6 +411,12 @@ def settings(rec: Recorder) -> None:
     rec.begin()
     configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
     rec.click(page.get_by_role("button", name=configure).first)
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "hue_options"))
+    page.locator(PRIMARY).wait_for()
+    rec.step("area")
+    rec.submit()
     page.locator(PRIMARY).wait_for()
     rec.step("settings")
     rec.click(page.locator(f"{DIALOG} ha-picker-field").last)
@@ -533,9 +544,115 @@ def row(rec: Recorder, entity_id: str) -> Locator:
     return rows.nth(index)
 
 
+# The area of the glowcast_demo stub's demo lights (light.py).
+DEMO_AREA_ID = "living_room"
+
+
+def radio(rec: Recorder, index: int) -> Locator:
+    """The radio button at this place of the open form's list."""
+    return rec.page.locator(DIALOG).get_by_role("radio").nth(index)
+
+
+def loose_setup(rec: Recorder) -> None:
+    """Set up loose lights (#9): Loose lights, an area, a place per light."""
+    page = rec.page
+    open_setup(rec)
+    rec.click(menu_item(rec, "tv"))
+    page.locator(PRIMARY).wait_for()
+    rec.step("tv")
+    rec.submit()
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "ha_lights"))
+    radio(rec, 0).wait_for()
+    rec.step("follow")
+    rec.click(radio(rec, 1))  # a Home Assistant area
+    rec.step("follow-area")
+    rec.submit()
+    page.locator(f"{DIALOG} ha-picker-field").wait_for()
+    rec.step("area")
+    rec.click(page.locator(f"{DIALOG} ha-picker-field"))
+    rec.click(rec.option(DEMO_AREA_ID))
+    rec.step("area-chosen")
+    rec.submit()
+    radio(rec, 0).wait_for()
+    rec.step("first-light")
+    rec.click(radio(rec, 0))  # left of the screen
+    rec.submit()
+    page.wait_for_timeout(500)
+    rec.step("second-light")
+    rec.click(radio(rec, 5))  # fine-tune
+    rec.submit()
+    page.locator(f"{DIALOG} ha-slider").first.wait_for()
+    rec.step("fine-tune")
+    rec.click(page.locator(f"{DIALOG} ha-slider").first, at=0.9)
+    rec.click(page.locator(f"{DIALOG} ha-slider").nth(1), at=0.3)
+    rec.step("fine-tuned")
+    rec.submit()
+    rec.step("done")
+    rec.submit()
+    rec.step("integration")
+
+
+def loose_settings(rec: Recorder) -> None:
+    """From loose lights to an entertainment area in the settings (#9): the
+    output menu, pairing with the bridge, the area, the common settings."""
+    page = rec.page
+    create_loose_entry(rec)
+    rec.goto("/config/integrations/integration/glowcast")
+    rec.begin()
+    configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
+    rec.click(page.get_by_role("button", name=configure).first)
+    page.locator(f"{DIALOG} step-flow-menu").wait_for()
+    rec.step("output")
+    rec.click(menu_item(rec, "hue_options"))
+    page.locator(PRIMARY).wait_for()
+    rec.step("bridge")
+    rec.submit()
+    rec.step("link")
+    rec.submit()
+    rec.step("pairing")
+    rec.press_link_button()
+    page.locator(f"{DIALOG} ha-picker-field").wait_for(timeout=15000)
+    rec.step("area")
+    rec.click(page.locator(f"{DIALOG} ha-picker-field"))
+    rec.click(rec.option(TV_AREA_ID))
+    rec.submit()
+    page.locator(PRIMARY).wait_for()
+    rec.step("settings")
+    rec.submit()
+    rec.step("saved")
+
+
+def create_loose_entry(rec: Recorder) -> None:
+    """A Glowcast entry with loose lights, through the setup flow's API."""
+    flow = rec.page.evaluate(
+        f"() => {HASS}.callApi('POST', 'config/config_entries/flow', "
+        "{handler: 'glowcast'})"
+    )
+    path = f"config/config_entries/flow/{flow['flow_id']}"
+    tv = rec.page.evaluate(
+        f"([p, d]) => {HASS}.callApi('POST', p, d)", [path, {"next_step_id": "tv"}]
+    )
+    tv_id = tv["data_schema"][0]["selector"]["select"]["options"][0]["value"]
+    for data in (
+        {"tv": tv_id},
+        {"next_step_id": "ha_lights"},
+        {"follow": "area"},
+        {"area": DEMO_AREA_ID},
+        {"position": "left"},
+        {"position": "right"},
+    ):
+        flow = rec.page.evaluate(
+            f"([p, d]) => {HASS}.callApi('POST', p, d)", [path, data]
+        )
+    if flow.get("type") != "create_entry":
+        raise RuntimeError(f"The loose-lights setup did not finish: {flow}")
+
+
 # Flows that need the glowcast_demo stub: switching Glowcast on needs its fake
 # TV source and lights, a discovery its service.
-SYNCING_FLOWS = {"entities", "screen-discovery"}
+SYNCING_FLOWS = {"entities", "screen-discovery", "loose-setup", "loose-settings"}
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
@@ -543,9 +660,17 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "entities": entities,
     "screen-setup": screen_setup,
     "screen-discovery": screen_discovery,
+    "loose-setup": loose_setup,
+    "loose-settings": loose_settings,
 }
 # Flows that set Glowcast up themselves: they start without an entry.
-SETUP_FLOWS = {"setup", "screen-setup", "screen-discovery"}
+SETUP_FLOWS = {
+    "setup",
+    "screen-setup",
+    "screen-discovery",
+    "loose-setup",
+    "loose-settings",
+}
 
 
 def prepare(rec: Recorder, flow: str) -> None:

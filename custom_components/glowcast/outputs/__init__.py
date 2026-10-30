@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -14,7 +13,14 @@ from ..const import CONF_OUTPUT, CONF_TYPE
 from ..core.pipeline import StopReason
 from ..core.ports import LightOutput
 from ..issues import Issue
-from . import hue_area_select, hue_entertainment, hue_entertainment_flow
+from . import (
+    ha_lights,
+    ha_lights_flow,
+    ha_lights_select,
+    hue_area_select,
+    hue_entertainment,
+    hue_entertainment_flow,
+)
 
 
 @dataclass(frozen=True)
@@ -41,12 +47,15 @@ class OutputType:
     steps: type[ConfigFlow] | None = None
     setup_step: str | None = None
     reauth_step: str | None = None
-    # The type's part of the options screen: its fields (may raise AbortFlow),
-    # and its block in `options["output"]` from what the user chose.
-    options_fields: Callable[[OptionsFlow], Awaitable[dict[vol.Marker, Any]]] | None = (
-        None
-    )
-    options_output: Callable[[Mapping[str, Any]], dict[str, Any]] | None = None
+    # The type's steps in the settings screen: a mixin of async_step_ methods
+    # for the options flow, and the step that starts them. They end, as at
+    # setup, with `async_output_chosen` (flow.py).
+    options_steps: type[OptionsFlow] | None = None
+    options_step: str | None = None
+    # The keys of the type's own entities: their unique ids are
+    # f"{entry_id}_{key}". When an entry changes to another type, the entities
+    # of the previous one are removed with these keys (architecture 4.2).
+    entity_keys: tuple[str, ...] = ()
     # The repair issue when the integration entry it uses is missing, and the
     # ones for stop reasons the user must fix in the settings.
     missing: Issue | None = None
@@ -64,8 +73,9 @@ OUTPUTS = {
         steps=hue_entertainment_flow.HueEntertainmentConfigSteps,
         setup_step="bridge",
         reauth_step="reauth_confirm",
-        options_fields=hue_entertainment_flow.async_options_fields,
-        options_output=hue_entertainment_flow.options_output,
+        options_steps=hue_entertainment_flow.HueEntertainmentOptionsSteps,
+        options_step="hue_options",
+        entity_keys=(hue_area_select.ENTITY_KEY,),
         missing=hue_entertainment.MISSING,
         stop_issues={
             StopReason.OUTPUT_TOO_MANY_CHANNELS: hue_entertainment.TOO_MANY_CHANNELS,
@@ -73,11 +83,30 @@ OUTPUTS = {
         },
         async_removed=hue_entertainment.async_removed,
     ),
+    # Loose lights: any colour light through Home Assistant (#9).
+    ha_lights.OUTPUT_HA_LIGHTS: OutputType(
+        ha_lights.create,
+        ha_lights.is_missing,
+        ha_lights.device_id,
+        {Platform.SELECT: ha_lights_select.entities},
+        steps=ha_lights_flow.HaLightsConfigSteps,
+        setup_step="ha_lights",
+        options_steps=ha_lights_flow.HaLightsOptionsSteps,
+        options_step="ha_lights_options",
+        entity_keys=(ha_lights_select.ENTITY_KEY,),
+        stop_issues={StopReason.OUTPUT_NOT_FOUND: ha_lights.NO_LIGHTS},
+    ),
 }
 
-# Every output type's setup steps, for the one registered flow.
+# Every output type's setup steps, for the one registered flow, and its
+# steps in the settings screen, for the options flow.
 OUTPUT_STEPS = tuple(
     output_type.steps for output_type in OUTPUTS.values() if output_type.steps
+)
+OUTPUT_OPTIONS_STEPS = tuple(
+    output_type.options_steps
+    for output_type in OUTPUTS.values()
+    if output_type.options_steps
 )
 
 

@@ -3,16 +3,13 @@
 - **About 3 captures per second.** That is the TV's capture limit, so the lights follow scenes, not every flash or cut. It works well as ambient light, but it is not as fast as the HDMI Sync Box.
 - **While syncing**, the lights in the entertainment area only listen to Glowcast. The Hue app and Home Assistant get them back when syncing stops.
 - **One stream per bridge at a time** (as far as known; being checked for the Bridge Pro, [#37](https://github.com/nicohabets/glowcast/issues/37)). A Hue bridge streams to one entertainment area at a time, so two Glowcast entries (two TVs) on one bridge cannot sync together.
-- **Only the lights in the entertainment area follow the picture.** Coming in v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps outside the entertainment area will each follow their own side of the picture.
+- **Loose lights change about once per second**, with a fade, and at most 4 commands per second go to each Hue bridge and each Thread network, so with more lights each changes less often (see [How fast](loose-lights.md#how-fast)). A gradient lightstrip gets one colour as a loose light.
+- **An entertainment area and loose lights in one Glowcast entry** are planned ([#76](https://github.com/nicohabets/glowcast/issues/76)); today an entry uses one or the other.
 - **Choosing another entertainment area while syncing** briefly restarts the light stream (a few seconds). Brightness, intensity and the update rate change without a restart.
 - **TV lightstrip segments sample about 30 % in from the picture's edges**, not the edges themselves, because of where the Hue app places them. Improving this is planned ([#23](https://github.com/nicohabets/glowcast/issues/23)).
 - **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so Glowcast cannot follow them. After 7 s without a picture it lets go of the lights, so they return to how they were before syncing (about 8 s after the app starts); Glowcast stays on and follows the picture again as soon as there is one. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update.
 - **Glowcast's icon** in Settings → Devices & services only shows on Home Assistant 2026.3 or newer; older versions show no icon for Glowcast.
 - **Tested on one TV model so far**, a 2023 LG G3. Other webOS TVs should work the same way, but that is not confirmed yet.
-
-![The same room with extra lamps beside the sofa, each following its own side of the picture.](../images/illustrations/scene-4-loose-lights.svg){ width="400" loading=lazy }
-
-*Coming in v0.3 ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps outside the entertainment area will each follow their own side of the picture.*
 
 **Tried it on your TV?** Please tell us how it went, also when it just works: [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version, bridge and how many captures per second you get (the [Capture rate](status.md#the-capture-rate) sensor shows it).

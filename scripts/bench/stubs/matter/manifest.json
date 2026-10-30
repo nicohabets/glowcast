@@ -1,0 +1,10 @@
+{
+  "domain": "matter",
+  "name": "Matter (bench stub)",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/nicohabets/glowcast/blob/main/scripts/README.md",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.0.0"
+}

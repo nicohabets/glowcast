@@ -22,7 +22,9 @@ async def test_integration_loads(
     integration = await async_get_integration(hass, DOMAIN)
 
     assert integration.domain == DOMAIN
-    assert integration.dependencies == ["webostv", "hue"]
+    assert integration.dependencies == ["webostv"]
+    # Hue is optional since loose lights (#9): set up first when it is there.
+    assert integration.after_dependencies == ["hue"]
     assert integration.requirements == ["hue-entertainment==0.1.2"]
 
 

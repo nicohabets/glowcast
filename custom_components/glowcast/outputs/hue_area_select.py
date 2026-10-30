@@ -51,6 +51,8 @@ _LOGGER = logging.getLogger(__name__)
 # Seconds before reading the list again after a failure, doubled each time.
 RETRY_FIRST = 30.0
 RETRY_MAX = 600.0
+# Its unique id is f"{entry_id}_{ENTITY_KEY}", and its translation key.
+ENTITY_KEY = "entertainment_area"
 
 
 def entities(hass: HomeAssistant, entry: ConfigEntry) -> list[Entity]:
@@ -63,7 +65,7 @@ class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize for one Glowcast entry."""
-        super().__init__(hass, entry, "entertainment_area")
+        super().__init__(hass, entry, ENTITY_KEY)
         # {area id: name}: read from the bridge, or restored from before a
         # restart, and {area id: label} made from it. Not a setting: the
         # chosen id stays in the options only.

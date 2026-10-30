@@ -3,14 +3,15 @@
 import asyncio
 import logging
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import aiohttp
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_API_VERSION, CONF_HOST
+from homeassistant.const import CONF_API_KEY, CONF_API_VERSION, CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.translation import async_get_translations
 from hue_entertainment import EntertainmentSession, HueEntertainmentAPI
@@ -66,6 +67,8 @@ TOO_MANY_CHANNELS = Issue(
 NOTICE_BRIDGE_APP_LEFT = "bridge_app_left"
 NOTICE_TRANSLATION_KEY = "hue_entertainment_bridge_app_left"
 AREAS_PATH = "/clip/v2/resource/entertainment_configuration"
+LIGHTS_PATH = "/clip/v2/resource/light"
+ENTERTAINMENT_PATH = "/clip/v2/resource/entertainment"
 AUTH_PATH = "/auth/v1"
 
 MAX_CHANNELS = 20  # HueStream limit per message
@@ -460,6 +463,70 @@ async def _async_clip_get(
         raise _response_error(err) from None
     except (aiohttp.ClientError, OSError, ValueError):
         raise OutputUnavailable("Could not reach the Hue bridge") from None
+
+
+# For loose lights (#9): whether picked Hue lights could stream instead.
+HINT_AREA = "area"  # they can join an entertainment area, and the bridge has one
+HINT_NO_AREA = "no_area"  # they can join one, but the bridge has none yet
+HINT_TIMEOUT = 10.0
+
+
+async def async_entertainment_hint(
+    hass: HomeAssistant, entity_ids: Iterable[str]
+) -> str | None:
+    """Whether some of these lights are Hue lights that can join an area.
+
+    HINT_AREA or HINT_NO_AREA if so, None if none of them can (other lights,
+    older Hue lights or other brands' lights on a bridge), or when the bridge
+    cannot be asked. Asks each bridge through Home Assistant's own hue entry
+    (its host and key, read at runtime, never stored): the bridge lists which
+    devices can render entertainment, and its areas.
+    """
+    registry = er.async_get(hass)
+    per_entry: dict[str, set[str]] = {}
+    for entity_id in entity_ids:
+        entry = registry.async_get(entity_id)
+        if entry is not None and entry.platform == HUE_DOMAIN and entry.config_entry_id:
+            per_entry.setdefault(entry.config_entry_id, set()).add(entry.unique_id)
+    hint: str | None = None
+    for entry_id, light_ids in per_entry.items():
+        hue_entry = hass.config_entries.async_get_entry(entry_id)
+        if (
+            hue_entry is None
+            or hue_entry.state is not ConfigEntryState.LOADED
+            or hue_entry.data.get(CONF_API_VERSION) != 2
+        ):
+            continue
+        host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+        try:
+            async with asyncio.timeout(HINT_TIMEOUT):
+                lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
+                renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
+                areas = await _async_clip_data(hass, host, key, AREAS_PATH)
+        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+            continue
+        devices = {
+            (item.get("owner") or {}).get("rid")
+            for item in renderers
+            if item.get("renderer")
+        }
+        if any(
+            light.get("id") in light_ids
+            and (light.get("owner") or {}).get("rid") in devices
+            for light in lights
+        ):
+            if areas:
+                return HINT_AREA
+            hint = HINT_NO_AREA
+    return hint
+
+
+async def _async_clip_data(
+    hass: HomeAssistant, host: str, key: str, path: str
+) -> list[dict[str, Any]]:
+    _, result = await _async_clip_get(hass, host, key, path)
+    data = result.get("data", []) if isinstance(result, dict) else []
+    return [item for item in data if isinstance(item, dict)]
 
 
 def _device_type(name: str) -> str:

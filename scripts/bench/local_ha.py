@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,14 @@ TITLE = "Bench"
 EXTRA_CONFIGURATION = """\
 diagnostics:
 """
+# Loose lights (#9): proxy lights under stub `hue` and `matter` entries
+# (stubs/proxy.py), and the service that stores Glowcast's lights.
+STUBS = Path(__file__).resolve().parent / "stubs"
+PROXY = "bench_proxy"  # the stub entries' data key (stubs/proxy.py)
+LOOSE_CONFIGURATION = """\
+glowcast_bench:
+"""
+MATTER_UNIQUE_ID = "bench-thread"
 
 
 def instance() -> demo.Instance:
@@ -80,13 +89,65 @@ def glowcast_entry(
     return entry
 
 
-def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, str]:
-    """A fresh config with the entries, Home Assistant started; returns a token."""
+def loose_glowcast_entry(
+    *, helper: dict[str, Any], settings: dict[str, Any]
+) -> dict[str, Any]:
+    """Glowcast's entry with the loose-lights output (no `bridge` in data).
+
+    No lights yet: they are stored by entity registry id, known only once
+    Home Assistant has added the proxy lights (`glowcast_bench.set_output`).
+    """
+    entry = demo._entry(
+        "glowcast",
+        TITLE,
+        helper["helper_id"],
+        {"source": {"type": "screen", **helper}},
+    )
+    entry["entry_id"] = ENTRY_ID
+    entry["options"] = {
+        "output": {"type": "ha_lights", "follow": "lights", "lights": []},
+        **settings,
+    }
+    return entry
+
+
+def stub_entry_id(domain: str) -> str:
+    """The id of a stub entry the bench writes (demo._entry's)."""
+    return demo._entry(domain, "", "", {})["entry_id"]
+
+
+def proxy_block(url: str, token: str, lights: list[dict[str, str]]) -> dict[str, Any]:
+    """A stub entry's proxy lights: [{"unique_id", "name", "source"}]."""
+    return {"url": url, "token": token, "lights": lights}
+
+
+def _add_loose_stubs(inst: demo.Instance) -> None:
+    """The bench's `hue` overlay (the demo's stub plus proxy lights), its
+    `matter` stub and `glowcast_bench`, in this instance only."""
+    custom = inst.config / "custom_components"
+    for name in ("hue", "matter", "glowcast_bench"):
+        shutil.copytree(STUBS / name, custom / name, dirs_exist_ok=True)
+    for name in ("hue", "matter"):
+        shutil.copy(STUBS / "proxy.py", custom / name / "proxy.py")
+
+
+def start(
+    bridge_host: str,
+    glowcast: dict[str, Any],
+    proxies: dict[str, dict[str, Any]] | None = None,
+) -> tuple[demo.Instance, str]:
+    """A fresh config with the entries, Home Assistant started; returns a token.
+
+    `proxies` ({"hue": block, "matter": block}, see proxy_block): proxy lights
+    for loose lights under the stub `hue` entry and a stub `matter` entry.
+    """
     inst = instance()
     stop()
     with demo._lock():
         demo._install(browser=False)  # the bench needs no Chromium
-        port = demo._free_port(HA_PORT, set())
+        # Not a port of another running bench instance (Home Assistant binds
+        # its port only after a while), nor one something listens on.
+        port = demo._free_port(HA_PORT, _taken_ports(inst))
         inst.home.mkdir(parents=True, exist_ok=True)
         state = inst.home / "state.json"
         state.write_text(
@@ -104,18 +165,30 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
         # the bench's own entries over its entries.
         demo._write_config(inst)
         (inst.config / "configuration.yaml").write_text(
-            demo.CONFIGURATION + EXTRA_CONFIGURATION
+            demo.CONFIGURATION
+            + EXTRA_CONFIGURATION
+            + (LOOSE_CONFIGURATION if proxies is not None else "")
         )
-        hue = demo._entry(
-            "hue",
-            "Hue Bridge",
-            BRIDGE_UNIQUE_ID,
-            {"host": bridge_host, "api_key": "unused-by-glowcast", "api_version": 2},
-        )
+        hue_data: dict[str, Any] = {
+            "host": bridge_host,
+            "api_key": "unused-by-glowcast",
+            "api_version": 2,
+        }
+        entries = [demo._entry("hue", "Hue Bridge", BRIDGE_UNIQUE_ID, hue_data)]
+        if proxies is not None:
+            _add_loose_stubs(inst)
+            if "hue" in proxies:
+                hue_data[PROXY] = proxies["hue"]
+            if "matter" in proxies:
+                entries.append(
+                    demo._entry(
+                        "matter", "Matter", MATTER_UNIQUE_ID, {PROXY: proxies["matter"]}
+                    )
+                )
         demo._write_storage(
             inst.config,
             "core.config_entries",
-            {"entries": [hue, glowcast]},
+            {"entries": [*entries, glowcast]},
             minor_version=5,
         )
         _private(inst.home)
@@ -129,10 +202,32 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
         demo._wait_for_ha(inst)
         token = demo._onboard(inst)
         demo._wait_until_running(inst, token)
+        _check_own(inst, token)
     except BaseException:
         stop()
         raise
     return inst, token
+
+
+def _taken_ports(inst: demo.Instance) -> set[int | None]:
+    """The Home Assistant ports of the other running bench instances."""
+    taken: set[int | None] = set()
+    if INSTANCES.exists():
+        for home in INSTANCES.iterdir():
+            other = demo.Instance(home.name, home)
+            if home != inst.home and demo._running(other):
+                taken.add(other.state.get("ha_port"))
+    return taken
+
+
+def _check_own(inst: demo.Instance, token: str) -> None:
+    """Exit (start() then stops it) unless the Home Assistant on the port is
+    this instance: another one there would get the bench's calls."""
+    config_dir = demo._request(inst, "GET", "/api/config", token=token).get(
+        "config_dir"
+    )
+    if Path(str(config_dir)).resolve() != inst.config.resolve():
+        sys.exit("Another Home Assistant answers on the bench instance's port")
 
 
 def _private(home: Path) -> None:

@@ -10,6 +10,7 @@ import contextlib
 import json
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -31,6 +32,8 @@ class LocalHA:
         self._token = token
         self.entities: dict[str, str] = {}  # key (switch, status, ...) -> entity id
         self.events: list[tuple[float, str, str, dict[str, Any]]] = []
+        # light.turn_on calls (loose lights, #9): (time fired, service data).
+        self.calls: list[tuple[float, dict[str, Any]]] = []
         self._task: asyncio.Task[None] | None = None
         self._listeners: list[Callable[[str, str], None]] = []
 
@@ -75,6 +78,20 @@ class LocalHA:
                         break
             return results
 
+    async def reload_entry(self, entry_id: str) -> None:
+        """Reload a config entry (one that waits to retry its setup)."""
+        async with self.session.post(
+            f"{self.url}/api/config/config_entries/entry/{entry_id}/reload",
+            headers=self._headers,
+            timeout=TIMEOUT,
+        ) as r:
+            r.raise_for_status()
+
+    async def registry(self) -> list[dict[str, Any]]:
+        """The entity registry's entries (with their registry `id`)."""
+        (registry,) = await self._ws([{"type": "config/entity_registry/list"}])
+        return registry
+
     async def find_entities(self, entry_id: str) -> dict[str, str]:
         """The Glowcast entry's entities by their key (the unique id's suffix)."""
         (registry,) = await self._ws([{"type": "config/entity_registry/list"}])
@@ -91,7 +108,8 @@ class LocalHA:
         return found
 
     async def follow(self) -> None:
-        """Record state changes of the Glowcast entities (WSL time.time())."""
+        """Record state changes of the Glowcast entities (WSL time.time()) and
+        the light.turn_on calls (the time they were fired, WSL clock)."""
         ids = {v: k for k, v in self.entities.items()}
 
         async def run() -> None:
@@ -102,10 +120,16 @@ class LocalHA:
                 await ws.send_json(
                     {"id": 1, "type": "subscribe_events", "event_type": "state_changed"}
                 )
+                await ws.send_json(
+                    {"id": 2, "type": "subscribe_events", "event_type": "call_service"}
+                )
                 async for message in ws:
                     if message.type != aiohttp.WSMsgType.TEXT:
                         continue
                     data = json.loads(message.data)
+                    if data.get("id") == 2 and data.get("type") == "event":
+                        self._record_call(data["event"])
+                        continue
                     event = data.get("event", {}).get("data", {})
                     key = ids.get(event.get("entity_id", ""))
                     if key is None or event.get("new_state") is None:
@@ -118,6 +142,16 @@ class LocalHA:
                         listener(key, new["state"])
 
         self._task = asyncio.create_task(run())
+
+    def _record_call(self, event: dict[str, Any]) -> None:
+        data = event.get("data", {})
+        if data.get("domain") != "light" or data.get("service") != "turn_on":
+            return
+        with contextlib.suppress(KeyError, ValueError, TypeError):
+            fired = datetime.fromisoformat(
+                event["time_fired"].replace("Z", "+00:00")
+            ).timestamp()
+            self.calls.append((fired, dict(data.get("service_data") or {})))
 
     def states_of(self, key: str, start: float, end: float) -> list[str]:
         """The states the entity had between two WSL times (also the one before)."""
@@ -171,6 +205,9 @@ class OwnerHA:
         self._headers = {"Authorization": f"Bearer {token}"}
         self.lights = list(lights)
         self.tv_switch = tv_switch
+        # Polled states of lights (loose lights, #9): (WSL time, entity, state).
+        self.samples: list[tuple[float, str, dict[str, Any]]] = []
+        self._task: asyncio.Task[None] | None = None
 
     async def state(self, entity_id: str) -> dict[str, Any]:
         if entity_id not in (*self.lights, self.tv_switch):
@@ -202,6 +239,28 @@ class OwnerHA:
             timeout=TIMEOUT,
         ) as r:
             r.raise_for_status()
+
+    def follow(self, entity_ids: list[str], interval: float = 1.0) -> None:
+        """Poll the lights' states (about once per `interval`), until close()."""
+
+        async def one(entity: str) -> None:
+            with contextlib.suppress(aiohttp.ClientError, TimeoutError, ValueError):
+                state = await self.state(entity)
+                self.samples.append((time.time(), entity, state))
+
+        async def run() -> None:
+            while True:
+                await asyncio.gather(*(one(e) for e in entity_ids))
+                await asyncio.sleep(interval)
+
+        self._task = asyncio.create_task(run())
+
+    async def close(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+            self._task = None
 
 
 def restore_data(state: dict[str, Any]) -> tuple[str, dict[str, Any]]:

@@ -65,6 +65,37 @@ helper:
   port: 8489
   pairing_code: "135790"
 
+# Loose lights (#9), for `--suite loose`: lights of the Home Assistant above
+# that the bench's local Home Assistant mirrors as proxy lights, for
+# Glowcast's loose-lights output. The bench reads their states there and
+# forwards light.turn_on/turn_off to them, nothing else; it adds them to its
+# allow-list of lights. Per light:
+#   kind: hue or matter - the stub integration its proxy is under: all `hue`
+#     lights share one Hue network, all `matter` lights one Thread network,
+#     as Glowcast's rate limits see them (at most 4 commands per second each).
+#   light: (optional) the name of a camera light above that this light is;
+#     the camera judges it then, and entity_id defaults to that light's.
+#     Without it the light is judged by its state (rgb/hs) in that Home
+#     Assistant, so it need not be in the camera's view.
+#   entity_id: the light in that Home Assistant (needed without `light`).
+#   position: left, right, top, bottom or ambient; or x and z (-1..1: x from
+#     left to right, z from bottom to top), as in Glowcast's settings.
+# A Hue light must not be in an area that streams: the bridge ignores light
+# commands to it then (the bench area does not stream in this suite).
+loose_lights:
+  - kind: hue
+    light: wall
+    position: left
+  - kind: hue
+    light: spot
+    position: right
+  - kind: matter
+    entity_id: light.desk_lamp
+    x: -0.8
+    z: 0.0
+# Whole cycles of the helper's patterns to judge in the loose suite.
+loose_cycles: 1
+
 # Windows' uv.exe as a WSL path; empty: found with `where.exe uv`.
 uv: ""
 
