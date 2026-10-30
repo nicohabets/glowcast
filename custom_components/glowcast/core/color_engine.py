@@ -27,6 +27,11 @@ NEAR_TV = 0.5
 # Along an axis where a light's channels all sit closer to the centre than
 # this (all at the middle height, say), they are left where they are.
 MIN_SPREAD = 0.1
+# A light further back than NEAR_TV (y) blends its region's colour with the
+# colour of the whole picture: not at all at NEAR_TV, this share at the back
+# wall (y = -1), linearly in between (#15). So lights near the TV follow their
+# part of the picture and lights far from it follow more softly.
+FAR_BLEND = 0.5
 
 BLACK = (0.0, 0.0, 0.0)
 
@@ -132,12 +137,40 @@ def compute(
 
     intensity scales saturation: 0 = grey/white, 1 = as on screen, 2 = boosted.
     `picture` is the part of the frame inside letterbox bars, if any.
+    A channel further back than NEAR_TV gets part of the whole picture's colour
+    (`_far_blend`, #15); one without a depth (y None) gets its region's only.
     """
     regions = channel_regions(channels, frame.width, frame.height, picture)
-    return [
-        ChannelColor(channel.id, _saturate(_average(frame, region), intensity))
-        for channel, region in zip(channels, regions, strict=True)
-    ]
+    whole: tuple[float, float, float] | None = None
+    colors: list[ChannelColor] = []
+    for channel, region in zip(channels, regions, strict=True):
+        rgb = _average(frame, region)
+        blend = _far_blend(channel.y)
+        if blend > 0:
+            if whole is None:  # the whole picture, once per frame
+                whole = _average(frame, picture or (0, frame.width, 0, frame.height))
+            rgb = _mix(rgb, whole, blend)
+        colors.append(ChannelColor(channel.id, _saturate(rgb, intensity)))
+    return colors
+
+
+def _far_blend(y: float | None) -> float:
+    """The share of the whole picture's colour for a channel at depth y (#15):
+    0 at NEAR_TV or nearer and without a depth, FAR_BLEND at y = -1 or further."""
+    if y is None or y >= NEAR_TV:
+        return 0.0
+    return FAR_BLEND * min(1.0, (NEAR_TV - y) / (NEAR_TV + 1))
+
+
+def _mix(
+    a: tuple[float, float, float], b: tuple[float, float, float], share: float
+) -> tuple[float, float, float]:
+    """a with `share` of b."""
+    return (
+        a[0] + (b[0] - a[0]) * share,
+        a[1] + (b[1] - a[1]) * share,
+        a[2] + (b[2] - a[2]) * share,
+    )
 
 
 def _band(centre: float, start: int, end: int) -> tuple[int, int]:
