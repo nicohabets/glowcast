@@ -82,6 +82,10 @@ class PatternSource:
         self._clock = clock
         self._start = clock()
 
+    def now(self) -> float:
+        """The time on the clock that drives the cycle."""
+        return self._clock()
+
     def showing(self) -> Showing:
         if self.name != "cycle":
             return Showing(self.name, self._start)
