@@ -78,7 +78,7 @@ FIELD_Z = "z"
 CUSTOM = "custom"
 # How to make an entertainment area in the Hue app (a section on the site).
 ENTERTAINMENT_AREA_HELP = (
-    "https://nicohabets.github.io/glowcast/docs/loose-lights/"
+    "https://nicohabets.github.io/glowcast/docs/home-assistant-lights/"
     "#make-an-entertainment-area-in-the-hue-app"
 )
 NONE_TEXT = "-"

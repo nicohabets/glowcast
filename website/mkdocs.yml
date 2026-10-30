@@ -71,6 +71,13 @@ extra:
 
 plugins:
   - search
+  # Old page URLs that are linked from outside the site (Home Assistant
+  # installs, released READMEs and release notes) land on the new page,
+  # with their #anchor.
+  - redirects:
+      redirect_maps:
+        # Called loose lights until v0.3 (#228).
+        docs/loose-lights.md: docs/home-assistant-lights.md
 
 markdown_extensions:
   - admonition
@@ -98,7 +105,7 @@ nav:
       - docs/index.md
       - Installation: docs/installation.md
       - Setup: docs/setup.md
-      - Home Assistant lights: docs/loose-lights.md
+      - Home Assistant lights: docs/home-assistant-lights.md
       - Settings: docs/settings.md
       - Starting automatically: docs/starting.md
       - Status and diagnostics: docs/status.md

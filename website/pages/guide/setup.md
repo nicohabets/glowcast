@@ -30,7 +30,7 @@ If the button was not pressed in time, press it and click **Submit** again. If t
 
 *Setting up Glowcast with an entertainment area: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
 
-### Home Assistant lights { #loose-lights }
+### Home Assistant lights
 
 1. **Choose the Home Assistant lights**: under **Follow**, choose what Glowcast follows and click **Submit**:
     - **Single lights**: you pick the colour lights. A light group picked here (for example a Hue room, which Home Assistant shows as one light) gets one colour for all its lights.
@@ -40,7 +40,7 @@ If the button was not pressed in time, press it and click **Submit** again. If t
 3. If some of them are Hue lights that could join an entertainment area, **An entertainment area is smoother** says so. Click **Submit** to go on with Home Assistant lights.
 4. **Where is *light*?** For each light in turn, choose the part of the picture it follows, under **Place**: **Left of the screen**, **Right of the screen**, **Above the screen**, **Below the screen**, or **Ambient (the middle of the picture)**. Click **Submit** for the next light.
 5. Or choose **Fine-tune** to set the place yourself with two sliders, **Left - right** and **Bottom - top**: -100% is the left or bottom edge of the picture, 100% the right or top edge, 0% the middle.
-6. With more than 4 lights on one Hue bridge or Thread network, **Many lights on one network** says how often they will change; see [How fast Home Assistant lights are](lights.md#how-fast-loose-lights-are). Click **Submit** to save anyway.
+6. With more than 4 lights on one Hue bridge or Thread network, **Many lights on one network** says how often they will change; see [How fast Home Assistant lights are](lights.md#how-fast-home-assistant-lights-are). Click **Submit** to save anyway.
 
 A light that joins the area or group later follows the middle of the picture until you place it under **Configure**.
 

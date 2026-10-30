@@ -17,9 +17,9 @@ When it stops by itself, the switch turns off, the [status](status.md) shows Pic
 
 Streaming apps with DRM in the TV's own apps return a black frame (tested with Prime Video), so Glowcast cannot follow them. After 7 s without a picture it lets go of the lights, so they return to how they were before syncing (about 8 s after the app starts), and the status shows No picture. Glowcast stays on and follows the picture again as soon as there is one. The same app on a streaming stick over HDMI works.
 
-## Home Assistant lights follow slowly { #loose-lights-follow-slowly }
+## Home Assistant lights follow slowly
 
-Home Assistant lights change about once per second, and less often with more than 4 lights on one Hue bridge or Thread network; see [How fast](loose-lights.md#how-fast). For Hue lights, an [entertainment area](loose-lights.md#make-an-entertainment-area-in-the-hue-app) is much smoother.
+Home Assistant lights change about once per second, and less often with more than 4 lights on one Hue bridge or Thread network; see [How fast](home-assistant-lights.md#how-fast). For Hue lights, an [entertainment area](home-assistant-lights.md#make-an-entertainment-area-in-the-hue-app) is much smoother.
 
 ## The lights stay on the last colour after stopping
 

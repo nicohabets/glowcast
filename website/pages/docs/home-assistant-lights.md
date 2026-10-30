@@ -2,7 +2,7 @@
 
 With **Home Assistant lights**, any colour light in Home Assistant follows the picture: Hue lights, Zigbee bulbs and strips, WLED, Matter lights and others. No Hue bridge is needed. (Up to v0.3 this was called loose lights.) Choose **Home Assistant lights** when Glowcast asks which lights follow the picture, during [setup](setup.md) or later under **Configure** (see [Settings](settings.md)).
 
-![The same room with extra lamps beside the sofa, each following its own side of the picture.](../images/illustrations/scene-4-loose-lights.svg){ width="400" loading=lazy }
+![The same room with extra lamps beside the sofa, each following its own side of the picture.](../images/illustrations/scene-4-home-assistant-lights.svg){ width="400" loading=lazy }
 
 *Lamps outside an entertainment area, each following its own side of the picture.*
 
