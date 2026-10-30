@@ -16,9 +16,9 @@ base with `main`, in a temporary worktree, and both rooms are drawn side by
 side, labelled "main" and "this PR".
 
 --lights picks the output the room's lights belong to (room_harness.py): an
-entertainment area (the default), loose lights, or both combined. --place
-moves a loose light, and --versus draws a second room beside the first with
-other places, labelled with them (the place comparison). A loose light that
+entertainment area (the default), Home Assistant lights, or both combined. --place
+moves a Home Assistant light, and --versus draws a second room beside the first with
+other places, labelled with them (the place comparison). A Home Assistant light that
 is unavailable, and a part of a combined output that is dropped, are named at
 the bottom of the room.
 
@@ -92,7 +92,7 @@ LIGHT_NAMES = {
     "console_strip": "light strip",
     "table_lamp": "table lamp",
 }
-# Where --names puts each loose light's name and place: a point in the room
+# Where --names puts each Home Assistant light's name and place: a point in the room
 # (x, y, z), as the tags of Room v2 (#196).
 NAME_TAGS = {
     "floor_lamp": (130, 60, 262),
@@ -108,11 +108,11 @@ PART_NAMES = {
     "hue_entertainment": "Entertainment area",
 }
 # As in room_harness.py, which runs in an interpreter of its own.
-LIGHTS = ("area", "loose", "combined")
+LIGHTS = ("area", "ha", "combined")
 EXIT_NO_OUTPUT = 3
 # How a side is labelled when it is the only one, per --lights.
 MODE_LABELS = {
-    "loose": "Home Assistant lights",
+    "ha": "Home Assistant lights",
     "combined": "Area + Home Assistant lights",
 }
 
@@ -258,7 +258,7 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
     glow(FLOOR, "ffl", 110, 70, 190, "floor_lamp", 0.55)  # floor pool, lamp
     glow(FLOOR, "flb2", 515, 70, 180, "light_bar", 0.65)  # floor pool, bar
     glow(FLOOR, "ftv", 340, 120, 220, "top", 0.35)  # TV spill on the floor
-    # Room v2's loose lights (#196), as in its series2.py.
+    # Room v2's Home Assistant lights (#196), as in its series2.py.
     glow(WALL_A, "wlu", 340, 300, 160, "wall_light", 1.0)  # up from the wall light
     glow(WALL_A, "cl", 340, 82, 120, "console_lamp", 0.9)  # the orb lamp
     glow(FLOOR, "cs", 340, 95, 210, "console_strip", 1.0)  # under the console
@@ -581,7 +581,7 @@ def write(
 ) -> list[Path]:
     """Write the GIF of all scenarios, and a GIF and a still per scenario.
 
-    `tags`: each loose light's name and place next to it (--names).
+    `tags`: each Home Assistant light's name and place next to it (--names).
     """
     painters = [(label, Painter(recording)) for label, recording in sides]
     recording = sides[0][1]
@@ -710,7 +710,7 @@ def mode_label(recording: dict[str, Any]) -> str | None:
 
 
 def name_tags(recording: dict[str, Any]) -> list[tuple[str, float, float]]:
-    """Each loose light's name and place at the light (--names): the text and
+    """Each Home Assistant light's name and place at the light (--names): the text and
     where it starts, in px of a room."""
     tags = []
     for id_, place in recording.get("places", {}).items():
@@ -776,7 +776,7 @@ def record_main(
         subprocess.run(["git", "-C", str(REPO), "worktree", "prune"], check=False)
         shutil.rmtree(worktree, ignore_errors=True)
     if result.returncode == EXIT_NO_OUTPUT:
-        # As for a new kind of light: main has no loose lights yet.
+        # As for a new kind of light: main has no Home Assistant lights yet.
         _this_side_only(f"main ({base[:7]}) {_last_line(result.stderr)}")
         return None
     if result.returncode != 0:
@@ -805,7 +805,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.lights == "area" and (args.place or args.versus):
         parser.error(
-            "--place and --versus are for loose lights: --lights loose|combined"
+            "--place and --versus are for Home Assistant lights: --lights ha|combined"
         )
     if args.versus and args.compare:
         parser.error("--versus and --compare draw two rooms each: pick one")
