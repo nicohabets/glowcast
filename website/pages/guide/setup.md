@@ -26,9 +26,9 @@ Glowcast uses the TV's pairing from the LG webOS Smart TV integration, so the TV
 
 If the button was not pressed in time, press it and click **Submit** again. If the bridge has no entertainment area yet, setup says so on this step: [make one in the Hue app](lights.md#make-an-entertainment-area-in-the-hue-app), then click **Submit**.
 
-![The Glowcast setup flow in Home Assistant: choose the TV, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done.](../images/setup-flow.gif){ width="400" }
+![The Glowcast setup flow in Home Assistant: choose the TV, choose Hue entertainment area, choose the Hue bridge, press the link button and wait for the pairing, choose the entertainment area, done.](../images/setup-flow.gif){ width="400" }
 
-*Setting up Glowcast with an entertainment area: the TV, the Hue bridge and its link button, then the entertainment area.*
+*Setting up Glowcast with an entertainment area: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
 
 ### Loose lights
 

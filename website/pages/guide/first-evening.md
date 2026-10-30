@@ -11,7 +11,7 @@ Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stop
 ## Switch it on
 
 1. Turn the TV on and start something to watch.
-2. Turn Glowcast's switch on. The status shows **Starting** while Glowcast waits for the TV's picture (up to 10 seconds) and claims the lights, then **Streaming**: the lights follow the picture.
+2. Turn Glowcast's switch on. The status shows **Starting** while Glowcast waits for the TV's picture (up to 10 seconds) and claims the lights, then **Streaming**: the lights follow the picture. They fade in over about 2 seconds from how they were, so the room changes calmly; with an entertainment area, a light that was bright may dip a little first.
 
 In a dark scene the status shows **Black picture**, and the lights keep a faint warm glow instead of going dark. Some streaming apps in the TV's own apps give no picture at all (copy protection); then the status shows **No picture** and Glowcast lets go of the lights (as when it stops, see [When it stops](#when-it-stops)) until there is a picture again. See [The lights stay dim](problems.md#the-lights-stay-dim).
 
