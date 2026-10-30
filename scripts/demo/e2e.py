@@ -43,9 +43,11 @@ HELPER_NAME = "Test PC"  # generic, never the computer's name
 PAIRING_CODE = "123456"
 # How long all-zero frames last before the pipeline releases the lights,
 # from the working copy's core/ (loaded without Home Assistant).
-NO_PICTURE_WAIT: float = load_core(
-    REPO / "custom_components" / "glowcast" / "core", "glowcast_e2e_core"
-).pipeline.NO_PICTURE_WAIT
+_CORE = load_core(REPO / "custom_components" / "glowcast" / "core", "glowcast_e2e_core")
+NO_PICTURE_WAIT: float = _CORE.pipeline.NO_PICTURE_WAIT
+# How long the first colours fade in after the lights are claimed (#153): at
+# the switch-on and for the pattern after black.
+FADE_IN: float = _CORE.light_state.FADE_IN
 # Seconds per pattern: long enough for the black pattern's hold and release
 # (NO_PICTURE_WAIT) and the next pattern's claim, with a settled stretch in each.
 INTERVAL = NO_PICTURE_WAIT + 3.0
@@ -54,8 +56,9 @@ INTERVAL = NO_PICTURE_WAIT + 3.0
 RELEASE_EARLY = 0.5
 RELEASE_LATE = 2.0
 # Colours are compared from this long after a pattern starts (the capture
-# interval, the fade and the stream's latency), up to MARGIN before it ends.
-SETTLE = 2.0
+# interval, the fade, the stream's latency, and after a claim the fade-in),
+# up to MARGIN before it ends.
+SETTLE = 2.0 + FADE_IN
 MARGIN = 0.5
 TOLERANCE = 12  # 0-255
 MIN_FRAMES = 20  # in a settled stretch; the stream runs at about 25 per second
@@ -479,7 +482,8 @@ def steps(
         # The first red whose settled stretch starts while streaming (it may
         # have begun just before): then white is streamed before black, so
         # the hold on black shows white, without waiting for a whole cycle.
-        earliest = found["streaming_since"] - (SETTLE - MARGIN)
+        # Its settled stretch starts after the fade-in of the switch-on.
+        earliest = found["streaming_since"] + FADE_IN + 2 * MARGIN - SETTLE
         deadline = time.time() + len(CYCLE) * INTERVAL + 10
         while time.time() < deadline:
             reds = [
