@@ -2,7 +2,7 @@
 
 ## Put the switch on a dashboard
 
-Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stops syncing. Put it where you can reach it: edit a dashboard and add a card with the switch, for example a tile card. Add the **Status** sensor (for example `sensor.glowcast_living_room_tv_status`) too if you like to see what Glowcast is doing. You can also switch it on by voice, or on Glowcast's device page under **Controls**.
+Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stops syncing. Put it where you can reach it: edit a dashboard and add a card with the switch, for example a tile card. Add the **Status** sensor (for example `sensor.glowcast_living_room_tv_status`) too if you like to see what Glowcast is doing. You can also switch it on Glowcast's device page under **Controls**, or by voice once you expose the switch to Assist.
 
 ![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
 
@@ -13,7 +13,7 @@ Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stop
 1. Turn the TV on and start something to watch.
 2. Turn Glowcast's switch on. The status shows **Starting** while Glowcast waits for the TV's picture (up to 10 seconds) and claims the lights, then **Streaming**: the lights follow the picture.
 
-In a dark scene the status shows **Black picture**, and the lights keep a faint warm glow instead of going dark. Some streaming apps in the TV's own apps give no picture at all (copy protection); then the status shows **No picture** and Glowcast lets go of the lights until there is a picture again. See [The lights stay dim](problems.md#the-lights-stay-dim).
+In a dark scene the status shows **Black picture**, and the lights keep a faint warm glow instead of going dark. Some streaming apps in the TV's own apps give no picture at all (copy protection); then the status shows **No picture** and Glowcast lets go of the lights (as when it stops, see [When it stops](#when-it-stops)) until there is a picture again. See [The lights stay dim](problems.md#the-lights-stay-dim).
 
 ## Make it your own
 

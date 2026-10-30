@@ -12,20 +12,22 @@ With [an entertainment area and loose lights together](lights.md#both-together),
 
 ## No entertainment areas
 
-During setup, the step **Choose the entertainment area** says "This Hue bridge has no entertainment areas yet". [Make one in the Hue app](lights.md#make-an-entertainment-area-in-the-hue-app), then click **Submit** on the same step: you do not need to pair again. Under **Configure** a similar message closes the settings screen; make an area and open **Configure** again.
+During setup, the step **Choose the entertainment area** says "This Hue bridge has no entertainment areas yet". [Make one in the Hue app](lights.md#make-an-entertainment-area-in-the-hue-app), then click **Submit** on the same step: you do not need to pair again. Under **Configure**, when Glowcast is already paired with the bridge, a similar message closes the settings screen; make an area and open **Configure** again. When you switch from loose lights and Glowcast has not paired yet, Configure pairs first and the message shows on **Choose the entertainment area**, as during setup: make an area, then click **Submit**.
 
 If setup says "No Hue bridge that can stream found", set up a Hue Bridge v2 or Hue Bridge Pro with the **Philips Hue** integration first. The original round bridge (sold 2012-2015) cannot stream. Without a bridge that can stream, use [loose lights](lights.md).
 
 ## The lights stay dim
 
 - **A dark scene:** the status shows **Black picture** and the lights keep a faint warm glow on purpose. They follow again when the picture brightens.
-- **A streaming app with copy protection (DRM):** some streaming apps in the TV's own apps give Glowcast only a black picture (tested with Prime Video). After 7 seconds without a picture Glowcast lets go of the lights, so they return to how they were, and the status shows **No picture**. Glowcast stays on and follows again as soon as there is a picture. The same app on a streaming stick over HDMI works.
+- **A streaming app with copy protection (DRM):** some streaming apps in the TV's own apps give Glowcast only a black picture (tested with Prime Video). After 7 seconds without a picture Glowcast lets go of the lights and the status shows **No picture**. Loose lights are put back as they were by Glowcast; an entertainment area does what its **When syncing stops** setting in the Hue app says (with **Pause on the last colour** the lights keep the last, dark colour). Glowcast stays on and follows again as soon as there is a picture. The same app on a streaming stick over HDMI works.
 - **The brightness setting:** **Brightness** sets how bright the lights are at most (default 80 %). Raise it on the device page, or raise **Intensity** for more vivid colours; see [Settings](../docs/settings.md).
 - **After Glowcast stopped:** if the lights stay on a dark colour, that is the entertainment area's **When syncing stops** setting in the Hue app. See [The lights stay on the last colour](#the-lights-stay-on-the-last-colour).
 
 ## Glowcast asks to pair again
 
 When the Hue bridge no longer accepts Glowcast's key (for example after you removed the "glowcast" app in the Hue app), Glowcast stops with the stop reason **Key rejected** (`auth_failed`), and Home Assistant asks you to pair again, under **Settings → Devices & services**. **Pair with the Hue bridge again** asks you to press the link button on the bridge, then click **Submit**. Your settings are kept.
+
+With [an entertainment area and loose lights together](lights.md#both-together), Glowcast does not stop: the area is dropped without a retry, the loose lights keep following the picture, and **Dropped lights** shows `auth_failed` for the area. Home Assistant still asks you to pair again; after pairing, switch Glowcast off and on to bring the area back.
 
 For a computer screen it is **Pair with the screen helper again**: enter the 6-digit code the screen helper shows now.
 
@@ -43,7 +45,7 @@ For a computer screen it is **Pair with the screen helper again**: enter the 6-d
 
 ## Part of the lights drops out
 
-This is about [an entertainment area and loose lights together](lights.md#both-together). If one of the two cannot start (for example another app streams to the area, or none of the loose lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the loose lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again.
+This is about [an entertainment area and loose lights together](lights.md#both-together). If one of the two cannot start (for example another app streams to the area, or none of the loose lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the loose lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again. A part whose key the bridge rejects gets no retry; see [Glowcast asks to pair again](#glowcast-asks-to-pair-again).
 
 While a part is out, the **Status** sensor's attribute **Dropped lights** (`dropped_outputs`) lists it with the reason, for example `{"hue_entertainment": "output_busy"}` while another app streams to the area. The log says what happened too. Fix the cause (stop the other app, or bring the lights back), then switch Glowcast off and on. Only when both parts are lost does Glowcast stop. See [Status and diagnostics](../docs/status.md#why-it-stopped).
 
