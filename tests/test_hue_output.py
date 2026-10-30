@@ -794,3 +794,198 @@ async def test_stop_and_close_twice(
 async def test_stop_before_start(output: HueEntertainmentOutput) -> None:
     await output.stop()
     await output.close()
+
+
+# The hardware check's probe (#115)
+
+
+@pytest.fixture
+def bridge(add_bridge: AddBridge, aioclient_mock: AiohttpClientMocker) -> None:
+    """The hue entry; aioclient_mock first, so HA's session is the mocked one."""
+    add_bridge()
+
+PROBE_DATA = {
+    "bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY, "client_key": CLIENT_KEY}
+}
+PROBE_OPTIONS = {"output": {"type": "hue_entertainment", "area_id": AREA}}
+
+
+def mock_probe_bridge(
+    aioclient_mock: AiohttpClientMocker, areas: list[dict[str, Any]]
+) -> None:
+    """The bridge as the probe reads it, names and ids included."""
+    aioclient_mock.get(
+        f"https://{HOST}/api/config",
+        json={
+            "name": "Bridge in the cupboard",
+            "bridgeid": "ECB5FAFFFE0A1B2C",
+            "mac": "ec:b5:fa:0a:1b:2c",
+            "modelid": "BSB002",
+            "swversion": "1972004020",
+            "apiversion": "1.72.0",
+            "datastoreversion": "172",
+        },
+    )
+    aioclient_mock.get(AUTH_URL, headers={"hue-application-id": APP_ID})
+    aioclient_mock.get(AREAS_URL, json={"errors": [], "data": areas})
+    aioclient_mock.get(
+        f"https://{HOST}/clip/v2/resource/entertainment",
+        json={"data": [_renderer(1), _renderer(2)]},
+    )
+    aioclient_mock.get(
+        f"https://{HOST}/clip/v2/resource/device",
+        json={
+            "data": [
+                {
+                    "id": "dev-1",
+                    "metadata": {"name": "Lightstrip behind the sofa"},
+                    "product_data": {
+                        "model_id": "LCX004",
+                        "product_archetype": "hue_lightstrip_tv",
+                        "product_name": "Hue gradient lightstrip",
+                    },
+                },
+                {
+                    "id": "dev-2",
+                    "metadata": {"name": "Play left"},
+                    "product_data": {
+                        "model_id": "LCT024",
+                        "product_archetype": "hue_play",
+                    },
+                },
+            ]
+        },
+    )
+
+
+def _probe_area(status: str = "inactive", streamer: str | None = None) -> dict:
+    area = _area(status=status, streamer=streamer, channels=2)
+    area["metadata"] = {"name": "Woonkamer"}
+    area["configuration_type"] = "screen"
+    area["channels"][0]["members"] = [
+        {"service": {"rid": "ent-1", "rtype": "entertainment"}, "index": 0}
+    ]
+    area["channels"][1]["members"] = [
+        {"service": {"rid": "ent-1", "rtype": "entertainment"}, "index": 1},
+        {"service": {"rid": "ent-2", "rtype": "entertainment"}, "index": 0},
+    ]
+    return area
+
+
+async def test_probe_reads_the_bridge_and_the_area(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_probe_bridge(aioclient_mock, [_probe_area()])
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result == {
+        "api_version": 2,
+        "bridge": {
+            "modelid": "BSB002",
+            "swversion": "1972004020",
+            "apiversion": "1.72.0",
+            "datastoreversion": "172",
+        },
+        "areas": 1,
+        "streaming": "none",
+        "area": {
+            "configuration_type": "screen",
+            "channel_count": 2,
+            "channels": [
+                {
+                    "channel": 0,
+                    "position": {"x": -1, "y": 0.8, "z": 0.0},
+                    "members": [
+                        {
+                            "segment": 0,
+                            "model_id": "LCX004",
+                            "archetype": "hue_lightstrip_tv",
+                        }
+                    ],
+                },
+                {
+                    "channel": 1,
+                    "position": {"x": 0, "y": 0.8, "z": 0.5},
+                    "members": [
+                        {
+                            "segment": 1,
+                            "model_id": "LCX004",
+                            "archetype": "hue_lightstrip_tv",
+                        },
+                        {"segment": 0, "model_id": "LCT024", "archetype": "hue_play"},
+                    ],
+                },
+            ],
+            "stream": "none",
+        },
+    }
+    # Read-only: GET requests only, and no stream.
+    assert all(method == "GET" for method, *_ in aioclient_mock.mock_calls)
+    assert FakeSession.instances == []
+    text = repr(result)
+    for personal in ("cupboard", "ECB5", "ec:b5", "sofa", "Play left", "Woonkamer"):
+        assert personal not in text
+    assert AREA not in text
+
+
+@pytest.mark.parametrize(
+    ("streamer", "expected"), [(APP_ID, "glowcast"), (OTHER_APP_ID, "other_app")]
+)
+async def test_probe_says_who_streams(
+    hass: HomeAssistant,
+    bridge: None,
+    aioclient_mock: AiohttpClientMocker,
+    streamer: str,
+    expected: str,
+) -> None:
+    mock_probe_bridge(aioclient_mock, [_probe_area("active", streamer)])
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result["streaming"] == expected
+    assert result["area"]["stream"] == expected
+    assert FakeApi.instances == []  # a stale Glowcast stream is left alone
+
+
+async def test_probe_another_area_streams(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    other = {**_probe_area("active", OTHER_APP_ID), "id": OTHER_AREA}
+    mock_probe_bridge(aioclient_mock, [_probe_area(), other])
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result["streaming"] == "other_app"
+    assert result["area"]["stream"] == "none"
+
+
+async def test_probe_area_removed(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_probe_bridge(aioclient_mock, [])
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result["areas"] == 0
+    assert result["area"] is None
+
+
+async def test_probe_bridge_unreachable(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(f"https://{HOST}/api/config", exc=aiohttp.ClientError())
+    aioclient_mock.get(AUTH_URL, exc=aiohttp.ClientConnectionError())
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result == {
+        "api_version": 2,
+        "bridge": {"error": "Could not reach the Hue bridge"},
+        "error": "Could not reach the Hue bridge",
+    }
+
+
+async def test_probe_key_rejected(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(f"https://{HOST}/api/config", json={"modelid": "BSB003"})
+    aioclient_mock.get(AUTH_URL, status=403)
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result["error"] == "The Hue bridge rejected Glowcast's key"
+    assert result["bridge"]["modelid"] == "BSB003"
+
+
+async def test_probe_without_the_bridge(hass: HomeAssistant) -> None:
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result == {"error": "The Hue bridge is not set up (or not loaded)"}

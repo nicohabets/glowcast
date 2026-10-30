@@ -36,6 +36,7 @@ from .core.ports import (
     SourceNotSupported,
     SourceUnavailable,
 )
+from .hardware_check import async_notify_done, async_run_check
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType, part_options
 from .outputs.blocks import output_blocks, output_types
@@ -105,6 +106,11 @@ class GlowcastData:
         # start waits for its release (no new test may claim the lights then).
         self._test: asyncio.Task[None] | None = None
         self._ending_test = False
+        # The hardware check (#115): the one running, whether it captures,
+        # and the last result (in memory only, for the diagnostics).
+        self._check: asyncio.Task[None] | None = None
+        self._check_measures = False
+        self._check_result: dict[str, Any] | None = None
 
     @property
     def is_on(self) -> bool:
@@ -120,6 +126,11 @@ class GlowcastData:
     def status(self) -> PipelineStatus | None:
         """The pipeline's last status, kept after a stop; None if never started."""
         return self._status
+
+    @property
+    def hardware_check(self) -> dict[str, Any] | None:
+        """The result of the last hardware check; None if none ran (#115)."""
+        return self._check_result
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -144,11 +155,14 @@ class GlowcastData:
         """Start syncing, unless an integration the TV or lights use is not set up.
 
         A light test that runs meanwhile ends first, and its lights are
-        released before syncing claims them.
+        released before syncing claims them. So does a hardware check that
+        captures: its captures could make the pipeline's fail.
         """
         if self._pipeline is not None:
             return
         self._resume_wanted = False
+        if self._check_measures:
+            await self._async_end_check()
         self._ending_test = True
         try:
             await self._async_end_test()
@@ -329,6 +343,64 @@ class GlowcastData:
                 self._entry.title,
                 _STOP_MESSAGES[reason] if issue is None else issue.message,
             )
+
+    async def async_hardware_check(self) -> None:
+        """Run the hardware check (#115) in the background, at most about 30 s.
+
+        Read-only: no stream, no light change, and the switch does not change.
+        While syncing the picture source is not captured; the running
+        pipeline's measurement counts instead. A press during a check does
+        nothing. When it is done, a notification says where the result is.
+        """
+        title = self._entry.title
+        if self._check is not None and not self._check.done():
+            _LOGGER.debug("Glowcast %s is running the hardware check already", title)
+            return
+        syncing = self._pipeline is not None
+        self._check_measures = not syncing
+        _LOGGER.info("Glowcast %s runs the hardware check", title)
+        self._check = self._entry.async_create_background_task(
+            self._hass, self._async_check(syncing), f"glowcast {title} hardware check"
+        )
+
+    async def _async_check(self, syncing: bool) -> None:
+        try:
+            result = await async_run_check(
+                self._hass, self._entry.data, self._entry.options, syncing=syncing
+            )
+        finally:
+            self._check_measures = False
+        status = self._status if syncing and self._pipeline is not None else None
+        # While syncing: what the running pipeline measures instead.
+        result["pipeline"] = (
+            None
+            if status is None
+            else {
+                "phase": status.phase,
+                "captures_per_second": status.captures_per_second,
+                "black_picture": status.black_picture,
+            }
+        )
+        self._check_result = result
+        _LOGGER.info(
+            "Glowcast %s finished the hardware check; the result is in its diagnostics",
+            self._entry.title,
+        )
+        await async_notify_done(self._hass, self._entry.entry_id, self._entry.title)
+
+    async def _async_end_check(self) -> None:
+        """End a running hardware check that captures, and wait for it."""
+        task, self._check = self._check, None
+        if task is None or task.done():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        _LOGGER.info(
+            "Glowcast %s ended the hardware check: it starts syncing",
+            self._entry.title,
+        )
+        self._check_result = {"interrupted": "started syncing"}
 
     async def _async_end_test(self) -> None:
         """End a running light test and wait until its lights are released."""

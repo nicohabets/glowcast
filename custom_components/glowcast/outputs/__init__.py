@@ -13,6 +13,7 @@ from ..const import CONF_OUTPUT, CONF_TYPE
 from ..core.pipeline import StopReason
 from ..core.ports import LightOutput, OutputUnavailable
 from ..issues import Issue
+from ..probes import Probe, async_run_probe
 from . import (
     composite_flow,
     ha_lights,
@@ -82,6 +83,10 @@ class OutputType:
     # The problems the type works around while the lights follow the picture,
     # checked each time they are claimed (Notice).
     notices: tuple[Notice, ...] = ()
+    # The hardware check (#115): read-only facts about the lights and the
+    # device they are driven through, without personal details; None: no
+    # probe.
+    probe: Probe | None = None
 
 
 OUTPUTS = {
@@ -102,6 +107,7 @@ OUTPUTS = {
             StopReason.OUTPUT_NOT_FOUND: hue_entertainment.AREA_NOT_FOUND,
         },
         async_removed=hue_entertainment.async_removed,
+        probe=hue_entertainment.probe,
     ),
     # Home Assistant lights: any colour light through Home Assistant (#9).
     ha_lights.OUTPUT_HA_LIGHTS: OutputType(
@@ -131,6 +137,9 @@ OUTPUTS = {
         lambda hass, data: None,
         options_steps=composite_flow.CombinedOptionsSteps,
         options_step="combined_options",
+        probe=lambda hass, data, options, *, measure: probe_combined(
+            hass, data, options, measure=measure
+        ),
     ),
 }
 
@@ -181,3 +190,28 @@ def create_combined(
         else:
             parts.append((type_id, output_type.create(hass, data, block_options)))
     return CompositeOutput(parts, dropped=dropped)
+
+
+async def probe_combined(
+    hass: HomeAssistant,
+    data: Mapping[str, Any],
+    options: Mapping[str, Any],
+    *,
+    measure: bool,
+) -> dict[str, Any]:
+    """The hardware check of a combined output: each part's own probe."""
+    return {
+        "parts": [
+            {
+                "type": block[CONF_TYPE],
+                **await async_run_probe(
+                    OUTPUTS.get(block[CONF_TYPE]),
+                    hass,
+                    data,
+                    part_options(options, block),
+                    measure=measure,
+                ),
+            }
+            for block in output_blocks(options[CONF_OUTPUT])
+        ]
+    }
