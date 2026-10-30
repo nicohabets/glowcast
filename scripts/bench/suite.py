@@ -202,6 +202,44 @@ class Bench:
                 [t, s["status"]]
                 for t, s in (self.bridge.samples if self.bridge else [])
             ],
+            **self.raw_ha_lights(),
+        }
+
+    def raw_ha_lights(self) -> dict[str, Any]:
+        """The Home Assistant lights' polled owner states and the light calls in the
+        local HA (#217), by label: what a colour step judged, beside the
+        commands Glowcast sent."""
+        label = {
+            light.entity_id: self.ha_lights_label[light.index]
+            for light in self.ha_lights
+        }
+        proxy = {
+            p["entity_id"]: label.get(light.entity_id, "in area")
+            for light in [*self.ha_lights, *([self.in_area] if self.in_area else [])]
+            if (p := self.proxies.get(light.index))
+        }
+        calls = []
+        for t, service, data in self.ha.light_calls if self.ha else []:
+            ids = data.get("entity_id")
+            names = [
+                proxy.get(e) for e in ([ids] if isinstance(ids, str) else ids or [])
+            ]
+            if any(names):
+                calls.append(
+                    [
+                        t,
+                        service,
+                        [n for n in names if n],
+                        {k: v for k, v in data.items() if k != "entity_id"},
+                    ]
+                )
+        return {
+            "ha_lights_states": [
+                [t, label[e], ha_lights.raw_state(s)]
+                for t, e, s in (self.owner.samples if self.owner else [])
+                if e in label
+            ],
+            "ha_lights_calls": calls,
         }
 
     def forbidden(self) -> list[str]:

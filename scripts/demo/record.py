@@ -511,7 +511,8 @@ def entities(rec: Recorder) -> None:
 
 def refused(rec: Recorder) -> None:
     """A TV that refuses the screenshot call (#214): switched on, Glowcast
-    stops at once with Error, and Repairs explains why.
+    asks again for the startup grace (10 s), then stops with Error, and
+    Repairs explains why.
 
     Needs an instance started with GLOWCAST_DEMO_REFUSE (scripts/README.md).
     """
@@ -776,6 +777,43 @@ SYNCING_FLOWS = {
     "combined-settings",
     "refused",
 }
+
+DEMO_TV = "Living room TV"  # the TV's name in demo.py
+
+
+def blueprint(rec: Recorder) -> None:
+    """An automation from the blueprint "Start Glowcast when the TV turns
+    on" (#161): the TV, the switch and the optional settings."""
+    page = rec.page
+    rec.goto("/config/blueprint/dashboard")
+    rec.begin()
+    rec.click(page.get_by_text("Start Glowcast when the TV turns on").first)
+    page.locator("ha-selector-entity").first.wait_for()
+    rec.step("editor")
+    rec.click(page.locator("ha-selector-entity").nth(0))
+    page.wait_for_timeout(800)
+    rec.step("tv-list")
+    rec.click(page.get_by_text(DEMO_TV, exact=True).last)
+    rec.wait(800)
+    rec.click(page.locator("ha-selector-entity").nth(1))
+    rec.wait(800)
+    rec.click(page.get_by_text(f"Glowcast {DEMO_TV}", exact=True).last)
+    rec.step("chosen")
+    # Also stop, then only after dark.
+    switches = page.locator("ha-selector-boolean ha-switch")
+    rec.click(switches.nth(0))
+    rec.click(switches.nth(1))
+    rec.step("after-dark")
+    sources = page.locator("ha-selector-text")
+    for index, name in enumerate(["HDMI 2", "Netflix"]):
+        rec.click(sources.locator(".add-row ha-button"))
+        field = sources.locator("input").nth(index)
+        field.wait_for()
+        field.press_sequentially(name, delay=60)
+        rec.wait(300)
+    rec.step("sources")
+
+
 FLOWS: dict[str, Callable[[Recorder], None]] = {
     "setup": setup,
     "settings": settings,
@@ -786,6 +824,7 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "ha-lights-setup": ha_lights_setup,
     "ha-lights-settings": ha_lights_settings,
     "combined-settings": combined_settings,
+    "blueprint": blueprint,
     "refused": refused,
 }
 # Flows that need an instance started for them, so only run when named.
