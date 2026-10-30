@@ -231,3 +231,15 @@ async def test_switching_before_home_assistant_has_started_ends_it(
     await settle(hass)
     assert state(hass) == STATE_OFF
     assert len(FakePipeline.instances) == 1  # only the one switched on
+
+
+@pytest.mark.usefixtures("quick")
+async def test_an_unexpected_error_counts_as_off(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    fakes.source_start_error = RuntimeError("a bug in a source")
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: "did not continue" in caplog.text)
+    assert fakes.log.count("source.start") > 1  # looked again after the error
+    assert state(hass) == STATE_OFF

@@ -188,7 +188,7 @@ class GlowcastData:
                 self._resume_wanted = False
                 _LOGGER.info(
                     "Glowcast %s did not continue after Home Assistant's restart: "
-                    "the picture source is off",
+                    "the picture source is off, not reachable or shows no picture",
                     self._entry.title,
                 )
                 return
@@ -211,8 +211,15 @@ class GlowcastData:
             return True
         except (TimeoutError, SourceUnavailable, SourceAuthFailed):
             return False
+        except Exception:
+            # Not on, as far as the restart goes; the next look tries again.
+            _LOGGER.debug(
+                "Unexpected error looking for the picture source", exc_info=True
+            )
+            return False
         finally:
-            await source.close()
+            with suppress(Exception):
+                await source.close()
 
     async def async_stop(self) -> None:
         """Stop syncing and wait until the lights are released."""
