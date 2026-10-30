@@ -206,7 +206,11 @@ def test_a_longer_no_picture_wait_moves_the_pattern_steps() -> None:
     assert three.pattern_interval == 8.0
     assert seven.pattern_interval == 12.0
     assert (three.release_hold_end, three.released_by) == (2.7, 5.5)
-    assert (seven.release_hold_end, seven.released_by) == (6.7, 9.5)
+    # With 7 s the hold on black (3.5 s) ends first: then the glow, then
+    # the release.
+    assert (seven.release_hold_end, seven.released_by) == (3.2, 9.5)
+    assert three.glow_before_release is None
+    assert seven.glow_before_release == (5.5, 6.7)
     assert seven.back_from == 6.5
     # The glow does not depend on the no-picture wait.
     assert three.glow_window == seven.glow_window == (3.0, 6.0)

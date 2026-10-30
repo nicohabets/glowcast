@@ -1221,15 +1221,16 @@ class Bench:
         for name, values in delays.items():
             self.add_delays(f"{mode} / {self.label[name]}", values)
         self.delay_step(mode, all_delays)
-        self.report.add(
-            Step(
-                "long black: the warm glow after the hold on black",
-                mode,
-                SKIP,
-                note="the helper's black is all zero (no picture): "
-                "checked in screen mode",
+        if TIMING.glow_before_release is None:
+            self.report.add(
+                Step(
+                    "long black: the warm glow after the hold on black",
+                    mode,
+                    SKIP,
+                    note="the no-picture wait releases the lights before the "
+                    "glow: checked in screen mode",
+                )
             )
-        )
         await self.extended_steps(mode)
         await self.wait_for_colour(interval)
         await self.check_stop(
@@ -1299,7 +1300,7 @@ class Bench:
         assert self.ha is not None
         self.hold_step(
             mode,
-            "black (all zero), during the no-picture wait: the colours hold",
+            "black (all zero), during the hold on black: the colours hold",
             prev,
             start + 0.3,
             start + TIMING.release_hold_end,
@@ -1330,6 +1331,7 @@ class Bench:
                 None if t is None else round(t - start, 2)
             )
             ok &= t is not None
+        self.black_glow_step(mode, prev, start)
         self.report.add(
             Step(
                 "no picture (all-zero black past the no-picture wait): "
@@ -1481,6 +1483,33 @@ class Bench:
             )
         await self.screen.stop()
         self.screen = None
+
+    def black_glow_step(self, mode: str, prev: dict[str, rp.RGB], start: float) -> None:
+        """All-zero black with a wait longer than the hold: the glow shows
+        before the release (architecture 3.5, "No picture")."""
+        window = TIMING.glow_before_release
+        if window is None:
+            return
+        samples = self.samples()
+        numbers: dict[str, Any] = {}
+        ok = True
+        for name in self.lights:
+            glow = rp.settled(samples, name, start + window[0], start + window[1])
+            if glow is None or name not in prev:
+                ok = False
+                continue
+            cal = self.cal[name]
+            ok &= rp.is_glow(glow, cal, self.th, prev[name])
+            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 3)
+        self.report.add(
+            Step(
+                "black (all zero), after the hold: the warm glow until the release",
+                mode,
+                PASS if ok else FAIL,
+                numbers=numbers,
+                note="" if ok else "no glow before the release",
+            )
+        )
 
     def glow_step(
         self, mode: str, prev: dict[str, rp.RGB], start: float, stop: float

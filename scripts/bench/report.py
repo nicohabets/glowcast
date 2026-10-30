@@ -107,8 +107,16 @@ class Timing:
 
     @property
     def release_hold_end(self) -> float:
-        """Until here (after the change) all-zero black still holds the colours."""
-        return self.no_picture_wait - 0.3
+        """Until here (after the change) all-zero black still holds the
+        colours: the hold on black, or the release if that comes first."""
+        return min(self.no_picture_wait, self.black_hold) - 0.3
+
+    @property
+    def glow_before_release(self) -> tuple[float, float] | None:
+        """When all-zero black shows the glow before the release (a wait
+        longer than the hold and the fade), the window to look at it."""
+        start, end = self.glow_settled_from, self.no_picture_wait - 0.3
+        return (start, end) if end - start >= 1.0 else None
 
     @property
     def released_by(self) -> float:
