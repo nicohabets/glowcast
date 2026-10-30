@@ -648,6 +648,7 @@ def _channel_start_colors(
             rgb
             for member in channel.get("members") or []
             if isinstance(member, dict)
+            # A device with several lights: its last one, as before (#199).
             and (found := lights_of.get(_service(member)))
             and (rgb := _safe_light_rgb(found[-1])) is not None
         ]

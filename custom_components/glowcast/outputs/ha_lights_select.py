@@ -185,14 +185,12 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
 
     def _refresh(self) -> None:
         names = {
-            **{
-                (FOLLOW_AREA, key): name
-                for key, name in areas_with_lights(self.hass).items()
-            },
-            **{
-                (FOLLOW_GROUP, key): name
-                for key, name in groups_with_lights(self.hass).items()
-            },
+            (follow, key): name
+            for follow, found in (
+                (FOLLOW_AREA, areas_with_lights(self.hass)),
+                (FOLLOW_GROUP, groups_with_lights(self.hass)),
+            )
+            for key, name in found.items()
         }
         self._choices = {
             label: choice
