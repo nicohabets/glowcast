@@ -62,7 +62,7 @@ def main() -> None:
     canvas.pack(fill="both", expand=True)
     left = canvas.create_rectangle(0, 0, 0, 0, width=0, fill="#000000")
     right = canvas.create_rectangle(0, 0, 0, 0, width=0, fill="#000000")
-    picture = canvas.create_image(0, 0, anchor="nw", state="hidden")
+    scene = canvas.create_image(0, 0, anchor="nw", state="hidden")
     images: dict[str, tk.PhotoImage] = {}
     commands: queue.Queue[str] = queue.Queue()
     threading.Thread(target=_commands, args=(commands,), daemon=True).start()
@@ -73,7 +73,7 @@ def main() -> None:
         canvas.coords(right, w // 2, 0, w, h)
         canvas.itemconfigure(left, fill=first)
         canvas.itemconfigure(right, fill=second)
-        canvas.itemconfigure(picture, state="hidden")
+        canvas.itemconfigure(scene, state="hidden")
         root.update()
         _emit(event="shown", picture=picture, t=round(time.time(), 4))
 
@@ -97,9 +97,9 @@ def main() -> None:
                 _emit(event="loaded", name=name)
             elif command.startswith("image "):
                 canvas.itemconfigure(
-                    picture, image=images[command.split()[1]], state="normal"
+                    scene, image=images[command.split()[1]], state="normal"
                 )
-                canvas.tag_raise(picture)
+                canvas.tag_raise(scene)
                 root.update()
                 _emit(event="shown", picture=command, t=round(time.time(), 4))
         root.after(2, poll)
