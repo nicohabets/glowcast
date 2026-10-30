@@ -73,6 +73,8 @@ AREAS_PATH = "/clip/v2/resource/entertainment_configuration"
 LIGHTS_PATH = "/clip/v2/resource/light"
 ENTERTAINMENT_PATH = "/clip/v2/resource/entertainment"
 AUTH_PATH = "/auth/v1"
+DEVICES_PATH = "/clip/v2/resource/device"
+CONFIG_PATH = "/api/config"
 
 MAX_CHANNELS = 20  # HueStream limit per message
 # The DTLS handshake alone can block for about 23 s against an unreachable bridge.
@@ -82,6 +84,11 @@ STATUS_INTERVAL = 5.0
 STATUS_TIMEOUT = 4.0
 REACHABLE_TIMEOUT = 10.0
 AREAS_TIMEOUT = 15.0
+# The hardware check (#115): every request to the bridge together.
+PROBE_TIMEOUT = 15.0
+# What the bridge's unauthenticated config tells about its hardware and
+# software; never its name, MAC address or bridge id.
+BRIDGE_FIELDS = ("modelid", "swversion", "apiversion", "datastoreversion")
 # Reading what the lights show before the stream (for the fade-in, #153) may
 # not hold up the start for long; without it the fade-in starts from dark.
 STATES_TIMEOUT = 5.0
@@ -802,3 +809,115 @@ def _light_of(channel: dict[str, Any]) -> str | None:
     if len(members) != 1:
         return None
     return (members[0].get("service") or {}).get("rid")
+
+
+async def probe(
+    hass: HomeAssistant,
+    data: Mapping[str, Any],
+    options: Mapping[str, Any],
+    *,
+    measure: bool,
+) -> dict[str, Any]:
+    """The hardware check of the bridge and the chosen area (#115).
+
+    Read-only: GET requests only, so no stream starts, no light changes and a
+    stale Glowcast stream is left alone; the same while Glowcast syncs. Only
+    hardware, software and the area's layout: no names, ids or addresses.
+    """
+    bridge = data[CONF_BRIDGE]
+    entry = _loaded_bridge(hass, bridge[CONF_UNIQUE_ID])
+    if entry is None:
+        return {"error": "The Hue bridge is not set up (or not loaded)"}
+    host, key = entry.data[CONF_HOST], bridge[CONF_APP_KEY]
+    result: dict[str, Any] = {"api_version": entry.data.get(CONF_API_VERSION)}
+    try:
+        async with asyncio.timeout(PROBE_TIMEOUT):
+            result["bridge"] = await _async_bridge_facts(hass, host)
+            headers, _ = await _async_clip_get(hass, host, key, AUTH_PATH, body=False)
+            areas = await _async_clip_data(hass, host, key, AREAS_PATH)
+            renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
+            devices = await _async_clip_data(hass, host, key, DEVICES_PATH)
+    except TimeoutError:
+        result["error"] = "The Hue bridge did not respond in time"
+        return result
+    except (OutputAuthFailed, OutputNotFound, OutputUnavailable) as err:
+        # Glowcast's own texts, without the address.
+        result["error"] = str(err)
+        return result
+    app_id = headers.get("hue-application-id")
+    result["areas"] = len(areas)
+    result["streaming"] = _streamer(
+        next((area for area in areas if area.get("status") == "active"), None),
+        app_id,
+    )
+    area = next(
+        (a for a in areas if a.get("id") == options[CONF_OUTPUT].get(CONF_AREA_ID)),
+        None,
+    )
+    result["area"] = None if area is None else _area_facts(area, renderers, devices)
+    if area is not None:
+        result["area"]["stream"] = _streamer(
+            area if area.get("status") == "active" else None, app_id
+        )
+    return result
+
+
+async def _async_bridge_facts(hass: HomeAssistant, host: str) -> dict[str, Any]:
+    """The bridge's model and versions from its unauthenticated config."""
+    try:
+        _, config = await _async_clip_get(hass, host, "", CONFIG_PATH)
+    except (OutputAuthFailed, OutputNotFound, OutputUnavailable) as err:
+        return {"error": str(err)}
+    if not isinstance(config, dict):
+        return {"error": "The Hue bridge sent no config"}
+    return {field: config.get(field) for field in BRIDGE_FIELDS}
+
+
+def _streamer(area: dict[str, Any] | None, app_id: str | None) -> str:
+    """Who streams this area: "none", "glowcast" or "other_app" (never which)."""
+    if area is None:
+        return "none"
+    streamer = (area.get("active_streamer") or {}).get("rid")
+    return "glowcast" if app_id and streamer == app_id else "other_app"
+
+
+def _area_facts(
+    area: dict[str, Any],
+    renderers: list[dict[str, Any]],
+    devices: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The area's layout: each channel's position and, per member, the
+    device's product (model id and archetype) and its segment."""
+    owner = {
+        renderer.get("id"): (renderer.get("owner") or {}).get("rid")
+        for renderer in renderers
+    }
+    products = {
+        device.get("id"): device.get("product_data") or {} for device in devices
+    }
+    channels = [c for c in area.get("channels") or [] if isinstance(c, dict)]
+    return {
+        "configuration_type": area.get("configuration_type"),
+        "channel_count": len(channels),
+        "channels": [
+            {
+                "channel": channel.get("channel_id"),
+                "position": {
+                    axis: (channel.get("position") or {}).get(axis)
+                    for axis in ("x", "y", "z")
+                },
+                "members": [
+                    {
+                        "segment": member.get("index"),
+                        "model_id": (
+                            product := products.get(owner.get(_service(member)), {})
+                        ).get("model_id"),
+                        "archetype": product.get("product_archetype"),
+                    }
+                    for member in channel.get("members") or []
+                    if isinstance(member, dict)
+                ],
+            }
+            for channel in channels
+        ],
+    }

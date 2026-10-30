@@ -4,7 +4,8 @@ Only for the local demo in scripts/. Never install this on a real Home Assistant
 it replaces Glowcast's webOS source and Hue entertainment output with fakes
 that never open a network connection.
 
-It replaces the `create` of the `webos` and `hue_entertainment` entries in
+It replaces the `create` and the hardware check's `probe` (#115) of the
+`webos` and `hue_entertainment` entries in
 Glowcast's SOURCES and OUTPUTS registries. Everything else in those entries
 (checks, device links, setup steps, entities) stays Glowcast's own, so the
 real pipeline, runtime, entities and status run unchanged.
@@ -49,15 +50,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     from custom_components.glowcast.outputs import OUTPUTS
     from custom_components.glowcast.sources import SOURCES
 
-    from .fakes import FakeLightOutput, FakeTvSource
+    from .fakes import FakeLightOutput, FakeTvSource, lights_probe, tv_probe
 
     # Changed in place: Glowcast's modules hold these same dicts.
     SOURCES[SOURCE] = dataclasses.replace(
-        SOURCES[SOURCE], create=lambda hass, data, options: FakeTvSource()
+        SOURCES[SOURCE],
+        create=lambda hass, data, options: FakeTvSource(),
+        probe=tv_probe,
     )
     OUTPUTS[OUTPUT] = dataclasses.replace(
         OUTPUTS[OUTPUT],
         create=lambda hass, data, options: FakeLightOutput(options),
+        probe=lights_probe,
     )
     # No reload needed: `start` writes a config without a Glowcast entry, and
     # a pipeline is only built when the switch is turned on.

@@ -317,6 +317,9 @@
     "button": {
       "test_lights": {
         "name": "Lampen testen"
+      },
+      "hardware_check": {
+        "name": "Hardwarecontrole uitvoeren"
       }
     },
     "number": {
@@ -395,11 +398,11 @@
     },
     "webos_not_supported": {
       "title": "Glowcast {name}: de tv staat geen schermafbeeldingen toe",
-      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"no such service or method\": dit tv-model, of de softwareversie ervan, kent de opdracht niet waarmee Glowcast het beeld ziet. De tv staat aan en is bereikbaar; Glowcast opnieuw aanzetten helpt niet.\n\n[Open een hardwaremelding]({report_url}) met je tv-model en webOS-versie en voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten), zodat we kunnen kijken of we hem kunnen ondersteunen. Meer bij [problemen oplossen]({help_url})."
+      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"no such service or method\": dit tv-model, of de softwareversie ervan, kent de opdracht niet waarmee Glowcast het beeld ziet. De tv staat aan en is bereikbaar; Glowcast opnieuw aanzetten helpt niet.\n\nDruk op **Hardwarecontrole uitvoeren** op de apparaatpagina van Glowcast en open, als die klaar is, een [hardwaremelding]({report_url}) met je tv-model en webOS-versie; voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten), zodat we kunnen kijken of we hem kunnen ondersteunen. Meer bij [problemen oplossen]({help_url})."
     },
     "webos_not_permitted": {
       "title": "Glowcast {name}: de tv geeft geen toestemming voor schermafbeeldingen",
-      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"insufficient permissions\": de koppeling die de integratie LG webOS TV met de tv maakte, staat geen schermafbeeldingen toe.\n\n[Open een hardwaremelding]({report_url}) met je tv-model en webOS-versie en voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten), zodat we ernaar kunnen kijken.\n\nDe tv opnieuw koppelen kan helpen: verwijder de tv uit de integratie LG webOS TV (Instellingen > Apparaten en diensten), voeg hem weer toe en accepteer de vraag op de tv; zet Glowcast daarna weer aan. Opnieuw configureren in die integratie houdt de bestaande koppeling. Meer bij [problemen oplossen]({help_url})."
+      "description": "Glowcast kan niet synchroniseren omdat de tv de vraag om een schermafbeelding beantwoordt met \"insufficient permissions\": de koppeling die de integratie LG webOS TV met de tv maakte, staat geen schermafbeeldingen toe.\n\nDruk op **Hardwarecontrole uitvoeren** op de apparaatpagina van Glowcast en open, als die klaar is, een [hardwaremelding]({report_url}) met je tv-model en webOS-versie; voeg de diagnostische gegevens van Glowcast toe (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten), zodat we ernaar kunnen kijken.\n\nDe tv opnieuw koppelen kan helpen: verwijder de tv uit de integratie LG webOS TV (Instellingen > Apparaten en diensten), voeg hem weer toe en accepteer de vraag op de tv; zet Glowcast daarna weer aan. Opnieuw configureren in die integratie houdt de bestaande koppeling. Meer bij [problemen oplossen]({help_url})."
     },
     "hue_entertainment_missing": {
       "title": "Glowcast {name}: de Hue-bridge is niet ingesteld",
@@ -428,6 +431,10 @@
     "ha_lights_streamed_elsewhere": {
       "title": "Glowcast {name}: losse lampen in een ruimte die een andere app synchroniseert",
       "description": "Een deel van de losse lampen van Glowcast zit in een entertainmentruimte die nu door een andere app gesynchroniseerd wordt, bijvoorbeeld een Hue Sync Box of de Hue Sync-app: {lights} (ruimte: {areas}). Zolang die synchroniseert, negeert de Hue-bridge andere opdrachten aan deze lampen, dus volgen ze Glowcast niet; de andere lampen werken gewoon, en deze volgen weer zodra de andere app stopt. Wil je dat ze Glowcast volgen, kies dan in de instellingen van Glowcast (Configureren) losse lampen die niet in die ruimte zitten, of haal ze in de Hue-app uit de ruimte. De melding wordt opnieuw gecontroleerd zodra Glowcast de lampen weer overneemt."
+    },
+    "hardware_check_done": {
+      "title": "Glowcast {name}: hardwarecontrole klaar",
+      "description": "De hardwarecontrole is klaar. De uitkomst staat in de diagnostische gegevens van Glowcast (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten). Wil je ons laten weten hoe Glowcast met je tv werkt, voeg dat bestand dan toe aan een [hardwaremelding]({report_url}). Er staan geen namen, adressen, sleutels of beelden in."
     }
   },
   "exceptions": {

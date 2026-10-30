@@ -8,8 +8,13 @@ from typing import Any
 
 import aiohttp
 import pytest
-from aiowebostv import WebOsClient, WebOsTvState
-from aiowebostv.exceptions import WebOsTvCommandError, WebOsTvPairError
+from aiowebostv import WebOsClient, WebOsTvInfo, WebOsTvState
+from aiowebostv.exceptions import (
+    WebOsTvCommandError,
+    WebOsTvPairError,
+    WebOsTvResponseTypeError,
+    WebOsTvServiceNotFoundError,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -57,6 +62,7 @@ class FakeWebOsClient:
         self.connection: object | None = None
         self.connect_task: asyncio.Task[None] | None = None
         self.tv_state = WebOsTvState()
+        self.tv_info = WebOsTvInfo()
         self.callbacks: list[Callable[[WebOsTvState], Any]] = []
         self.power_state = POWER_ON
         self.request_result: Any = {"imageUri": IMAGE_URL}
@@ -137,10 +143,11 @@ class FakeWebOsClient:
                 await self.connect_task
 
 
-def _jpeg(width: int = 960, height: int = 540) -> bytes:
-    """A 960x540 JPEG: red left half, blue right half."""
-    image = Image.new("RGB", (width, height), (255, 0, 0))
-    image.paste((0, 0, 255), (width // 2, 0, width, height))
+def _jpeg(width: int = 960, height: int = 540, *, black: bool = False) -> bytes:
+    """A 960x540 JPEG: red left half, blue right half (or all black)."""
+    image = Image.new("RGB", (width, height), (0, 0, 0) if black else (255, 0, 0))
+    if not black:
+        image.paste((0, 0, 255), (width // 2, 0, width, height))
     buffer = io.BytesIO()
     image.save(buffer, "JPEG")
     return buffer.getvalue()
@@ -585,3 +592,168 @@ async def test_capture_without_image_uri(
     client.request_result = {"returnValue": True}
     with pytest.raises(SourceUnavailable, match="download"):
         await source.capture()
+
+
+# The hardware check's probe (#115)
+
+DATA = {"source": {"type": "webos", "unique_id": UNIQUE_ID}}
+
+
+def tell(client: FakeWebOsClient) -> None:
+    """What a TV says about itself, personal fields included."""
+    client.tv_info.system = {"modelName": "OLED55C1", "serialNumber": "105KRXX0001"}
+    client.tv_info.software = {
+        "product_name": "webOSTV 6.0",
+        "major_ver": "03",
+        "minor_ver": "40.12",
+        "device_id": "a8:23:fe:00:11:22",
+    }
+    client.tv_info.hello = {
+        "deviceOSVersion": "6.4.0",
+        "deviceOSReleaseVersion": "6.0.0",
+        "deviceUUID": "6f1c0de2-aaaa-bbbb-cccc-0123456789ab",
+    }
+    client.tv_state.current_app_id = "com.webos.app.hdmi2"
+    client.tv_state.inputs = {"HDMI_2": {"label": "Annas PlayStation"}}
+
+
+def every_client(monkeypatch: pytest.MonkeyPatch, change: Callable) -> None:
+    """Apply `change` to every fake client once it is made."""
+    original = FakeWebOsClient.__init__
+
+    def init(self: FakeWebOsClient, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        change(self)
+
+    monkeypatch.setattr(FakeWebOsClient, "__init__", init)
+
+
+@pytest.fixture
+def telling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every fake TV tells its facts once connected."""
+    connect = FakeWebOsClient.connect
+
+    async def connect_and_tell(self: FakeWebOsClient) -> bool:
+        result = await connect(self)
+        tell(self)
+        return result
+
+    monkeypatch.setattr(FakeWebOsClient, "connect", connect_and_tell)
+
+
+@pytest.mark.usefixtures("telling")
+async def test_probe_measures_the_captures(
+    hass: HomeAssistant, add_tv_entry: AddTvEntry, aioclient_mock: AiohttpClientMocker
+) -> None:
+    add_tv_entry()
+    aioclient_mock.get(IMAGE_URL, content=_jpeg())
+    result = await webos.probe(hass, DATA, {}, measure=True)
+
+    assert result["connected"] is True
+    assert result["tv"] == {
+        "model": "OLED55C1",
+        "product": "webOSTV 6.0",
+        "firmware": "03.40.12",
+        "webos_version": "6.0.0",
+        "os_version": "6.4.0",
+        "is_on": True,
+        "is_screen_on": True,
+        "app": "com.webos.app.hdmi2",
+    }
+    capture = result["capture"]
+    assert capture["answered"] is True
+    assert capture["refused"] is None
+    assert capture["captures"] == webos.PROBE_CAPTURES
+    assert capture["image"] == {
+        "format": "JPEG",
+        "width": 960,
+        "height": 540,
+        "bytes": len(_jpeg()),
+    }
+    timing = capture["seconds_per_capture"]
+    assert 0 <= timing["min"] <= timing["median"] <= timing["max"]
+    assert capture["captures_per_second"] > 0
+    assert capture["black_captures"] == 0
+    assert capture["all_black"] is False
+    # Its own connection, closed at the end.
+    [client] = FakeWebOsClient.instances
+    assert client.disconnected
+    text = repr(result)
+    for personal in ("105KRXX0001", "a8:23:fe", "6f1c0de2", "Annas", "secret-hash"):
+        assert personal not in text
+
+
+async def test_probe_counts_black_captures(
+    hass: HomeAssistant, add_tv_entry: AddTvEntry, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A protected app gives all-black captures (#8)."""
+    add_tv_entry()
+    aioclient_mock.get(IMAGE_URL, content=_jpeg(64, 36, black=True))
+    capture = (await webos.probe(hass, DATA, {}, measure=True))["capture"]
+    assert capture["black_captures"] == capture["captures"] > 0
+    assert capture["all_black"] is True
+    assert capture["image"]["width"] == 64
+
+
+@pytest.mark.parametrize(
+    ("error", "refused"),
+    [
+        (WebOsTvServiceNotFoundError("404 no such service or method"), "not_supported"),
+        (
+            WebOsTvResponseTypeError(
+                {"type": "error", "error": "401 insufficient permissions"}
+            ),
+            "not_permitted",
+        ),
+    ],
+)
+async def test_probe_records_a_refusal(
+    hass: HomeAssistant,
+    add_tv_entry: AddTvEntry,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    refused: str,
+) -> None:
+    add_tv_entry()
+    every_client(monkeypatch, lambda client: setattr(client, "request_result", error))
+    capture = (await webos.probe(hass, DATA, {}, measure=True))["capture"]
+    assert capture["answered"] is False
+    assert capture["refused"] == refused
+    assert capture["captures"] == 0
+    assert capture["seconds_per_capture"] is None
+
+
+async def test_probe_with_the_screen_off(
+    hass: HomeAssistant, add_tv_entry: AddTvEntry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failed captures end the measurement; whether the TV would answer is
+    not known."""
+    add_tv_entry()
+    every_client(
+        monkeypatch, lambda client: setattr(client, "power_state", POWER_SCREEN_OFF)
+    )
+    result = await webos.probe(hass, DATA, {}, measure=True)
+    capture = result["capture"]
+    assert capture["answered"] is None
+    assert capture["failures"] == {"The TV is off or not connected": 3}
+    assert result["tv"]["is_screen_on"] is False
+
+
+async def test_probe_when_the_tv_cannot_be_reached(
+    hass: HomeAssistant, add_tv_entry: AddTvEntry, fake_client: type[FakeWebOsClient]
+) -> None:
+    add_tv_entry()
+    fake_client.connect_outcomes = [OSError("unreachable 192.168.1.20")]
+    result = await webos.probe(hass, DATA, {}, measure=True)
+    assert result == {"connected": False, "error": "Could not connect to the TV"}
+
+
+async def test_probe_while_syncing_does_not_capture(
+    hass: HomeAssistant, add_tv_entry: AddTvEntry
+) -> None:
+    add_tv_entry()
+    result = await webos.probe(hass, DATA, {}, measure=False)
+    assert result["connected"] is True
+    assert "capture" not in result
+    [client] = FakeWebOsClient.instances
+    assert client.payloads == []

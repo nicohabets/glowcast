@@ -18,6 +18,11 @@ CONF_UPDATE_RATE = "update_rate"
 REAUTH_PART = "glowcast_reauth_part"
 REAUTH_SOURCE = "source"
 
+# Where a user reports how Glowcast works with their TV (#60, #214, #115).
+HARDWARE_REPORT_URL = (
+    "https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md"
+)
+
 UPDATE_RATES = [rate.value for rate in UpdateRate]
 
 DEFAULT_BRIGHTNESS = 80

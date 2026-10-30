@@ -231,6 +231,7 @@ async def test_the_entities(
         f"{entry.entry_id}_update_rate",
         f"{entry.entry_id}_entertainment_area",
         f"{entry.entry_id}_test_lights",  # the button (#182)
+        f"{entry.entry_id}_hardware_check",  # the button (#115)
         f"{entry.entry_id}_status",  # the sensors (#14)
         f"{entry.entry_id}_captures_per_second",
     }
@@ -754,9 +755,9 @@ async def test_the_output_type_provides_what_follows_the_tv(
     }
     assert follow == expected
     assert f"{entry.entry_id}_entertainment_area" not in unique_ids
-    # The common settings, the switch, the two sensors (#14) and the test
-    # button (#182).
-    assert len(unique_ids) == 7 + len(expected)
+    # The common settings, the switch, the two sensors (#14), the test
+    # button (#182) and the hardware check (#115).
+    assert len(unique_ids) == 8 + len(expected)
 
 
 async def test_an_unknown_output_type_still_gets_the_common_settings(
@@ -771,6 +772,7 @@ async def test_an_unknown_output_type_still_gets_the_common_settings(
         )
     )
     assert domains == [
+        "button",
         "button",
         "number",
         "number",
