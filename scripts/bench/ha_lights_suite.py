@@ -1,4 +1,4 @@
-"""The bench's loose-lights suite (#9): Glowcast's `ha_lights` output on proxy
+"""The bench's Home Assistant lights suite (#9): Glowcast's `ha_lights` output on proxy
 lights in the local Home Assistant, each mirroring a light of the product
 owner's Home Assistant (stubs/proxy.py), with the helper's test patterns.
 
@@ -6,8 +6,8 @@ The calibration runs first, as in the other suites (it finds the camera
 lights through the bench's entertainment area); in this suite nothing streams
 that area, and the run checks it stays inactive: the bridge ignores commands
 to the lights of a streaming area. Judged with numbers only:
-- the colours per position: a camera light with the camera, any other loose
-  light by its state in the owner's Home Assistant;
+- the colours per position: a camera light with the camera, any other Home
+  Assistant light by its state in the owner's Home Assistant;
 - the rate, from the local HA's `call_service` events: per light at most once
   per its interval, per network at most 4 commands in any second, and
   `transition` its actual interval (the time since its command before);
@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-import loose
+import ha_lights
 import report as rp
 import suite
 from report import FAIL, PASS, SKIP, Step
@@ -34,20 +34,20 @@ from custom_components.glowcast.core.color_engine import (  # noqa: E402
 )
 from custom_components.glowcast.core.models import Channel  # noqa: E402
 
-MODE = "loose"
+MODE = "ha-lights"
 FRAME = (64, 36)  # the helper's frame (screen_helper/README.md)
 SPLIT = "left-red-right-blue"
 
 
-def expected_split(light: loose.LooseLight) -> str | None:
+def expected_split(light: ha_lights.HaLight) -> str | None:
     """What the light shows for left-red-right-blue, from its band in the frame."""
     col0, col1, _, _ = channel_region(
         Channel(str(light.index), "", light.x, light.z), *FRAME
     )
-    return loose.split_colour(col0, col1, FRAME[0])
+    return ha_lights.split_colour(col0, col1, FRAME[0])
 
 
-def entity_of(bench: Any, light: loose.LooseLight) -> str:
+def entity_of(bench: Any, light: ha_lights.HaLight) -> str:
     """The light's proxy in the local Home Assistant."""
     return bench.proxies[light.index]["entity_id"]
 
@@ -58,17 +58,21 @@ async def run(bench: Any) -> None:
     area = bench.cfg["bench_area_id"]
     if await bench.bridge.wait_status(area, "inactive", 15) is None:
         raise suite.BenchError(
-            "the bench area streams; the loose Hue lights would not respond"
+            "the bench area streams; the Hue lights among the Home Assistant "
+            "lights would not respond"
         )
-    bench.owner.follow([light.entity_id for light in bench.loose], 1.0)
+    bench.owner.follow([light.entity_id for light in bench.ha_lights], 1.0)
     interval = float(
         bench.cfg["helper"].get("pattern_interval", suite.TIMING.pattern_interval)
     )
-    cycles = int(bench.cfg.get("loose_cycles", 1))
+    # `loose_cycles`: old name until v0.4.
+    cycles = int(bench.cfg.get("ha_lights_cycles", bench.cfg.get("loose_cycles", 1)))
     await bench.wait_for_red(interval)
     reference = await read_states(bench)
     on_at = time.time()
-    if not await switch_on(bench, "switch on: Glowcast syncs the loose lights"):
+    if not await switch_on(
+        bench, "switch on: Glowcast syncs the Home Assistant lights"
+    ):
         return
     showing, since = bench.pattern_changes()[-1]
     cycle = list(suite.CYCLE)
@@ -88,7 +92,7 @@ async def run(bench: Any) -> None:
             colour_step(
                 bench,
                 name,
-                {li.index: colours[name] for li in bench.loose},
+                {li.index: colours[name] for li in bench.ha_lights},
                 start,
                 stop,
             )
@@ -96,7 +100,7 @@ async def run(bench: Any) -> None:
             colour_step(
                 bench,
                 name,
-                {li.index: expected_split(li) for li in bench.loose},
+                {li.index: expected_split(li) for li in bench.ha_lights},
                 start,
                 stop,
             )
@@ -105,21 +109,27 @@ async def run(bench: Any) -> None:
     rate_step(bench, on_at, bench.wsl(end))
     area_step(bench, on_at, bench.wsl(end))
     await bench.wait_for_colour(interval)
-    await stop_step(bench, reference, "switch off: each loose light back", "switch")
+    await stop_step(
+        bench, reference, "switch off: each Home Assistant light back", "switch"
+    )
     await bench.wait_for_red(interval)
     # The same reference: a light that did not come back must not become it.
     if await switch_on(bench, "switch on again"):
         await bench.wait_for_colour(interval)
         await stop_step(
-            bench, reference, "helper stopped: tv_off, each loose light back", "helper"
+            bench,
+            reference,
+            "helper stopped: tv_off, each Home Assistant light back",
+            "helper",
         )
 
 
 async def read_states(bench: Any) -> dict[str, dict[str, Any]]:
-    """Each loose light's state in the owner's HA: what a restore must bring back."""
+    """Each Home Assistant light's state in the owner's HA: what a restore must
+    bring back."""
     return {
         light.entity_id: await bench.owner.state(light.entity_id)
-        for light in bench.loose
+        for light in bench.ha_lights
     }
 
 
@@ -151,29 +161,31 @@ def colour_step(
     stop: float,
     mode: str = MODE,
 ) -> None:
-    """Each loose light shows its colour once settled (Windows times): from
-    `loose_settle_s` after Glowcast's first command to it in the step."""
+    """Each Home Assistant light shows its colour once settled (Windows
+    times): from `ha_lights_settle_s` after Glowcast's first command to it in
+    the step."""
     b = stop - 0.3
     samples = bench.samples()
-    sent = loose.commands(
-        bench.ha.calls if bench.ha else [], [entity_of(bench, li) for li in bench.loose]
+    sent = ha_lights.commands(
+        bench.ha.calls if bench.ha else [],
+        [entity_of(bench, li) for li in bench.ha_lights],
     )
     numbers: dict[str, Any] = {}
     ok = True
     judged = 0
-    for light in bench.loose:
-        label = bench.loose_label[light.index]
+    for light in bench.ha_lights:
+        label = bench.ha_lights_label[light.index]
         want = expected[light.index]
-        a = loose.judged_from(
+        a = ha_lights.judged_from(
             start,
             [bench.win(t) for t, _ in sent[entity_of(bench, light)]],
             stop,
-            bench.th.loose_settle_s,
+            bench.th.ha_lights_settle_s,
         )
-        states = loose.states_between(
+        states = ha_lights.states_between(
             bench.owner.samples, light.entity_id, bench.wsl(a), bench.wsl(b)
         )
-        state_colour = loose.settled_colour(states)
+        state_colour = ha_lights.settled_colour(states)
         if want is None:
             numbers[f"{label}"] = "skipped: its band takes from both halves"
             continue
@@ -194,12 +206,12 @@ def colour_step(
             numbers[f"{label} state"] = state_colour
             numbers[f"{label} states"] = len(states)
             if state_colour != want:
-                numbers[f"{label} colours"] = loose.colour_counts(states)
+                numbers[f"{label} colours"] = ha_lights.colour_counts(states)
             ok &= state_colour == want
     shown = "the colour of its band" if pattern == SPLIT else pattern
     bench.report.add(
         Step(
-            f"{pattern}: each loose light shows {shown}",
+            f"{pattern}: each Home Assistant light shows {shown}",
             mode,
             (PASS if ok else FAIL) if judged else SKIP,
             numbers=numbers,
@@ -228,7 +240,7 @@ def release_step(
     bench.report.add(
         Step(
             "no picture (all-zero black past the no-picture wait): "
-            "loose lights released and back",
+            "Home Assistant lights released and back",
             mode,
             PASS if ok else FAIL,
             numbers=numbers,
@@ -240,14 +252,14 @@ def release_step(
 def lights_back(
     bench: Any, reference: dict[str, dict[str, Any]], start: float, end: float
 ) -> tuple[bool, dict[str, Any]]:
-    """Whether every loose light is back from `start` (Windows times): its
+    """Whether every Home Assistant light is back from `start` (Windows times): its
     owner state as `reference`, and a camera light as before the run."""
     samples = bench.samples()
     numbers: dict[str, Any] = {}
     ok = True
-    for light in bench.loose:
-        label = bench.loose_label[light.index]
-        t = loose.first_restored(
+    for light in bench.ha_lights:
+        label = bench.ha_lights_label[light.index]
+        t = ha_lights.first_restored(
             bench.owner.samples,
             light.entity_id,
             reference[light.entity_id],
@@ -277,27 +289,30 @@ def lights_back(
 
 def networks(bench: Any) -> dict[str, str | None]:
     """{local entity: its network}, as Glowcast's output groups them; the
-    loose lights' proxies only (not one of a light in the area too, #198)."""
-    sch = loose.schedule()
+    Home Assistant lights' proxies only (not one of a light in the area too, #198)."""
+    sch = ha_lights.schedule()
     return {
         entry["entity_id"]: sch.network_of(entry["platform"], entry["config_entry_id"])
-        for entry in (bench.proxies[light.index] for light in bench.loose)
+        for entry in (bench.proxies[light.index] for light in bench.ha_lights)
     }
 
 
 def rate_step(bench: Any, start: float, end: float, mode: str = MODE) -> None:
     """The rate limits on Glowcast's commands between two WSL times."""
     entity_label = {
-        entity_of(bench, light): bench.loose_label[light.index] for light in bench.loose
+        entity_of(bench, light): bench.ha_lights_label[light.index]
+        for light in bench.ha_lights
     }
     calls = [(t, data) for t, data in bench.ha.calls if start <= t <= end]
-    sent = loose.commands(calls, entity_label)
+    sent = ha_lights.commands(calls, entity_label)
     network = networks(bench)
-    kind_of = {entity_of(bench, light): light.kind for light in bench.loose}
+    kind_of = {entity_of(bench, light): light.kind for light in bench.ha_lights}
     network_label = {
-        n: loose.NETWORK_LABEL[kind_of[e]] for e, n in network.items() if n is not None
+        n: ha_lights.NETWORK_LABEL[kind_of[e]]
+        for e, n in network.items()
+        if n is not None
     }
-    result = loose.judge_rate(
+    result = ha_lights.judge_rate(
         sent, network, entity_label, network_label, slack=bench.th.rate_slack_s
     )
     bench.report.add(
@@ -314,12 +329,12 @@ def rate_step(bench: Any, start: float, end: float, mode: str = MODE) -> None:
 
 
 def area_step(bench: Any, start: float, end: float) -> None:
-    """Nothing streamed the bench area while the loose lights were driven."""
+    """Nothing streamed the bench area while the Home Assistant lights were driven."""
     statuses = bench.bridge.statuses(start, end)
     ok = bool(statuses) and all(s["status"] == "inactive" for s in statuses)
     bench.report.add(
         Step(
-            "the bench area did not stream during the loose-light steps",
+            "the bench area did not stream during the Home Assistant light steps",
             MODE,
             PASS if ok else FAIL,
             numbers={"bridge polls": len(statuses)},

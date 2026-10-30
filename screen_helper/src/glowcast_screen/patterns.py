@@ -89,7 +89,10 @@ class PatternSource:
     def showing(self) -> Showing:
         if self.name != "cycle":
             return Showing(self.name, self._start)
-        step = math.floor((self._clock() - self._start) / self.interval)
+        # The clock is the wall clock, because `since` is compared with other
+        # wall-clock times (the bench's camera). It can step back (a time sync);
+        # before the start the cycle still shows its first pattern (#216).
+        step = max(0, math.floor((self._clock() - self._start) / self.interval))
         return Showing(CYCLE[step % len(CYCLE)], self._start + step * self.interval)
 
     def next_change(self) -> float | None:

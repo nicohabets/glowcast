@@ -1,6 +1,6 @@
-"""What the loose lights follow, as an entity (architecture 4.3, #9).
+"""What the Home Assistant lights follow, as an entity (architecture 4.3, #9).
 
-Provided by the loose-lights output type. The options are the Home Assistant
+Provided by the Home Assistant lights output type. The options are the Home Assistant
 areas and the light groups that have colour lights, by name; while single
 lights are used, it shows "chosen lights" (the lights themselves are picked in
 the settings screen). Selecting an area or a group stores it in
@@ -158,7 +158,7 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
 
     @property
     def _output(self) -> Mapping[str, Any]:
-        """The stored loose-lights block, alone or in a combined output."""
+        """The stored Home Assistant lights block, alone or in a combined output."""
         return output_block(self._entry.options, OUTPUT_HA_LIGHTS) or {
             CONF_TYPE: OUTPUT_HA_LIGHTS
         }

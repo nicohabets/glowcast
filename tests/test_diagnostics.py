@@ -262,12 +262,11 @@ async def test_no_secrets_or_names_anywhere_in_the_download(
     assert area.state == AREA_NAME
     [output] = adapters.outputs
     assert AREA_NAME in output.channels[0].name
-    # Newer Home Assistant adds the integration's repair issues to the
-    # download; their text has the TV's name as a placeholder.
+    # Home Assistant adds the integration's repair issues to the download;
+    # their text has the TV's name as a placeholder.
     entry.runtime_data._raise_issue("area_not_found")
     download = await _get_diagnostics_for_config_entry(hass, hass_client, entry)
-    if "issues" in download:  # not on 2025.7.2
-        assert len(download["issues"]) == 1
+    assert len(download["issues"]) == 1
     text = json.dumps(download)
     for value in SECRETS:
         assert value.lower() not in text.lower()
@@ -327,7 +326,6 @@ async def test_a_source_without_a_device(
         "webos",
         dataclasses.replace(
             SOURCES["webos"],
-            device_identifier=lambda data: None,
             device_id=lambda hass, data: None,
         ),
     )

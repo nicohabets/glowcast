@@ -1,8 +1,8 @@
-"""The bench's loose lights (#9): their config, and the judgement of the rate,
+"""The bench's Home Assistant lights (#9): their config, and the judgement of the rate,
 the colours from a light's state and the restore. Pure functions on recorded
-numbers, so `tests/test_bench_loose.py` runs them in CI.
+numbers, so `tests/test_bench_ha_lights.py` runs them in CI.
 
-A loose light is a light of the product owner's Home Assistant that the
+A Home Assistant light is a light of the product owner's Home Assistant that the
 bench's local Home Assistant mirrors as a proxy light (stubs/proxy.py) of a
 Hue network (`kind: hue`) or a Thread network (`kind: matter`). One that the
 camera sees (`light:` names one of the bench's `lights:`) is judged with the
@@ -52,8 +52,8 @@ def schedule() -> ModuleType:
 
 
 @dataclasses.dataclass(frozen=True)
-class LooseLight:
-    """One loose light: its entity in the owner's HA, network, position, and
+class HaLight:
+    """One Home Assistant light: its entity in the owner's HA, network, position, and
     the camera light that shows it (None: judged by its state)."""
 
     index: int  # 1, 2, ...
@@ -74,23 +74,23 @@ class LooseLight:
         return f"Bench proxy {self.index}"
 
 
-def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
-    """The `loose_lights:` list; ValueError with the reason when it is wrong.
+def parse(cfg: Mapping[str, Any]) -> list[HaLight]:
+    """The `ha_lights:` list; ValueError with the reason when it is wrong.
 
     Each item: `kind` (hue or matter); `light` (optional, a name in `lights:`
     that the camera sees); `entity_id` (in the owner's HA; default: that
     light's); the position as `position` (a preset) or `x` and `z` (-1..1);
     `in_area: true` (optional, at most one: a camera light of kind hue).
     """
-    items = cfg.get("loose_lights")
+    items = cfg.get("ha_lights", cfg.get("loose_lights"))  # old name until v0.4
     camera = cfg.get("lights") or {}
     if not isinstance(items, list) or not items:
-        raise ValueError("`loose_lights` must be a list of lights")
+        raise ValueError("`ha_lights` must be a list of lights")
     if len(items) > MAX_LIGHTS:
-        raise ValueError(f"`loose_lights` takes at most {MAX_LIGHTS} lights")
-    out: list[LooseLight] = []
+        raise ValueError(f"`ha_lights` takes at most {MAX_LIGHTS} lights")
+    out: list[HaLight] = []
     for i, item in enumerate(items, 1):
-        where = f"`loose_lights` item {i}"
+        where = f"`ha_lights` item {i}"
         if not isinstance(item, dict):
             raise ValueError(f"{where} must be a mapping")
         name = item.get("light")
@@ -119,31 +119,31 @@ def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
             raise ValueError(f"{where}: `in_area` must be true or false")
         if in_area and (item["kind"] != "hue" or name is None):
             raise ValueError(f"{where}: `in_area` needs kind hue and a camera `light`")
-        out.append(LooseLight(i, str(entity), item["kind"], x, z, name, in_area))
+        out.append(HaLight(i, str(entity), item["kind"], x, z, name, in_area))
     if len({light.entity_id for light in out}) != len(out):
-        raise ValueError("`loose_lights` names a light twice")
+        raise ValueError("`ha_lights` names a light twice")
     if len({light.camera for light in out if light.camera}) != sum(
         1 for light in out if light.camera
     ):
-        raise ValueError("`loose_lights` names a camera light twice")
+        raise ValueError("`ha_lights` names a camera light twice")
     if sum(light.in_area for light in out) > 1:
-        raise ValueError("`loose_lights` marks more than one light `in_area`")
+        raise ValueError("`ha_lights` marks more than one light `in_area`")
     return out
 
 
-def beside_area(lights: Sequence[LooseLight]) -> list[LooseLight]:
-    """The loose lights the combined suite drives beside the bench area: the
+def beside_area(lights: Sequence[HaLight]) -> list[HaLight]:
+    """The Home Assistant lights the combined suite drives beside the bench area: the
     ones the camera does not see (the camera lights are the area's)."""
     return [light for light in lights if light.camera is None]
 
 
-def in_area(lights: Sequence[LooseLight]) -> LooseLight | None:
-    """The loose light the combined suite also puts in the loose lights while
-    the bench area streams to it (#198), or None."""
+def in_area(lights: Sequence[HaLight]) -> HaLight | None:
+    """The Home Assistant light the combined suite also puts in the Home Assistant
+    lights while the bench area streams to it (#198), or None."""
     return next((light for light in lights if light.in_area), None)
 
 
-def area_unique_id(light: LooseLight, rid_of: Mapping[str, str | None]) -> str | None:
+def area_unique_id(light: HaLight, rid_of: Mapping[str, str | None]) -> str | None:
     """The in-area light's proxy unique id: its Hue light resource id, the
     bridge light that came on with its camera light in the calibration
     (`rid_of`); None when that could not be told (also when it came on with
@@ -152,7 +152,7 @@ def area_unique_id(light: LooseLight, rid_of: Mapping[str, str | None]) -> str |
     return rid if rid is not None and list(rid_of.values()).count(rid) == 1 else None
 
 
-def labels(lights: Sequence[LooseLight], camera_labels: Mapping[str, str]) -> dict:
+def labels(lights: Sequence[HaLight], camera_labels: Mapping[str, str]) -> dict:
     """{index: label}: a camera light's own label ("light 1"), the others
     numbered on after the camera lights ("light 3 (state)")."""
     n = len(camera_labels)
@@ -422,7 +422,7 @@ def judge_rate(
     *,
     slack: float,
 ) -> RateResult:
-    """The rate limits of Glowcast's loose lights, on the commands it sent.
+    """The rate limits of Glowcast's Home Assistant lights, on the commands it sent.
 
     Per light (`sent`: local entity -> commands): at least its interval minus
     `slack` between two commands, and `transition` its actual interval (the

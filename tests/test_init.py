@@ -156,7 +156,6 @@ async def test_a_source_without_a_device(
         "webos",
         dataclasses.replace(
             SOURCES["webos"],
-            device_identifier=lambda data: None,
             device_id=lambda hass, data: None,
         ),
     )

@@ -1,25 +1,25 @@
 """The bench's combined suite (#11): the bench's entertainment area and the
-loose lights beside it (from `loose_lights:`, the ones the camera does not
+Home Assistant lights beside it (from `ha_lights:`, the ones the camera does not
 see) in one Glowcast entry, output type `combined`.
 
 After the calibration, in pattern mode:
-1. with the helper's `cycle`: the area lights (camera) and the loose lights
+1. with the helper's `cycle`: the area lights (camera) and the Home Assistant lights
    (their state in the owner's HA) follow the colours; the area streams with
-   one stream while the loose lights get their commands at their own rate;
-   switch off: the area released, the bench lights back (camera), the loose
-   lights back (owner state);
-2. with a steady picture (left-red-right-blue, never black): the loose
-   lights' proxies made unavailable in the local HA only
+   one stream while the Home Assistant lights get their commands at their own rate;
+   switch off: the area released, the bench lights back (camera), the Home
+   Assistant lights back (owner state);
+2. with a steady picture (left-red-right-blue, never black): the Home
+   Assistant lights' proxies made unavailable in the local HA only
    (`glowcast_bench.set_available`; the owner's lights are not touched): the
    part shows in `dropped_outputs` while the area streams on; available again
    before the retry: it follows again and the attribute clears; later
    (Glowcast's "lost again" window past), unavailable through the retry: it
    stays dropped with the reason, also once available again;
-   then, with a loose light marked `in_area: true` (#198), still on the
+   then, with a Home Assistant light marked `in_area: true` (#198), still on the
    steady picture: that camera light's proxy (under its Hue light resource
-   id) stored beside the loose lights and switched on: Glowcast sends it no
+   id) stored beside the Home Assistant lights and switched on: Glowcast sends it no
    light command, raises the repair issue, the area streams on with its
-   lights on their sides and the loose lights beside it follow; switch off:
+   lights on their sides and the Home Assistant lights beside it follow; switch off:
    everything back;
 3. switched on again: the helper stopped (tv_off), the area released and
    every light back.
@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Any
 
 import combined
+import ha_lights_suite
 import local_ha
-import loose_suite
 import suite
 from report import FAIL, PASS, Step
 
@@ -48,7 +48,7 @@ from custom_components.glowcast.core.pipeline import (  # noqa: E402
 
 MODE = "combined"
 STEADY = "left-red-right-blue"
-IN_AREA = "a loose light in the area too"
+IN_AREA = "a Home Assistant light in the area too"
 IN_AREA_WAIT = 8.0  # seconds synced before the checks
 # The waits (a test runs the steps without them).
 sleep = asyncio.sleep
@@ -57,7 +57,7 @@ sleep = asyncio.sleep
 async def run(bench: Any) -> None:
     """The suite, after the calibration, with the helper and the local HA up."""
     assert bench.ha is not None and bench.bridge is not None and bench.owner
-    bench.owner.follow([light.entity_id for light in bench.loose], 1.0)
+    bench.owner.follow([light.entity_id for light in bench.ha_lights], 1.0)
     reference = await colours(bench)
     if reference is None:
         return
@@ -73,26 +73,26 @@ async def run(bench: Any) -> None:
         await set_available(bench, True)
     await switch_off(bench)
     await in_area(bench)
-    # 3: both parts again from the start; the helper stopped. The loose
-    # lights go back to their state at this start: a light that was
+    # 3: both parts again from the start; the helper stopped. The Home
+    # Assistant lights go back to their state at this start: a light that was
     # unavailable when its part was released kept Glowcast's last colour.
-    reference = await loose_suite.read_states(bench)
+    reference = await ha_lights_suite.read_states(bench)
     if await bench.switch_on(MODE, name="switch on again: both parts"):
         await sleep(6)
         await stop_both(bench, reference, "helper stopped (tv_off)", "helper")
 
 
 async def colours(bench: Any) -> dict[str, dict[str, Any]] | None:
-    """Step 1 with the helper's cycle; the loose lights' reference states."""
+    """Step 1 with the helper's cycle; the Home Assistant lights' reference states."""
     interval = float(
         bench.cfg["helper"].get("pattern_interval", suite.TIMING.pattern_interval)
     )
     cycles = int(bench.cfg.get("combined_cycles", 1))
     await bench.wait_for_red(interval)
-    reference = await loose_suite.read_states(bench)
+    reference = await ha_lights_suite.read_states(bench)
     on_at = time.time()
     if not await bench.switch_on(
-        MODE, name="switch on: the area streams, the loose lights follow"
+        MODE, name="switch on: the area streams, the Home Assistant lights follow"
     ):
         return None
     showing, since = bench.pattern_changes()[-1]
@@ -112,7 +112,7 @@ async def colours(bench: Any) -> dict[str, dict[str, Any]] | None:
         if name in suite.PATTERN_COLOURS:
             colour = suite.PATTERN_COLOURS[name]
             bench.colour_step(MODE, name, colour, start, stop)
-            loose_suite.colour_step(
+            ha_lights_suite.colour_step(
                 bench,
                 name,
                 dict.fromkeys(light_indexes(bench), colour),
@@ -123,20 +123,22 @@ async def colours(bench: Any) -> dict[str, dict[str, Any]] | None:
             streaming.append((start, stop))
         elif name == STEADY:
             bench.left_right_step(MODE, start, stop)
-            expected = {li.index: loose_suite.expected_split(li) for li in bench.loose}
-            loose_suite.colour_step(bench, name, expected, start, stop, MODE)
+            expected = {
+                li.index: ha_lights_suite.expected_split(li) for li in bench.ha_lights
+            }
+            ha_lights_suite.colour_step(bench, name, expected, start, stop, MODE)
         elif name == "black":
-            # No picture releases both parts; the loose lights come back.
-            loose_suite.release_step(bench, reference, start, stop, MODE)
+            # No picture releases both parts; the Home Assistant lights come back.
+            ha_lights_suite.release_step(bench, reference, start, stop, MODE)
     stream_step(bench, streaming)
-    loose_suite.rate_step(bench, on_at, bench.wsl(end), MODE)
+    ha_lights_suite.rate_step(bench, on_at, bench.wsl(end), MODE)
     await bench.wait_for_colour(interval)
     await stop_both(bench, reference, "switch off", "switch")
     return reference
 
 
 def light_indexes(bench: Any) -> list[int]:
-    return [light.index for light in bench.loose]
+    return [light.index for light in bench.ha_lights]
 
 
 def stream_step(bench: Any, windows: list[tuple[float, float]]) -> None:
@@ -160,7 +162,8 @@ def stream_step(bench: Any, windows: list[tuple[float, float]]) -> None:
         polls += n
     bench.report.add(
         Step(
-            "the area streams through the colours (one stream) beside the loose lights",
+            "the area streams through the colours (one stream) beside the Home "
+            "Assistant lights",
             MODE,
             PASS if ok else FAIL,
             numbers={"runs of patterns": len(runs), "bridge polls": polls},
@@ -170,19 +173,22 @@ def stream_step(bench: Any, windows: list[tuple[float, float]]) -> None:
 
 
 async def set_available(bench: Any, available: bool) -> None:
-    """The loose lights' proxies (un)available in the local HA only."""
-    for light in bench.loose:
+    """The Home Assistant lights' proxies (un)available in the local HA only."""
+    for light in bench.ha_lights:
         await bench.ha.call(
             "glowcast_bench",
             "set_available",
-            {"entity_id": loose_suite.entity_of(bench, light), "available": available},
+            {
+                "entity_id": ha_lights_suite.entity_of(bench, light),
+                "available": available,
+            },
         )
 
 
 async def wait_dropped(
     bench: Any, want: bool, within: float
 ) -> tuple[float | None, dict[str, str]]:
-    """Until the loose lights' part is dropped (`want`) or not: the WSL time
+    """Until the Home Assistant lights' part is dropped (`want`) or not: the WSL time
     and the attribute, or None and the last attribute."""
     deadline = time.monotonic() + within
     seen: dict[str, str] = {}
@@ -196,10 +202,10 @@ async def wait_dropped(
 
 
 async def part_fails(bench: Any) -> None:
-    """Step 2: the loose lights' part lost, back before the retry, then lost
+    """Step 2: the Home Assistant lights' part lost, back before the retry, then lost
     through the retry; the area streams on all along."""
     th = bench.th
-    entities = [loose_suite.entity_of(bench, light) for light in bench.loose]
+    entities = [ha_lights_suite.entity_of(bench, light) for light in bench.ha_lights]
     # a: lost.
     start = time.time()
     await set_available(bench, False)
@@ -207,7 +213,7 @@ async def part_fails(bench: Any) -> None:
     ok = dropped_at is not None and dropped_at - start <= th.drop_within_s
     bench.report.add(
         Step(
-            "a part failing (the loose lights unavailable in the local HA): "
+            "a part failing (the Home Assistant lights unavailable in the local HA): "
             "shown as dropped",
             MODE,
             PASS if ok else FAIL,
@@ -296,16 +302,16 @@ async def part_fails(bench: Any) -> None:
 
 
 async def in_area(bench: Any) -> None:
-    """Step 2, a loose light in the bench area too (#198), on the steady
-    picture: left out of the loose lights, the repair issue raised, the area
-    and the loose lights beside it on as before."""
+    """Step 2, a Home Assistant light in the bench area too (#198), on the steady
+    picture: left out of the Home Assistant lights, the repair issue raised, the area
+    and the Home Assistant lights beside it on as before."""
     light = bench.in_area
     if light is None:
         return
     if light.index not in bench.proxies:
         bench.report.add(
             Step(
-                f"{IN_AREA}: left out of the loose lights",
+                f"{IN_AREA}: left out of the Home Assistant lights",
                 MODE,
                 FAIL,
                 note="not matched to a bridge light in the calibration",
@@ -314,10 +320,10 @@ async def in_area(bench: Any) -> None:
         return
     if (await bench.ha.state("switch"))["state"] == "on":
         await switch_off(bench)
-    reference = await loose_suite.read_states(bench)
-    proxy = loose_suite.entity_of(bench, light)
+    reference = await ha_lights_suite.read_states(bench)
+    proxy = ha_lights_suite.entity_of(bench, light)
     before = await issue_raised(bench, tries=1)
-    await bench.set_loose_output([*bench.loose, light])
+    await bench.set_ha_lights_output([*bench.ha_lights, light])
     try:
         on_at = time.time()
         if not await bench.switch_on(MODE, name=f"switch on: {IN_AREA}"):
@@ -333,17 +339,17 @@ async def in_area(bench: Any) -> None:
                 MODE,
                 PASS if sent == 0 else FAIL,
                 numbers={"light calls": sent},
-                note="" if sent == 0 else "it was driven as a loose light",
+                note="" if sent == 0 else "it was driven as a Home Assistant light",
             )
         )
     finally:
         if (await bench.ha.state("switch"))["state"] == "on":
             await switch_off(bench)
-        await bench.set_loose_output(bench.loose)
+        await bench.set_ha_lights_output(bench.ha_lights)
 
 
 async def issue_raised(bench: Any, tries: int = 10) -> bool:
-    """Whether Glowcast's repair issue for loose lights in the area is up in
+    """Whether Glowcast's repair issue for Home Assistant lights in the area is up in
     the local HA; `tries` reads half a second apart (it is raised after the
     claim)."""
     for attempt in range(tries):
@@ -360,7 +366,7 @@ async def in_area_checks(
 ) -> None:
     """The in-area step's checks while syncing: the repair issue (not up
     before the switch on), the area (one stream; its lights by side, camera)
-    and the loose lights beside it (their commands since the switch on)."""
+    and the Home Assistant lights beside it (their commands since the switch on)."""
     raised = await issue_raised(bench)
     ok = raised and not before
     bench.report.add(
@@ -393,22 +399,24 @@ async def in_area_checks(
     )
     numbers: dict[str, Any] = {}
     ok = True
-    for other in bench.loose:
+    for other in bench.ha_lights:
         sent = combined.commands_after(
-            bench.ha.calls, [loose_suite.entity_of(bench, other)], on_at, end
+            bench.ha.calls, [ha_lights_suite.entity_of(bench, other)], on_at, end
         )
-        numbers[f"{bench.loose_label[other.index]} commands"] = sent
+        numbers[f"{bench.ha_lights_label[other.index]} commands"] = sent
         ok &= sent > 0
     dropped = combined.PART in await current(bench)
-    numbers["loose lights dropped"] = "yes" if dropped else "no"
+    numbers["Home Assistant lights dropped"] = "yes" if dropped else "no"
     ok &= not dropped
     bench.report.add(
         Step(
-            f"{IN_AREA}: the loose lights beside the area follow",
+            f"{IN_AREA}: the Home Assistant lights beside the area follow",
             MODE,
             PASS if ok else FAIL,
             numbers=numbers,
-            note="" if ok else "a loose light got no command, or the part dropped",
+            note=""
+            if ok
+            else "a Home Assistant light got no command, or the part dropped",
         )
     )
 
@@ -433,19 +441,19 @@ async def stop_both(
     bench: Any, reference: dict[str, dict[str, Any]], name: str, how: str
 ) -> None:
     """Stop (switch off, or the helper gone): the area and the bench lights
-    as in the basic suite, then the loose lights' states."""
+    as in the basic suite, then the Home Assistant lights' states."""
     start = time.time()
     await bench.check_stop(
         MODE, f"{name}: area released, bench lights back (camera)", how
     )
     within = bench.th.restore_within_s + 2.0
     await sleep(max(0.0, start + within + 1.0 - time.time()))
-    ok, numbers = loose_suite.lights_back(
+    ok, numbers = ha_lights_suite.lights_back(
         bench, reference, bench.win(start), bench.win(start + within + 1.0)
     )
     bench.report.add(
         Step(
-            f"{name}: the loose lights back (owner state)",
+            f"{name}: the Home Assistant lights back (owner state)",
             MODE,
             PASS if ok else FAIL,
             numbers=numbers,

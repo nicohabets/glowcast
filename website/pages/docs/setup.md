@@ -3,9 +3,9 @@
 After [installing Glowcast](installation.md), go to **Settings → Devices & services → Add integration → Glowcast**. During setup you pick:
 
 1. **What the lights follow** - **LG webOS TV**, then one of your LG webOS TVs in Home Assistant (or **Computer screen**, see [A computer screen](computer-screen.md))
-2. **Which lights follow the picture** - **Hue entertainment area** (the smoothest, for Hue lights in an entertainment area) or **Home Assistant lights** (any colour light in Home Assistant, about one change per second, no Hue bridge needed; see [Home Assistant lights](loose-lights.md)). For an entertainment area:
+2. **Which lights follow the picture** - **Hue entertainment area** (the smoothest, for Hue lights in an entertainment area) or **Home Assistant lights** (any colour light in Home Assistant, about one change per second, no Hue bridge needed; see [Home Assistant lights](home-assistant-lights.md)). For an entertainment area:
     1. **Hue Bridge** - and press its link button when asked, then click Submit within 30 seconds. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself. It shows up in the Hue app as an app called "glowcast".
-    2. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand. No area yet? See [Make an entertainment area in the Hue app](loose-lights.md#make-an-entertainment-area-in-the-hue-app).
+    2. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand. No area yet? See [Make an entertainment area in the Hue app](home-assistant-lights.md#make-an-entertainment-area-in-the-hue-app).
 
     For Home Assistant lights: what to follow (single lights, an area or a light group), the lights, and a place for each light.
 
