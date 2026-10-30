@@ -1,5 +1,7 @@
 """Lights far from the TV follow more softly (#15): blended with the whole picture."""
 
+import statistics
+import time
 from collections.abc import Callable
 
 import pytest
@@ -135,3 +137,19 @@ def test_intensity_applies_to_the_blended_colour() -> None:
     blended = colour(left(-1.0))
     [grey] = compute(FRAME, [left(-1.0)], 0.0)
     assert grey.rgb == pytest.approx((max(blended),) * 3)
+
+
+def test_sixteen_channels_with_far_ones_within_budget() -> None:
+    """The whole picture is averaged once per frame, however many lights are far."""
+    frame = make_frame(lambda col, row: (col * 4, row * 7, 128))
+    channels = [
+        Channel(str(i), str(i), -1 + 2 * (i % 4) / 3, -1 + 2 * (i // 4) / 3, y=y)
+        for i, y in enumerate([0.8, -0.8] * 8)
+    ]
+    timings = []
+    for _ in range(20):
+        start = time.perf_counter()
+        compute(frame, channels, 1.5)
+        timings.append(time.perf_counter() - start)
+    median_ms = statistics.median(timings) * 1000
+    assert median_ms < 20, f"compute() took {median_ms:.1f} ms (median of 20)"
