@@ -12,9 +12,10 @@ from typing import Any
 
 import pytest
 
-from custom_components.glowcast.core.letterbox import STABLE
+from custom_components.glowcast.core.letterbox import NO_BARS, STABLE, Bars, Letterbox
 from custom_components.glowcast.core.light_state import (
     BLACK_HOLD,
+    CUT_FADE,
     FADE_IN,
     GLOW,
     GLOW_COLOR,
@@ -28,6 +29,7 @@ from custom_components.glowcast.core.pipeline import (
     Settings,
     StopReason,
     UpdateRate,
+    _compute,
 )
 from custom_components.glowcast.core.ports import (
     OutputAuthFailed,
@@ -56,6 +58,9 @@ from .fakes import (
 )
 
 TICK = 1 / 25
+# Two colours 51 of 255 (0.2) apart per component: below the cut (#258).
+ROSE = (204, 51, 51)
+LILAC = (153, 51, 102)
 
 
 class Harness:
@@ -74,6 +79,9 @@ class Harness:
         self.status_error: Exception | None = None
         self.compute_error: Exception | None = None
         self.intensities: list[float] = []  # the factor of each colour computation
+        # Per colour computation: how often the lights were claimed by then,
+        # the letterbox memory it got and its bars before the frame.
+        self.computes: list[tuple[int, Letterbox, Bars]] = []
         self.frames: list[tuple[float, Frame]] = []  # each frame the pipeline got
         self.pipeline = Pipeline(
             self.source,
@@ -123,7 +131,12 @@ class Harness:
     async def _runner(self, func: Callable[..., Any], *args: Any) -> Any:
         if self.compute_error is not None:
             raise self.compute_error
-        self.intensities.append(args[2] if len(args) > 2 else args[-1])
+        if func is _compute:
+            _, _, intensity, letterbox, _ = args
+            self.intensities.append(intensity)
+            self.computes.append(
+                (self.log.count("output.start"), letterbox, letterbox.bars)
+            )
         self.frames.append((self.clock.now(), args[0]))
         return func(*args)
 
@@ -323,9 +336,10 @@ async def test_no_fade_in_after_a_retry() -> None:
 
 @pytest.mark.usefixtures("no_fade_in")
 async def test_fades_linearly_over_the_measured_capture_interval() -> None:
+    """A change below the cut threshold (#258) fades over the interval."""
     h = Harness(rate=UpdateRate.LOW)  # one capture per second
-    h.source.frames = [solid(RED), solid(RED)]
-    h.source.default = solid(BLUE)
+    h.source.frames = [solid(ROSE), solid(ROSE)]
+    h.source.default = solid(LILAC)
     await h.start()
     # Captures take 0.25 s and start every second: they complete at 0.25
     # (startup), 0.5 and 1.5 s, so blue arrives at 1.5 s after an interval of 1 s.
@@ -335,13 +349,15 @@ async def test_fades_linearly_over_the_measured_capture_interval() -> None:
     sends = [(t, c[0].rgb) for t, c in h.output.sent if blue_at <= t]
     for t, rgb in sends:
         p = min(1.0, (t - blue_at) / interval)
-        assert rgb[0] == pytest.approx(1.0 - p, abs=0.01)
-        assert rgb[1] == 0.0  # a bright fade gets no glow (#43)
-        assert rgb[2] == pytest.approx(p, abs=0.01)
+        assert rgb[0] == pytest.approx((204 - 51 * p) / 255, abs=0.01)
+        assert rgb[1] == pytest.approx(51 / 255, abs=0.01)  # no glow (#43)
+        assert rgb[2] == pytest.approx((51 + 51 * p) / 255, abs=0.01)
     await h.clock.advance(1.0)
     # The next capture arrives one tick before a fade ends, so the colour
     # trails the target by a fraction and converges.
-    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
+    assert h.output.sent[-1][1][0].rgb == pytest.approx(
+        (153 / 255, 51 / 255, 102 / 255), abs=0.01
+    )
     steps = [t for t, _ in h.output.sent if blue_at <= t <= blue_at + interval]
     assert all(b - a == pytest.approx(TICK) for a, b in itertools.pairwise(steps))
     assert await h.stop() == StopReason.USER
@@ -1588,26 +1604,30 @@ async def test_cleanup_continues_after_a_failing_step() -> None:
     assert h.log[-3:] == CLEANUP
 
 
+def _letterbox_paint(col: int, row: int) -> tuple[int, int, int]:
+    """Bars of 8 rows, a dark strip of picture next to them, then red."""
+    if row < 8 or row >= 36 - 8:
+        return (0, 0, 0)
+    return (40, 40, 40) if row < 11 else (255, 0, 0)
+
+
+LETTERBOXED = Frame(
+    64,
+    36,
+    bytes(
+        c for row in range(36) for col in range(64) for c in _letterbox_paint(col, row)
+    ),
+)
+LETTERBOXED_BARS = Bars(8, 8, 0, 0)
+
+
 async def test_letterbox_bars_move_the_regions_after_they_were_stable() -> None:
     """The top light samples the picture inside the bars once they have been
     there for STABLE (#34); before that, the frame's own top."""
     top = Channel(id="top", name="top", x=0.0, z=1.0)
     h = Harness()
     h.output.channels = [top]
-    width, height = 64, 36
-
-    def paint(col: int, row: int) -> tuple[int, int, int]:
-        if row < 8 or row >= height - 8:
-            return (0, 0, 0)
-        return (40, 40, 40) if row < 11 else (255, 0, 0)
-
-    h.source.default = Frame(
-        width,
-        height,
-        bytes(
-            c for row in range(height) for col in range(width) for c in paint(col, row)
-        ),
-    )
+    h.source.default = LETTERBOXED
     await h.start()
     await h.clock.advance(1)
     before = h.output.rgb_at(-1)
@@ -1615,4 +1635,78 @@ async def test_letterbox_bars_move_the_regions_after_they_were_stable() -> None:
     after = h.output.rgb_at(-1)
     assert before[0] < 0.2  # the dark strip next to the bar: a dim grey
     assert after[0] > 0.5 > after[2] * 2  # the picture's red
+    assert await h.stop() == StopReason.USER
+
+
+def first_compute_of_claim(h: Harness, claim: int) -> tuple[Letterbox, Bars]:
+    """The letterbox memory, and its bars, at the first colour computation
+    after the lights were claimed for the `claim`-th time."""
+    return next((box, bars) for claims, box, bars in h.computes if claims == claim)
+
+
+async def test_the_letterbox_is_kept_across_a_retry() -> None:
+    """After the OutputLost retry the bars are used at once, not learned again."""
+    h = Harness()
+    h.source.default = LETTERBOXED
+    await h.start()
+    await h.clock.advance(STABLE + 1.5)
+    first = h.computes[0][1]
+    assert first.bars == LETTERBOXED_BARS
+    h.output.check_error = OutputLost("dropped")
+    await h.clock.advance(0.1)
+    h.output.check_error = None
+    await h.clock.advance(6)
+    assert h.log.count("output.start") == 2
+    assert first_compute_of_claim(h, 2) == (first, LETTERBOXED_BARS)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_the_letterbox_is_kept_across_a_release_for_no_picture() -> None:
+    h = Harness()
+    h.source.default = LETTERBOXED
+    await h.start()
+    await h.clock.advance(STABLE + 1.5)
+    first = h.computes[0][1]
+    h.source.default = Frame(64, 36, bytes(64 * 36 * 3))  # all zero, same size
+    await h.clock.advance(NO_PICTURE_WAIT + 1)
+    assert h.log[-2:] == ["output.stop", "output.close"]
+    h.source.default = LETTERBOXED
+    await h.clock.advance(1)
+    assert h.log.count("output.start") == 2
+    assert first_compute_of_claim(h, 2) == (first, LETTERBOXED_BARS)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_a_new_pipeline_starts_without_bars() -> None:
+    """A restart (switch off and on, a new area) learns the bars afresh."""
+    h = Harness()
+    h.source.default = LETTERBOXED
+    await h.start()
+    await h.clock.advance(STABLE + 1.5)
+    assert await h.stop() == StopReason.USER
+    learned = h.computes[0][1]
+    assert learned.bars == LETTERBOXED_BARS
+    again = Harness()
+    again.source.default = LETTERBOXED
+    await again.start()
+    await again.clock.advance(1)
+    box, bars = first_compute_of_claim(again, 1)
+    assert box is not learned and bars == NO_BARS
+    assert await again.stop() == StopReason.USER
+
+
+async def test_a_cut_shows_at_once() -> None:
+    """A scene cut fades over CUT_FADE, not the capture interval (#258)."""
+    h = Harness(rate=UpdateRate.LOW)  # one capture per second
+    # Blue arrives at 2.5 s, after the fade-in of the claim (FADE_IN).
+    h.source.frames = [solid(RED)] * 3
+    h.source.default = solid(BLUE)
+    await h.start()
+    await h.clock.advance(3.0)
+    sends = [(t, c[0].rgb) for t, c in h.output.sent]
+    first = next(t for t, rgb in sends if rgb[2] > 0)
+    assert first > FADE_IN
+    # From the first tick with some blue, blue within CUT_FADE.
+    done = [rgb for t, rgb in sends if t >= first + CUT_FADE]
+    assert done[0] == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
     assert await h.stop() == StopReason.USER

@@ -89,6 +89,21 @@ async def test_the_parts_starting_colours_are_passed_on() -> None:
     ]
 
 
+async def test_the_parts_depth_and_light_are_passed_on() -> None:
+    """The stretch of a TV strip (#23) needs them in a combined output too."""
+    p = Parts()
+    p.area.channels = [
+        Channel("0", "left", -0.4, 0, y=0.8, light="strip"),
+        Channel("1", "right", 0.4, 0, y=0.8, light="strip"),
+    ]
+    channels = await p.start()
+    assert [(c.id, c.y, c.light) for c in channels] == [
+        ("0/0", 0.8, "strip"),
+        ("0/1", 0.8, "strip"),
+        ("1/0", None, None),
+    ]
+
+
 async def test_a_retry_of_the_whole_output_is_a_retry_of_each_part() -> None:
     p = Parts()
     await p.output.start(retry=True)

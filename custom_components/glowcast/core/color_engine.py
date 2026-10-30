@@ -21,8 +21,9 @@ MIN_LIT_SHARE = 0.05
 # scenes and left snow with a red jacket nearly white).
 WEIGHT_FLOOR = 0.5
 # A light with several channels at or above this depth (y) is around the TV,
-# like a gradient lightstrip behind it: its channels are stretched so its
-# outermost ones reach the edges of the picture (#23).
+# when they are all there and on both sides of the centre (x), like a gradient
+# lightstrip behind it: its channels are stretched so its outermost ones reach
+# the edges of the picture (#23).
 NEAR_TV = 0.5
 # Along an axis where a light's channels all sit closer to the centre than
 # this (all at the middle height, say), they are left where they are.
@@ -102,23 +103,30 @@ def _stretched(channels: list[Channel]) -> list[Channel]:
 
     A gradient lightstrip behind the TV has its channels close to the centre
     (between -0.4 and 0.4 in a real area, see "Verified facts"), so with the
-    linear mapping they would sample about 30 % in from the edges. Each such
-    light is scaled from the centre until its outermost channel reaches the
-    edge, per axis; a light that reaches the edge already is left as it is,
-    never pulled in. Other lights keep their positions.
+    linear mapping they would sample about 30 % in from the edges. Such a
+    light has several channels, all on the TV side (y at least NEAR_TV) and
+    some left and some right of the centre (x); it is decided for the whole
+    light, so a strip from the TV to the back of the room is left as it is.
+    Each such light is scaled from the centre until its outermost channel
+    reaches the edge, per axis; a light that reaches the edge already is left
+    as it is, never pulled in. Other lights keep their positions.
     """
     lights: dict[str, list[int]] = {}
     for index, channel in enumerate(channels):
-        if channel.light is not None and channel.y is not None and channel.y >= NEAR_TV:
+        if channel.light is not None:
             lights.setdefault(channel.light, []).append(index)
     stretched = list(channels)
     for indexes in lights.values():
-        if len(indexes) < 2:
+        light = [channels[i] for i in indexes]
+        if (
+            len(light) < 2
+            or any(c.y is None or c.y < NEAR_TV for c in light)
+            or not min(c.x for c in light) < 0 < max(c.x for c in light)
+        ):
             continue
-        reach_x = max(abs(channels[i].x) for i in indexes)
-        reach_z = max(abs(channels[i].z) for i in indexes)
-        for i in indexes:
-            channel = channels[i]
+        reach_x = max(abs(c.x) for c in light)
+        reach_z = max(abs(c.z) for c in light)
+        for i, channel in zip(indexes, light, strict=True):
             stretched[i] = dataclasses.replace(
                 channel,
                 x=channel.x / reach_x if MIN_SPREAD <= reach_x < 1 else channel.x,

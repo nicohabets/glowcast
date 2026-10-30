@@ -275,6 +275,36 @@ async def test_channels_have_their_positions(
     ]
 
 
+async def test_channels_of_one_gradient_light_share_it(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Two segments of one strip get its entertainment service as `light`
+    (#23); a position without a depth gives y=None."""
+    add_bridge()
+    channels = [
+        {
+            "channel_id": 0,
+            "position": {"x": -0.4, "y": 0.8, "z": 0.0},
+            "members": [_member(4, 0)],
+        },
+        {
+            "channel_id": 1,
+            "position": {"x": 0.4, "y": 0.8, "z": 0.0},
+            "members": [_member(4, 1)],
+        },
+        {"channel_id": 2, "position": {"x": 0.9, "z": 0.5}, "members": [_member(5)]},
+    ]
+    mock_bridge(aioclient_mock, [{**_area(), "channels": channels}])
+    got = await output.start()
+    assert [(c.light, c.y) for c in got] == [
+        ("ent-4", 0.8),
+        ("ent-4", 0.8),
+        ("ent-5", None),
+    ]
+
+
 def test_segments_of_one_light_share_it() -> None:
     """The segments of a gradient light have their light's entertainment
     service as `light` (#23); a channel of several lights has none."""
