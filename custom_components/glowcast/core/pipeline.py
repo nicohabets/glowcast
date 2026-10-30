@@ -15,7 +15,8 @@ from typing import Any, Protocol
 
 from .color_engine import compute, is_all_zero, is_black
 from .letterbox import Letterbox
-from .light_state import LightState
+from .light_state import RGB, LightState
+from .light_test import LightTest, pattern_colors
 from .models import Channel, ChannelColor, Frame
 from .ports import (
     FrameSource,
@@ -215,6 +216,43 @@ class Pipeline:
         self._no_picture_since: float | None = None
         self._black_picture = False
         self._dropped_parts: dict[str, StopReason] = {}
+        self._phase = Phase.STARTING
+        # The light test while streaming (#182): what it shows, and once it is
+        # over, its last colours until the next frame fades in from them.
+        self._test: LightTest | None = None
+        self._test_sent: list[ChannelColor] = []
+        self._fade_back: dict[str, RGB] | None = None
+
+    @property
+    def testing(self) -> bool:
+        """Whether the light test shows (or waits for the picture to return)."""
+        return self._test is not None or self._fade_back is not None
+
+    async def async_test(self) -> bool:
+        """Show the light test instead of the picture's colours (#182).
+
+        Only while streaming: the lights are claimed, so there is no new
+        handshake. The picture's colours fade back in from the test's last
+        colours at the next frame. False when it cannot test now (not
+        streaming, or a test runs already).
+        """
+        if self._phase is not Phase.STREAMING or self.testing:
+            return False
+        channels = self._channels
+        try:
+            steps = await self._runner(pattern_colors, channels)
+        except Exception:
+            _LOGGER.exception("Unexpected error computing the test colours")
+            return False
+        if (
+            self._phase is not Phase.STREAMING
+            or self.testing
+            or self._channels is not channels
+        ):
+            return False  # changed meanwhile
+        self._test = LightTest(steps, self._clock.now())
+        _LOGGER.info("Testing the lights")
+        return True
 
     async def run(self) -> None:
         """Run until stopped; then clean up and report the stop once.
@@ -240,6 +278,7 @@ class Pipeline:
                 cancelled = True
         self._channels = []
         self._black_picture = False
+        self._end_test()
         _LOGGER.info("Glowcast stopped: %s", reason)
         self._report(Phase.STOPPED, reason)
         if cancelled:
@@ -439,6 +478,7 @@ class Pipeline:
         with suppress(Exception):
             await self._output.close()
         # Released for a retry or for no picture: measured again on the next stream.
+        self._end_test()
         self._channels = []
         self._captures_per_second = None
         self._black_picture = False
@@ -528,11 +568,7 @@ class Pipeline:
                 if check is None:
                     # The output throttles its own status requests.
                     check = asyncio.ensure_future(self._output.check())
-                self._output.send(
-                    self._lights.colors(
-                        self._clock.now(), self._settings.brightness / 100
-                    )
-                )
+                self._output.send(self._colors())
                 if self._parts_dropped() != self._dropped_parts:
                     self._report(Phase.STREAMING)
                 next_tick += tick
@@ -545,6 +581,29 @@ class Pipeline:
                 check.cancel()
                 with suppress(BaseException):
                     await check
+
+    def _colors(self) -> list[ChannelColor]:
+        """The colours to send now: the picture's, or the light test's."""
+        now = self._clock.now()
+        brightness = self._settings.brightness / 100
+        # Always asked, so the fades between frames go on under the test.
+        colors = self._lights.colors(now, brightness)
+        if self._test is not None:
+            if (test := self._test.colors(now, brightness)) is not None:
+                self._test_sent = test
+                return test
+            # Over: the next frame fades in from the test's last colours.
+            self._test = None
+            self._fade_back = {color.channel_id: color.rgb for color in self._test_sent}
+        if self._fade_back is not None:
+            return self._test_sent
+        return colors
+
+    def _end_test(self) -> None:
+        """Forget the light test (the lights are released)."""
+        self._test = None
+        self._fade_back = None
+        self._test_sent = []
 
     async def _async_set_target(self, frame: Frame) -> None:
         """Give the lights the frame's colours; raise _NoPicture after all-zero
@@ -565,6 +624,10 @@ class Pipeline:
             self._no_picture_since = now
         elif now - self._no_picture_since >= NO_PICTURE_WAIT:
             raise _NoPicture
+        if self._fade_back is not None and self._test is None:
+            # The light test is over: fade from its last colours to the picture.
+            self._lights.fade_in(self._fade_back)
+            self._fade_back = None
         self._lights.set_target(colors, frame_black, now)
         if frame_black != self._black_picture:
             self._black_picture = frame_black
@@ -594,6 +657,7 @@ class Pipeline:
         }
 
     def _report(self, phase: Phase, reason: StopReason | None = None) -> None:
+        self._phase = phase
         self._dropped_parts = self._parts_dropped()
         status = PipelineStatus(
             phase,
@@ -607,6 +671,62 @@ class Pipeline:
             self._on_status(status)
         except Exception:
             _LOGGER.exception("Error in the status callback")
+
+
+async def run_light_test(
+    output: LightOutput, brightness: float, runner: Runner, clock: Clock
+) -> StopReason | None:
+    """Claim the lights for the light test only, show it, and release them (#182).
+
+    For when Glowcast does not sync: no picture source is used. The release
+    (`stop()`, `close()`) runs on every exit path and completes even when the
+    task is cancelled (unload, Home Assistant stopping, a switch-on). Returns
+    None when the test was shown, or why the lights could not be claimed
+    (another app streams, or any other start error); then nothing was sent.
+    """
+    cancelled = False
+    try:
+        result = await _async_light_test(output, brightness, runner, clock)
+    except asyncio.CancelledError:
+        cancelled = True
+        result = None
+    except Exception:
+        _LOGGER.exception("Unexpected error during the light test")
+        result = StopReason.OUTPUT_UNAVAILABLE
+    cleanup = asyncio.ensure_future(_async_release(output))
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _async_light_test(
+    output: LightOutput, brightness: float, runner: Runner, clock: Clock
+) -> StopReason | None:
+    """Claim the lights and show the test; the caller releases them."""
+    try:
+        channels = await output.start()
+    except tuple(_START_ERRORS) as err:
+        return _START_ERRORS[type(err)]
+    test = LightTest(await runner(pattern_colors, channels), clock.now())
+    tick = 1 / output.max_rate_hz
+    while (colors := test.colors(clock.now(), brightness)) is not None:
+        output.send(colors)
+        await clock.sleep(tick)
+    return None
+
+
+async def _async_release(output: LightOutput) -> None:
+    """Release the lights after the light test, as a stop does."""
+    for step in (output.stop, output.close):
+        try:
+            await step()
+        except Exception:
+            _LOGGER.exception("Error while releasing the lights after the test")
 
 
 def stop_reason_of(error: Exception) -> StopReason:

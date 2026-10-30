@@ -75,7 +75,7 @@ During setup you pick:
 
 Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcast's key (for example because you removed the app in the Hue app), Home Assistant asks you to press the link button again; your settings are kept.
 
-Under **Configure**, or on Glowcast's device page (see [Settings](https://nicohabets.github.io/glowcast/docs/settings/#settings-on-the-device-page)), you can change which lights follow the picture (the area, or the Home Assistant lights and their places), brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV is fixed, and so is the bridge once Glowcast has paired with it; to change them, remove Glowcast and add it again. With Home Assistant lights, a bridge can be paired later: switch to an entertainment area under Configure.
+Under **Configure**, or on Glowcast's device page (see [Settings](https://nicohabets.github.io/glowcast/docs/settings/#settings-on-the-device-page)), you can change which lights follow the picture (the area, or the Home Assistant lights and their places), brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV is fixed, and so is the bridge once Glowcast has paired with it; to change them, remove Glowcast and add it again. With Home Assistant lights, a bridge can be paired later: switch to an entertainment area under Configure. The **Test lights** button on the device page shows red on the left and blue on the right, then green at the top and white below, to check where each light sits ([Test the lights](https://nicohabets.github.io/glowcast/docs/settings/#test-lights)).
 
 <img width="400" alt="The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
 
@@ -89,9 +89,13 @@ Glowcast adds one device, "Glowcast *TV name*", with a **switch** (for example `
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Fstart_with_tv.yaml)
 
+Next to a Philips Hue Sync Box, the blueprint "Follow a Hue Sync Box" turns Glowcast on and off with the box, for Home Assistant lights beside the box's own Hue lights:
+
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Ffollow_sync_box.yaml)
+
 When syncing stops, Home Assistant lights go back to how they were; with an entertainment area, what the lights do follows the area's "When syncing stops" setting in the Hue app; choose "Last on-state" to get them back as they were. Glowcast also stops by itself when the picture source turns off (the TV, or a computer's screen), when another app streams to the bridge, or when the light stream is lost: the switch turns off, the [status](#seeing-what-glowcast-does) says why, and where you can fix it, Home Assistant shows a repair.
 
-More: [starting automatically](https://nicohabets.github.io/glowcast/docs/starting/) (with an automation to write yourself), and [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
+More: [starting automatically](https://nicohabets.github.io/glowcast/docs/starting/) (with an automation to write yourself), [next to a Hue Sync Box](https://nicohabets.github.io/glowcast/guide/lights/#next-to-a-hue-sync-box), and [troubleshooting](https://nicohabets.github.io/glowcast/docs/troubleshooting/).
 
 ## Seeing what Glowcast does
 
@@ -107,6 +111,7 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 - **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
 - **Home Assistant lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.
 - **A Hue light follows through the entertainment area or as a Home Assistant light, not both**: one added to the area later in the Hue app is left out of the Home Assistant lights, and a repair issue says how to fix it.
+- **Next to a Hue Sync Box**, Glowcast drives Home Assistant lights only, not the box's own lights, and cannot use the box's colours.
 - **The TV's capture call is undocumented** by LG and could stop working after a firmware update; a TV that refuses it stops Glowcast with a repair that says so.
 
 More: [known limits](https://nicohabets.github.io/glowcast/docs/limits/).

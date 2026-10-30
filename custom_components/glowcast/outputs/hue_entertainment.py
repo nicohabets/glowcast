@@ -593,6 +593,72 @@ async def async_area_lights(
             lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
     except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
         return set()
+    light_ids = _area_light_ids(area, renderers, lights)
+    registry = er.async_get(hass)
+    return {
+        entry.entity_id
+        for entry in er.async_entries_for_config_entry(registry, hue_entry.entry_id)
+        if entry.domain == "light" and entry.unique_id in light_ids
+    }
+
+
+async def async_streamed_lights(
+    hass: HomeAssistant, entity_ids: Iterable[str], own_area_id: str | None
+) -> dict[str, str]:
+    """{entity id: area name} of these lights that are in an entertainment
+    area another app streams now, for example a Hue Sync Box (#219).
+
+    While an area streams, its bridge ignores other commands to its lights,
+    so they do not follow Home Assistant lights. `own_area_id` is the area
+    Glowcast streams itself (an entry with both, #11), which is left out.
+    Only Hue lights of Home Assistant's own hue entries can be checked: each
+    bridge is asked through its entry (its host and key, read at runtime,
+    never stored), with GET requests only. Empty when no bridge can be asked.
+    """
+    registry = er.async_get(hass)
+    per_entry: dict[str, dict[str, str]] = {}
+    for entity_id in entity_ids:
+        entry = registry.async_get(entity_id)
+        if entry is not None and entry.platform == HUE_DOMAIN and entry.config_entry_id:
+            per_entry.setdefault(entry.config_entry_id, {})[entry.unique_id] = entity_id
+    streamed: dict[str, str] = {}
+    for entry_id, entities in per_entry.items():
+        hue_entry = hass.config_entries.async_get_entry(entry_id)
+        if (
+            hue_entry is None
+            or hue_entry.state is not ConfigEntryState.LOADED
+            or hue_entry.data.get(CONF_API_VERSION) != 2
+        ):
+            continue
+        host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+        try:
+            async with asyncio.timeout(HINT_TIMEOUT):
+                areas = [
+                    area
+                    for area in await _async_clip_data(hass, host, key, AREAS_PATH)
+                    if area.get("status") == "active" and area.get("id") != own_area_id
+                ]
+                if not areas:
+                    continue
+                renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
+                lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
+        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+            continue
+        for area in areas:
+            name = (area.get("metadata") or {}).get("name") or str(area.get("id"))
+            for light_id in _area_light_ids(area, renderers, lights):
+                if light_id in entities:
+                    streamed.setdefault(entities[light_id], name)
+    return streamed
+
+
+def _area_light_ids(
+    area: dict[str, Any],
+    renderers: list[dict[str, Any]],
+    lights: list[dict[str, Any]],
+) -> set[Any]:
+    """The bridge's ids of the lights an entertainment area streams to: its
+    lights, and the lights of the devices its channels stream to."""
     light_ids = {
         service.get("rid")
         for service in area.get("light_services") or []
@@ -605,17 +671,11 @@ async def async_area_lights(
         for member in channel.get("members") or []
         if isinstance(member, dict)
     }
-    light_ids |= {
+    return light_ids | {
         light.get("id")
         for renderer, found in _renderer_lights(renderers, lights)
         if renderer.get("id") in services
         for light in found
-    }
-    registry = er.async_get(hass)
-    return {
-        entry.entity_id
-        for entry in er.async_entries_for_config_entry(registry, hue_entry.entry_id)
-        if entry.domain == "light" and entry.unique_id in light_ids
     }
 
 

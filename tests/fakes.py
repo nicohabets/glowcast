@@ -270,6 +270,10 @@ class FakePipeline:
         self.reason = StopReason.USER
         self.updates: list[Settings] = []
         self._stop = asyncio.Event()
+        # The light test while syncing (#182): how often it was asked, and
+        # whether one shows now (the test sets it).
+        self.tests = 0
+        self.testing = False
         FakePipeline.instances.append(self)
 
     async def run(self) -> None:
@@ -314,6 +318,10 @@ class FakePipeline:
 
     def update_settings(self, settings: Settings) -> None:
         self.updates.append(settings)
+
+    async def async_test(self) -> bool:
+        self.tests += 1
+        return True
 
     def finish(self, reason: StopReason) -> None:
         self.reason = reason
