@@ -63,7 +63,10 @@ async def run(bench: Any) -> None:
     finally:
         await set_available(bench, True)
     await switch_off(bench)
-    # 3: both parts again from the start; the helper stopped.
+    # 3: both parts again from the start; the helper stopped. The loose
+    # lights go back to their state at this start: a light that was
+    # unavailable when its part was released kept Glowcast's last colour.
+    reference = await loose_suite.read_states(bench)
     if await bench.switch_on(MODE, name="switch on again: both parts"):
         await sleep(6)
         await stop_both(bench, reference, "helper stopped (tv_off)", "helper")
