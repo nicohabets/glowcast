@@ -287,7 +287,8 @@ class HueEntertainmentOptionsSteps(HueEntertainmentSteps, OptionsFlow):
         if user_input is None:
             return self.async_show_form(step_id="hue_area_kept")
         output = output_block(self.config_entry.options, OUTPUT_HUE_ENTERTAINMENT)
-        assert output is not None
+        if output is None:  # changed in another settings screen meanwhile
+            return self.async_abort(reason="cannot_connect")
         return await self.async_output_chosen({}, dict(output))
 
     def _hue_no_areas(self, reason: str) -> ConfigFlowResult:
