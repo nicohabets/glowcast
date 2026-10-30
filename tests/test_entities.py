@@ -60,6 +60,7 @@ BRIGHTNESS = "number.glowcast_living_room_tv_brightness"
 INTENSITY = "number.glowcast_living_room_tv_intensity"
 UPDATE_RATE = "select.glowcast_living_room_tv_update_rate"
 AREA = "select.glowcast_living_room_tv_entertainment_area"
+TEST_LIGHTS = "button.glowcast_living_room_tv_test_lights"
 OPTIONS = {
     "output": {"type": "hue_entertainment", "area_id": "area-tv"},
     "brightness": 60,
@@ -187,6 +188,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
                 INTENSITY: "Intensity",
                 UPDATE_RATE: "Update rate",
                 AREA: "Entertainment area",
+                TEST_LIGHTS: "Test lights",
             },
         ),
         (
@@ -196,6 +198,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
                 INTENSITY: "Intensiteit",
                 UPDATE_RATE: "Updatefrequentie",
                 AREA: "Entertainmentruimte",
+                TEST_LIGHTS: "Lampen testen",
             },
         ),
     ],
@@ -203,7 +206,8 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
 async def test_the_entities(
     hass: HomeAssistant, fakes: FakeAdapters, language: str, names: dict[str, str]
 ) -> None:
-    """Four configuration entities next to the switch, with translated names."""
+    """Five configuration entities next to the switch, with translated names:
+    the settings and the test button (#182)."""
     hass.config.language = language
     entry = await setup(hass)
     registry = er.async_get(hass)
@@ -226,6 +230,7 @@ async def test_the_entities(
         f"{entry.entry_id}_intensity",
         f"{entry.entry_id}_update_rate",
         f"{entry.entry_id}_entertainment_area",
+        f"{entry.entry_id}_test_lights",  # the button (#182)
         f"{entry.entry_id}_status",  # the sensors (#14)
         f"{entry.entry_id}_captures_per_second",
     }
@@ -749,8 +754,9 @@ async def test_the_output_type_provides_what_follows_the_tv(
     }
     assert follow == expected
     assert f"{entry.entry_id}_entertainment_area" not in unique_ids
-    # The common settings, the switch and the two sensors (#14).
-    assert len(unique_ids) == 6 + len(expected)
+    # The common settings, the switch, the two sensors (#14) and the test
+    # button (#182).
+    assert len(unique_ids) == 7 + len(expected)
 
 
 async def test_an_unknown_output_type_still_gets_the_common_settings(
@@ -764,7 +770,15 @@ async def test_an_unknown_output_type_still_gets_the_common_settings(
             er.async_get(hass), entry.entry_id
         )
     )
-    assert domains == ["number", "number", "select", "sensor", "sensor", "switch"]
+    assert domains == [
+        "button",
+        "number",
+        "number",
+        "select",
+        "sensor",
+        "sensor",
+        "switch",
+    ]
 
 
 def test_an_output_type_without_its_own_entities() -> None:

@@ -22,8 +22,20 @@ from .const import (
     REAUTH_PART,
     REAUTH_SOURCE,
 )
-from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
-from .core.ports import SourceAuthFailed, SourceNotSupported, SourceUnavailable
+from .core.pipeline import (
+    MonotonicClock,
+    Phase,
+    Pipeline,
+    PipelineStatus,
+    StopReason,
+    run_light_test,
+)
+from .core.ports import (
+    LightOutput,
+    SourceAuthFailed,
+    SourceNotSupported,
+    SourceUnavailable,
+)
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType, part_options
 from .outputs.blocks import output_blocks, output_types
@@ -89,6 +101,10 @@ class GlowcastData:
         self._stopped_by_ha = False
         # Set by async_resume(); every start and stop clears it.
         self._resume_wanted = False
+        # The light test while Glowcast does not sync (#182), and whether a
+        # start waits for its release (no new test may claim the lights then).
+        self._test: asyncio.Task[None] | None = None
+        self._ending_test = False
 
     @property
     def is_on(self) -> bool:
@@ -125,10 +141,21 @@ class GlowcastData:
         return lambda: self._status_listeners.remove(update)
 
     async def async_start(self) -> None:
-        """Start syncing, unless an integration the TV or lights use is not set up."""
+        """Start syncing, unless an integration the TV or lights use is not set up.
+
+        A light test that runs meanwhile ends first, and its lights are
+        released before syncing claims them.
+        """
         if self._pipeline is not None:
             return
         self._resume_wanted = False
+        self._ending_test = True
+        try:
+            await self._async_end_test()
+        finally:
+            self._ending_test = False
+        if self._pipeline is not None:
+            return  # started meanwhile
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
@@ -226,11 +253,91 @@ class GlowcastData:
                 await source.close()
 
     async def async_stop(self) -> None:
-        """Stop syncing and wait until the lights are released."""
+        """Stop syncing (or the light test) and wait until the lights are
+        released."""
         self._resume_wanted = False
         # Switching off (or unloading) during a restart wins over the restart.
         self._stopped_during_restart = self._restarting
+        await self._async_end_test()
         await self._async_stop()
+
+    async def async_test_lights(self) -> None:
+        """Show the light test (#182): known colours by position, about 3 s
+        each, then back to what the lights did before.
+
+        While syncing, the running pipeline shows it instead of the picture;
+        otherwise the lights are claimed for the test only and released after
+        it, as a stop does, without the picture source. The switch does not
+        change. A second press during a test does nothing.
+        """
+        title = self._entry.title
+        if self._pipeline is not None:
+            if self._pipeline.testing:
+                _LOGGER.debug("Glowcast %s is testing the lights already", title)
+            elif not await self._pipeline.async_test():
+                _LOGGER.info(
+                    "Glowcast %s cannot test the lights now: they are not "
+                    "following the picture (starting, retrying or no picture)",
+                    title,
+                )
+            return
+        if self._test is not None and not self._test.done():
+            _LOGGER.debug("Glowcast %s is testing the lights already", title)
+            return
+        if self._ending_test:
+            _LOGGER.debug("Glowcast %s is starting; no light test now", title)
+            return
+        data, options = self._entry.data, self._entry.options
+        output_type = OUTPUTS.get(options[CONF_OUTPUT][CONF_TYPE])
+        if output_type is None:
+            # An entry written by a later version, after a downgrade.
+            _LOGGER.warning("Glowcast %s cannot test the lights: unknown lights", title)
+            return
+        if output_type.is_missing(self._hass, data, options):
+            issue = output_type.missing
+            _LOGGER.warning(
+                "Glowcast %s cannot test the lights: %s",
+                title,
+                "an integration it uses is not set up"
+                if issue is None
+                else issue.message,
+            )
+            return
+        output = output_type.create(self._hass, data, options)
+        _LOGGER.info("Glowcast %s tests the lights", title)
+        self._test = self._entry.async_create_background_task(
+            self._hass,
+            self._async_test(
+                output_type, output, read_settings(options).brightness / 100
+            ),
+            f"glowcast {title} light test",
+        )
+
+    async def _async_test(
+        self, output_type: OutputType, output: LightOutput, brightness: float
+    ) -> None:
+        """Run the light test while Glowcast does not sync; log why it could
+        not claim the lights (no repair issue or reauth: the next switch-on
+        does that)."""
+        reason = await run_light_test(
+            output, brightness, self._hass.async_add_executor_job, MonotonicClock()
+        )
+        if reason is not None:
+            issue = output_type.stop_issues.get(reason)
+            _LOGGER.warning(
+                "Glowcast %s could not test the lights: %s",
+                self._entry.title,
+                _STOP_MESSAGES[reason] if issue is None else issue.message,
+            )
+
+    async def _async_end_test(self) -> None:
+        """End a running light test and wait until its lights are released."""
+        task, self._test = self._test, None
+        if task is None or task.done():
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
     async def _async_stop(self) -> None:
         if self._pipeline is not None:

@@ -1,5 +1,10 @@
 {
   "entity": {
+    "button": {
+      "test_lights": {
+        "default": "mdi:palette"
+      }
+    },
     "sensor": {
       "status": {
         "default": "mdi:television-ambient-light",

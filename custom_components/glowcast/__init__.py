@@ -9,7 +9,13 @@ from .outputs import OUTPUTS
 from .outputs.blocks import output_types
 from .runtime import GlowcastConfigEntry, GlowcastData, async_remove_issues
 
-PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:

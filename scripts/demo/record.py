@@ -509,6 +509,35 @@ def entities(rec: Recorder) -> None:
     rec.step("off")
 
 
+def test_lights(rec: Recorder) -> None:
+    """The Test lights button under Configuration on the device page (#182).
+
+    Pressed while Glowcast is off: the switch stays off. The demo's fake
+    lights do not show colours, so the GIF shows the button and the switch.
+    """
+    registry = [
+        entry
+        for entry in rec.ws({"type": "config/entity_registry/list"})
+        if entry["platform"] == "glowcast"
+    ]
+    (switch,) = [e for e in registry if e["entity_id"].startswith("switch.")]
+    (button,) = [e for e in registry if e["entity_id"].startswith("button.")]
+    rec.page.evaluate(
+        f"id => {HASS}.callService('switch', 'turn_off', {{entity_id: id}})",
+        switch["entity_id"],
+    )
+    rec.goto(f"/config/devices/device/{button['device_id']}")
+    rec.begin()
+    press = row(rec, button["entity_id"]).locator("ha-button, mwc-button").first
+    press.scroll_into_view_if_needed()
+    rec.step("device")
+    rec.click(press)
+    rec.wait(1500)
+    rec.step("pressed")
+    row(rec, switch["entity_id"]).scroll_into_view_if_needed()
+    rec.step("switch-still-off")
+
+
 def refused(rec: Recorder) -> None:
     """A TV that refuses the screenshot call (#214): switched on, Glowcast
     asks again for the startup grace (10 s), then stops with Error, and
@@ -771,6 +800,7 @@ def create_ha_lights_entry(rec: Recorder) -> None:
 # TV source and lights, a discovery its service.
 SYNCING_FLOWS = {
     "entities",
+    "test-lights",
     "screen-discovery",
     "ha-lights-setup",
     "ha-lights-settings",
@@ -825,6 +855,7 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "ha-lights-settings": ha_lights_settings,
     "combined-settings": combined_settings,
     "blueprint": blueprint,
+    "test-lights": test_lights,
     "refused": refused,
 }
 # Flows that need an instance started for them, so only run when named.
