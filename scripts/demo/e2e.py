@@ -56,9 +56,9 @@ INTERVAL = NO_PICTURE_WAIT + 3.0
 RELEASE_EARLY = 0.5
 RELEASE_LATE = 2.0
 # Colours are compared from this long after a pattern starts (the capture
-# interval, the fade, the stream's latency, and after a claim the fade-in),
-# up to MARGIN before it ends.
-SETTLE = 2.0 + FADE_IN
+# interval, the fade and the stream's latency), up to MARGIN before it ends;
+# for the pattern after black, which claims the lights again, FADE_IN later.
+SETTLE = 2.0
 MARGIN = 0.5
 TOLERANCE = 12  # 0-255
 MIN_FRAMES = 20  # in a settled stretch; the stream runs at about 25 per second
@@ -531,10 +531,12 @@ def steps(
             },
             "letterbox": dict.fromkeys(CHANNELS, green),
         }[name]
+        # After black the lights are claimed again: they fade in first.
+        settle = SETTLE + FADE_IN if CYCLE[index - 1] == "black" else SETTLE
         run.step(
             f"pattern {name}",
-            lambda start=start, name=name, expected=expected: check_pattern(
-                bridge, start, name, expected
+            lambda start=start, name=name, expected=expected, settle=settle: (
+                check_pattern(bridge, start, name, expected, settle)
             ),
         )
     run.step(
@@ -626,10 +628,15 @@ def diagnostics(ha: HomeAssistant, found: dict[str, Any]) -> dict[str, Any]:
 
 
 def check_pattern(
-    bridge: Bridge, start: float, name: str, expected: dict[str, tuple[int, ...]]
+    bridge: Bridge,
+    start: float,
+    name: str,
+    expected: dict[str, tuple[int, ...]],
+    settle: float = SETTLE,
 ) -> dict[str, Any]:
-    """Every message in the settled stretch has the expected colours."""
-    frames = bridge.frames(start + SETTLE, start + INTERVAL - MARGIN)
+    """Every message in the settled stretch (from `settle` after the pattern
+    starts) has the expected colours."""
+    frames = bridge.frames(start + settle, start + INTERVAL - MARGIN)
     detail = colours(frames, expected)
     if len(frames) < MIN_FRAMES:
         raise Failed(f"{len(frames)} messages, fewer than {MIN_FRAMES}: {detail}")

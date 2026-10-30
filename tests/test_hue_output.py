@@ -294,17 +294,22 @@ async def test_channels_report_what_their_lights_showed_before(
         {"channel_id": 4, "members": [_member(4, 1)]},
         {"channel_id": 5, "members": [_member(9)]},  # not found: unknown
         {"channel_id": 6, "members": []},
+        {"channel_id": 7, "members": [_member(5)]},  # a colour temperature only
+        {"channel_id": 8, "members": [_member(6)]},  # no brightness: unknown
+        {"channel_id": 9, "members": [_member(7)]},  # no x: unknown
     ]
     mock_bridge(
         aioclient_mock,
         [{**_area(), "channels": channels}],
-        renderers=[_renderer(n) for n in (1, 2, 3, 4)],
+        renderers=[_renderer(n) for n in (1, 2, 3, 4, 5, 6, 7)],
         lights=[
             _light(
                 1,
                 on={"on": True},
                 dimming={"brightness": 50.0},
-                color={"xy": {"x": 0.5, "y": 0.4}},
+                # In colour-temperature mode a colour light reports the xy
+                # of its temperature too (here 2700 K).
+                color={"xy": {"x": 0.4578, "y": 0.4101}},
                 color_temperature={"mirek": 370, "mirek_valid": True},
             ),
             _light(
@@ -321,18 +326,65 @@ async def test_channels_report_what_their_lights_showed_before(
                 dimming={"brightness": 100.0},
                 color={"xy": {"x": 0.3, "y": 0.3}},
             ),
+            _light(
+                5,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color_temperature={"mirek": 370, "mirek_valid": True},
+            ),
+            _light(
+                6,
+                on={"on": True},
+                dimming={"brightness": None},
+                color={"xy": {"x": 0.3, "y": 0.3}},
+            ),
+            _light(
+                7,
+                on={"on": True},
+                dimming={"brightness": 100.0},
+                color={"xy": {"x": None, "y": 0.3}},
+            ),
         ],
     )
     started = await output.start()
     starts = [channel.start_rgb for channel in started]
-    # 370 mirek is about 2700 K: (255, 167, 87) at full, here at half.
-    assert starts[0] == approx_rgb((0.5, 0.327, 0.171))
+    # From its xy, as a colour light in xy mode: 2700 K's xy is (1.0, 0.808,
+    # 0.471) at full, here at half; not sRGB 2700 K (1.0, 0.654, 0.343), which
+    # the bridge shows redder (architecture 3.5, #38).
+    assert starts[0] == approx_rgb((0.5, 0.404, 0.236))
     assert starts[1] == approx_rgb((0.882, 0.894, 1.0))
     assert starts[2] == (0.0, 0.0, 0.0)
     assert starts[3] == starts[4] == approx_rgb((0.882, 0.894, 1.0))
-    assert starts[5:] == [None, None]
+    assert starts[5:7] == [None, None]
+    # Without xy: sRGB of the temperature about 800 K cooler, as the glow.
+    assert starts[7] == approx_rgb((1.0, 0.755, 0.552))
+    assert starts[8:] == [None, None]
     # Read before the stream starts, never written.
     assert {method for method, *_ in aioclient_mock.mock_calls} == {"GET"}
+
+
+async def test_a_retry_does_not_read_the_light_states(
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """The lights come back with the picture's colours, without a fade-in,
+    so a retry does not wait for the read."""
+    add_bridge()
+    mock_bridge(aioclient_mock)
+    await output.start()
+    await output.stop()
+    await output.close()
+    aioclient_mock.mock_calls.clear()
+    channels = await output.start(retry=True)
+    assert [channel.start_rgb for channel in channels] == [None, None, None]
+    assert not any(
+        "resource/light" in str(url) for _, url, *_ in aioclient_mock.mock_calls
+    )
+    assert not any(
+        str(url).endswith("resource/entertainment")
+        for _, url, *_ in aioclient_mock.mock_calls
+    )
 
 
 @pytest.mark.parametrize("status", [404, 500])

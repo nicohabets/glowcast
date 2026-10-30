@@ -91,11 +91,14 @@ class LightOutput(Protocol):
     # dropped until the next start). Empty for an output of one part.
     dropped_parts: Mapping[str, Exception]
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Claim the lights and return the channels to drive.
 
         The output has its own channel limit (Hue: 20). May be called again
-        after stop() and close(), for the retry after OutputLost.
+        after stop() and close(), for the retry after OutputLost (`retry`
+        True). Each channel may say what its light shows before the claim
+        (`Channel.start_rgb`), for the fade-in; on a retry there is no
+        fade-in, so the output need not read it.
 
         Raises OutputBusy, OutputAuthFailed, OutputNotFound, OutputTooManyChannels
         or OutputUnavailable.

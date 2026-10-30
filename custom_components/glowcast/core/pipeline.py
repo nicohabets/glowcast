@@ -355,7 +355,7 @@ class Pipeline:
         if not self._source.is_on():
             raise _Stop(StopReason.TV_OFF)
         try:
-            channels = await self._async_unless_stopped(self._output.start())
+            channels = await self._async_unless_stopped(self._output.start(retry=True))
         except OutputAuthFailed as err:
             raise _Stop(StopReason.AUTH_FAILED) from err
         except _Stop:

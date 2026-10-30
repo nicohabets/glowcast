@@ -102,7 +102,7 @@ class FakeLightOutput:
         self._claimed = False
         self.colors: list[ChannelColor] = []
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Claim the area's channels, spread from left to right like the bridge's."""
         count = AREA_CHANNELS.get(self._area_id, 5)
         self._claimed = True

@@ -167,9 +167,11 @@ class FakeOutput:
         self.dropped_parts: dict[str, Exception] = {}
         self.sent: list[tuple[float, list[ChannelColor]]] = []
         self.checks = 0
+        self.retries: list[bool] = []  # start()'s `retry`, per call
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         self.log.append("output.start")
+        self.retries.append(retry)
         if self.start_errors and (error := self.start_errors.pop(0)):
             if error == "hang":
                 await asyncio.Event().wait()

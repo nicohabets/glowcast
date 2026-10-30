@@ -97,7 +97,7 @@ class CompositeOutput:
         }
         return {**self._dropped, **running}
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Start every part that is not dropped, together.
 
         Raises the first part's error when none of them starts.
@@ -106,7 +106,8 @@ class CompositeOutput:
         for part in parts:
             part.running = False
         results = await asyncio.gather(
-            *(part.output.start() for part in parts), return_exceptions=True
+            *(part.output.start(retry=retry) for part in parts),
+            return_exceptions=True,
         )
         channels: list[Channel] = []
         failed: list[tuple[_Part, Exception]] = []
@@ -250,7 +251,7 @@ class CompositeOutput:
                 # asyncio.wait: a cancelled retry does not cancel the release.
                 await asyncio.wait(set(part.releases))
             await self._clock.sleep(LOST_RETRY_DELAY)
-            channels = await part.output.start()
+            channels = await part.output.start(retry=True)
         except Exception as err:
             part.error = err
             # A failed retry stops as lost, as for a single output, unless

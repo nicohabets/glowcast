@@ -139,10 +139,12 @@ class HaLightsOutput:
         self._next_check = 0.0
         self._release: asyncio.Task[None] | None = None
 
-    async def start(self) -> list[Channel]:
+    async def start(self, *, retry: bool = False) -> list[Channel]:
         """Resolve the lights, save their state and return them as channels.
 
         Unavailable lights are skipped for this run and keep their position.
+        Each light's state is read from Home Assistant, so `retry` changes
+        nothing.
         Raises OutputNotFound when there are no colour lights to follow (the
         area or group was removed, or has none), OutputUnavailable when every
         one of them is unavailable.

@@ -271,7 +271,7 @@ class RecordingOutput:
         # Empty until the first send after a claim, and again once released.
         self.colors: dict[str, list[float]] = {}
 
-    async def start(self) -> list[Any]:
+    async def start(self, *, retry: bool = False) -> list[Any]:
         return [self._models.Channel(id, id, x, z) for id, x, z in CHANNELS]
 
     def send(self, colors: list[Any]) -> None:

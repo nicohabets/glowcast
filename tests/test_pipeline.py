@@ -310,6 +310,8 @@ async def test_no_fade_in_after_a_retry() -> None:
     await lose_stream(h)
     await h.clock.advance(5.1)  # retried
     assert h.log.count("output.start") == 2
+    # The output need not read what the lights show (#153).
+    assert h.output.retries == [False, True]
     retried = len(h.output.sent)
     await h.clock.advance(1)
     assert all(

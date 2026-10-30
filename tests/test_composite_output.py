@@ -89,6 +89,12 @@ async def test_the_parts_starting_colours_are_passed_on() -> None:
     ]
 
 
+async def test_a_retry_of_the_whole_output_is_a_retry_of_each_part() -> None:
+    p = Parts()
+    await p.output.start(retry=True)
+    assert p.area.retries == p.lights.retries == [True]
+
+
 async def test_rate_is_the_fastest_part() -> None:
     assert Parts().output.max_rate_hz == 25.0
 
@@ -160,6 +166,9 @@ async def test_lost_part_is_retried_after_5_s_while_the_rest_runs() -> None:
     assert p.area_log.count("output.start") == 1
     await p.tick(1)
     assert p.area_log.count("output.start") == 2
+    # Its retry: it need not read what its lights show (#153).
+    assert p.area.retries == [False, True]
+    assert p.lights.retries == [False]
     assert p.output.dropped_parts == {}
     sends = len(p.area.sent)
     await p.tick(0.4)

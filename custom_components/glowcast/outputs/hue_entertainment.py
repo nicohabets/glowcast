@@ -84,6 +84,10 @@ AREAS_TIMEOUT = 15.0
 # Reading what the lights show before the stream (for the fade-in, #153) may
 # not hold up the start for long; without it the fade-in starts from dark.
 STATES_TIMEOUT = 5.0
+# A light with only a colour temperature (no xy) starts from the sRGB colour
+# of a temperature this much cooler: the bridge shows sRGB warm whites
+# redder, which is why the glow is two steps cooler too (architecture 3.5, #38).
+CT_CORRECTION_K = 800
 # The bridge allows 20 characters before the # of a devicetype and 19 after.
 DEVICE_NAME_LENGTH = 19
 
@@ -120,15 +124,18 @@ class HueEntertainmentOutput:
         self._status_failures = 0
         self._release: asyncio.Task[None] | None = None
 
-    async def start(self) -> list[Channel]:
-        """Claim the area and open the stream."""
+    async def start(self, *, retry: bool = False) -> list[Channel]:
+        """Claim the area and open the stream.
+
+        Not on a retry: read what the lights show before (for the fade-in).
+        """
         if self._session is not None or self._api is not None:
             await self.stop()
             await self.close()
         host = self._bridge_host()
         try:
             async with asyncio.timeout(START_TIMEOUT):
-                return await self._async_start(host)
+                return await self._async_start(host, retry)
         except TimeoutError:
             raise OutputUnavailable("The Hue bridge did not respond in time") from None
 
@@ -197,7 +204,7 @@ class HueEntertainmentOutput:
             raise OutputUnavailable("This Hue bridge cannot stream (API version 1)")
         return entry.data[CONF_HOST]
 
-    async def _async_start(self, host: str) -> list[Channel]:
+    async def _async_start(self, host: str, retry: bool) -> list[Channel]:
         app_id = await self._async_application_id(host)
         areas = (await self._async_get(host, AREAS_PATH))[1].get("data", [])
         area = next((a for a in areas if a.get("id") == self._area_id), None)
@@ -221,7 +228,7 @@ class HueEntertainmentOutput:
             _LOGGER.info("Stopping a stale Glowcast stream on the Hue bridge")
             await self._api.stop_entertainment(other["id"])
 
-        starts = await self._async_start_colors(host, channels)
+        starts = {} if retry else await self._async_start_colors(host, channels)
         self._session = EntertainmentSession(
             host, self._app_key, self._client_key, idle_timeout=0
         )
@@ -264,10 +271,18 @@ class HueEntertainmentOutput:
                 lights = await _async_clip_data(
                     self._hass, host, self._app_key, LIGHTS_PATH
                 )
-        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+            return _channel_start_colors(channels, renderers, lights)
+        except (
+            TimeoutError,
+            OutputAuthFailed,
+            OutputNotFound,
+            OutputUnavailable,
+            TypeError,
+            ValueError,
+            KeyError,
+        ):
             _LOGGER.debug("Could not read the lights' state; they fade in from dark")
             return {}
-        return _channel_start_colors(channels, renderers, lights)
 
     async def _async_application_id(self, host: str) -> str:
         """Glowcast's own application id: the bridge names it as the streamer."""
@@ -641,7 +656,7 @@ def _channel_start_colors(
             for member in channel.get("members") or []
             if isinstance(member, dict)
             and (light := light_of.get(device_of.get(_service(member)))) is not None
-            and (rgb := _light_rgb(light)) is not None
+            and (rgb := _safe_light_rgb(light)) is not None
         ]
         if colors:
             r, g, b = (
@@ -655,10 +670,22 @@ def _service(member: dict[str, Any]) -> str | None:
     return (member.get("service") or {}).get("rid")
 
 
+def _safe_light_rgb(light: dict[str, Any]) -> tuple[float, float, float] | None:
+    """_light_rgb(), or None (unknown) for a resource it cannot read."""
+    try:
+        return _light_rgb(light)
+    except (TypeError, ValueError, KeyError, ZeroDivisionError):
+        return None
+
+
 def _light_rgb(light: dict[str, Any]) -> tuple[float, float, float] | None:
     """A light resource's state as a colour in 0-1 as streamed, its brightness
-    included: off is black, on without a colour is white. The bridge's own
-    conversion of a streamed colour may differ a little."""
+    included: off is black, on without a colour is white.
+
+    The colour comes from `color.xy`, which a colour light reports in
+    colour-temperature mode too, with the same conversion for both modes;
+    only a light without xy uses its temperature (CT_CORRECTION_K). How the
+    bridge renders a streamed colour may still differ a little."""
     on = (light.get("on") or {}).get("on")
     if on is None:
         return None
@@ -667,12 +694,11 @@ def _light_rgb(light: dict[str, Any]) -> tuple[float, float, float] | None:
     temperature = light.get("color_temperature") or {}
     xy = (light.get("color") or {}).get("xy") or {}
     rgb: tuple[float, ...] = (255.0, 255.0, 255.0)
-    if temperature.get("mirek_valid") and temperature.get("mirek"):
-        rgb = color_util.color_temperature_to_rgb(
-            color_util.color_temperature_mired_to_kelvin(temperature["mirek"])
-        )
-    elif "x" in xy and "y" in xy:
-        rgb = color_util.color_xy_to_RGB(xy["x"], xy["y"])
+    if "x" in xy and "y" in xy:
+        rgb = color_util.color_xy_to_RGB(float(xy["x"]), float(xy["y"]))
+    elif temperature.get("mirek_valid") and temperature.get("mirek"):
+        kelvin = color_util.color_temperature_mired_to_kelvin(temperature["mirek"])
+        rgb = color_util.color_temperature_to_rgb(kelvin + CT_CORRECTION_K)
     peak = max(rgb)
     level = float((light.get("dimming") or {}).get("brightness", 100.0)) / 100
     if peak <= 0:
