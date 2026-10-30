@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -459,11 +460,18 @@ async def test_stop_restores_every_light_and_is_safe_twice(
 async def test_a_command_on_its_way_is_cancelled_before_the_restore(
     hass: HomeAssistant,
 ) -> None:
-    started: list[str] = []
+    events: list[str] = []
 
     async def slow(call: ServiceCall) -> None:
-        started.append(call.data["entity_id"])
-        await asyncio.sleep(10)
+        if "rgb_color" not in call.data:
+            events.append("restore")
+            return
+        events.append("colour")
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            events.append("colour cancelled")
+            raise
 
     hass.services.async_register("light", "turn_on", slow)
     light = add_light(hass, "lamp")
@@ -472,9 +480,11 @@ async def test_a_command_on_its_way_is_cancelled_before_the_restore(
     colors(output, channels)
     await asyncio.sleep(0)
     await asyncio.sleep(0)
-    assert started == [light.entity_id]
+    assert events == ["colour"]
     async with asyncio.timeout(2):
         await output.stop()
+    # The late colour cannot undo the restore: it ends first.
+    assert events == ["colour", "colour cancelled", "restore"]
 
 
 async def test_start_again_after_stop_and_close(
@@ -489,7 +499,7 @@ async def test_start_again_after_stop_and_close(
     channels = await output.start()
     colors(output, channels)
     await hass.async_block_till_done()
-    assert len(turn_on) == 1
+    assert len([call for call in turn_on if "rgb_color" in call.data]) == 1
     await output.stop()
 
 
@@ -523,3 +533,112 @@ async def test_a_claim_soon_after_a_release_restores_the_state_from_before(
     await output.stop()
     assert [call.data.get("xy_color") for call in turn_on] == [[0.3, 0.3]]
     assert len(turn_off) == 2
+
+
+GLOWCAST_RED = {
+    "supported_color_modes": ["xy", "color_temp"],
+    "color_mode": "hs",
+    "hs_color": [0, 100],
+    "brightness": 204,
+}
+
+
+async def test_a_new_output_soon_after_a_release_restores_the_state_from_before(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    """A restart with new settings builds a new output: the memory of what was
+    restored stays, so the light's late report is not saved as its state."""
+    was_off = add_light(hass, "was_off", state="off")
+    first = HaLightsOutput(hass, lights_output(was_off), now=Clock())
+    await first.start()
+    hass.states.async_set(was_off.entity_id, "on", GLOWCAST_RED)
+    await first.stop()
+    second = HaLightsOutput(hass, lights_output(was_off), now=Clock())
+    await second.start()
+    await second.stop()
+    assert len(turn_off) == 2
+    assert [call for call in turn_on if "hs_color" in call.data] == []
+
+
+async def test_a_stop_before_the_light_reports_its_colour_still_restores(
+    hass: HomeAssistant, turn_on: list[ServiceCall], turn_off: list[ServiceCall]
+) -> None:
+    """Home Assistant still shows the state from before: restore anyway."""
+    was_off = add_light(hass, "was_off", state="off")
+    was_on = add_light(hass, "was_on")
+    output = HaLightsOutput(hass, lights_output(was_off, was_on), now=Clock())
+    channels = await output.start()
+    colors(output, channels)
+    await hass.async_block_till_done()
+    turn_on.clear()
+    await output.stop()
+    assert [call.data["entity_id"] for call in turn_off] == [was_off.entity_id]
+    assert [call.data for call in turn_on] == [
+        {"entity_id": was_on.entity_id, "brightness": 100, "xy_color": [0.3, 0.3]}
+    ]
+
+
+@pytest.mark.parametrize("platform", ["group", "hue"])
+async def test_a_group_picked_as_a_light_restores_its_members(
+    hass: HomeAssistant,
+    turn_on: list[ServiceCall],
+    turn_off: list[ServiceCall],
+    platform: str,
+) -> None:
+    """The group's own state is an average of its members' states."""
+    off = add_light(hass, "member_off", state="off")
+    on = add_light(hass, "member_on")
+    group = add_light(hass, "room", platform, members=[off.entity_id, on.entity_id])
+    output = HaLightsOutput(hass, lights_output(group), now=Clock())
+    channels = await output.start()
+    assert [channel.id for channel in channels] == [group.id]
+    colors(output, channels)
+    await hass.async_block_till_done()
+    assert [call.data["entity_id"] for call in turn_on] == [group.entity_id]
+    turn_on.clear()
+    await output.stop()
+    assert [call.data["entity_id"] for call in turn_off] == [off.entity_id]
+    assert [call.data["entity_id"] for call in turn_on] == [on.entity_id]
+
+
+async def test_a_light_group_of_home_assistant_counts_as_its_members(
+    hass: HomeAssistant, hue: MockConfigEntry
+) -> None:
+    members = [add_light(hass, f"m{i}", "hue", hue).entity_id for i in range(3)]
+    group = add_light(hass, "group", "group", members=members)
+    room = add_light(hass, "room", "hue", hue, members=members)
+    singles = [add_light(hass, f"s{i}", "hue", hue).entity_id for i in range(2)]
+    network = f"hue:{hue.entry_id}"
+    assert light_networks(hass, group.entity_id) == (network,) * 3
+    # A Hue room is one command on its bridge.
+    assert light_networks(hass, room.entity_id) == (network,)
+    assert crowded_networks(hass, [group.entity_id, *singles]) == 5
+    assert crowded_networks(hass, [room.entity_id, *singles]) == 0
+
+
+async def test_a_colour_the_light_did_not_take_is_sent_again(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def flaky(call: ServiceCall) -> None:
+        calls.append(dict(call.data))
+        if len(calls) == 1:
+            raise HomeAssistantError(f"{call.data['entity_id']} did not answer")
+
+    hass.services.async_register("light", "turn_on", flaky)
+    light = add_light(hass, "lamp")
+    clock = Clock()
+    output = HaLightsOutput(hass, lights_output(light), now=clock)
+    channels = await output.start()
+    caplog.set_level("DEBUG")
+    colors(output, channels)
+    await hass.async_block_till_done()
+    clock.time = 1.0
+    colors(output, channels)  # the same still picture
+    await hass.async_block_till_done()
+    assert [call.get("rgb_color") for call in calls] == [[255, 0, 0], [255, 0, 0]]
+    # The error's text can name the entity: only its type is logged.
+    assert "did not answer" not in caplog.text
+    assert "HomeAssistantError" in caplog.text
+    await output.stop()
