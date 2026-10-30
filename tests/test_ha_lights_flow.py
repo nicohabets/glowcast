@@ -201,7 +201,9 @@ def hue_lights(
 
 
 async def test_hue_lights_get_the_hint_and_crowded_ones_the_warning(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, bridge: FakeBridge  # noqa: F811
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    bridge: FakeBridge,  # noqa: F811
 ) -> None:
     lights = hue_lights(hass, aioclient_mock, 5)
     aioclient_mock.get(
@@ -234,7 +236,9 @@ async def test_hue_lights_get_the_hint_and_crowded_ones_the_warning(
 
 
 async def test_hue_lights_without_an_area_get_the_how_to(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, bridge: FakeBridge  # noqa: F811
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    bridge: FakeBridge,  # noqa: F811
 ) -> None:
     (light,) = hue_lights(hass, aioclient_mock, 1)
     bridge.areas = []
@@ -252,7 +256,9 @@ async def test_hue_lights_without_an_area_get_the_how_to(
 
 
 async def test_other_lights_and_an_unreachable_bridge_get_no_hint(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, bridge: FakeBridge  # noqa: F811
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    bridge: FakeBridge,  # noqa: F811
 ) -> None:
     other = add_light(hass, "zigbee")
     (light,) = hue_lights(hass, aioclient_mock, 1)

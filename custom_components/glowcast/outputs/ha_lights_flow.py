@@ -7,6 +7,8 @@ per light (a preset, or fine-tuned), and a warning when more lights share one
 Hue bridge or Thread network than it takes commands per second.
 """
 
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Any
 
 import voluptuous as vol
@@ -81,12 +83,15 @@ class HaLightsSteps(ConfigEntryBaseFlow):
     hooks in flow.py (`async_output_chosen`).
     """
 
-    # The stored output block, in the settings screen; empty at setup.
-    _ha_lights_current: dict[str, Any] = {}
-    _ha_lights_choice: dict[str, Any] = {}
-    _ha_lights: list[Light] = []
+    # The stored output block, in the settings screen; empty at setup. Read
+    # only: a mixin cannot rely on its __init__ being called, so the class
+    # defaults are immutable and each flow assigns its own objects.
+    _ha_lights_current: Mapping[str, Any] = MappingProxyType({})
+    _ha_lights_choice: Mapping[str, Any] = MappingProxyType({})
+    _ha_lights: Sequence[Light] = ()
     _ha_lights_index = 0
-    _ha_lights_positions: dict[str, tuple[float, float]] = {}
+    # Assigned (a new dict per flow) when the lights are chosen.
+    _ha_lights_positions: dict[str, tuple[float, float]]
 
     async def async_step_ha_lights(
         self, user_input: dict[str, Any] | None = None
@@ -349,7 +354,7 @@ class HaLightsSteps(ConfigEntryBaseFlow):
         }
         return await self.async_output_chosen({}, output)
 
-    def _ha_lights_resolve(self, output: dict[str, Any]) -> list[Light]:
+    def _ha_lights_resolve(self, output: Mapping[str, Any]) -> list[Light]:
         try:
             return resolve(self.hass, output)
         except (OutputNotFound, OutputUnavailable):

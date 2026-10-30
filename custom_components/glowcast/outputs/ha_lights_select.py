@@ -7,10 +7,16 @@ the settings screen). Selecting an area or a group stores it in
 `options["output"]`, which restarts a running pipeline on its lights; lights
 that have no position yet follow "ambient".
 
-The list is made again when areas or entities change, when a light appears,
-when Home Assistant has started (the groups' members are in their states) and
-on every start, stop or options change of the entry.
+The list is made again when areas or light entities change, when a light
+appears, when Home Assistant has started (the groups' members are in their
+states) and on every start, stop or options change of the entry. Registry and
+state events come in bursts, so they make it again at most once per
+REFRESH_COOLDOWN (the first at once): each time scans the registries.
 """
+
+import logging
+from collections.abc import Mapping
+from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -18,6 +24,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_added_domain
 
@@ -39,6 +46,10 @@ from .ha_lights import (
 ENTITY_KEY = "loose_lights"
 # The option while single lights are used; translated as a state.
 CHOSEN_LIGHTS = "chosen_lights"
+# Seconds between two refreshes of the list after registry or state events.
+REFRESH_COOLDOWN = 1.0
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def entities(hass: HomeAssistant, entry: ConfigEntry) -> list[Entity]:
@@ -54,6 +65,13 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
         super().__init__(hass, entry, ENTITY_KEY)
         # {label: (follow, area id or group registry id)}
         self._choices: dict[str, tuple[str, str]] = {}
+        self._debouncer = Debouncer(
+            hass,
+            _LOGGER,
+            cooldown=REFRESH_COOLDOWN,
+            immediate=True,
+            function=self._async_refresh_and_write,
+        )
 
     @property
     def options(self) -> list[str]:
@@ -99,11 +117,19 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
         """Make the list, and make it again when areas or lights change."""
         await super().async_added_to_hass()
         self._refresh()
-        for event in (
-            ar.EVENT_AREA_REGISTRY_UPDATED,
-            er.EVENT_ENTITY_REGISTRY_UPDATED,
-        ):
-            self.async_on_remove(self.hass.bus.async_listen(event, self._async_event))
+        self.async_on_remove(self._debouncer.async_cancel)
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                ar.EVENT_AREA_REGISTRY_UPDATED, self._async_event
+            )
+        )
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED,
+                self._async_event,
+                event_filter=_is_light_event,
+            )
+        )
         # A new light's registry entry comes before its first state.
         self.async_on_remove(
             async_track_state_added_domain(self.hass, LIGHT_DOMAIN, self._async_event)
@@ -127,6 +153,11 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
 
     @callback
     def _async_event(self, event: Event) -> None:
+        """Areas or lights changed: make the list again, once per burst."""
+        self._debouncer.async_schedule_call()
+
+    @callback
+    def _async_refresh_and_write(self) -> None:
         self._refresh()
         self.async_write_ha_state()
 
@@ -149,3 +180,9 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
                 label = f"{name} ({number})"
             choices[label] = choice
         self._choices = choices
+
+
+@callback
+def _is_light_event(event_data: Mapping[str, Any]) -> bool:
+    """Only changes of light entities can change the list."""
+    return str(event_data.get("entity_id", "")).startswith("light.")
