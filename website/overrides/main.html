@@ -1,0 +1,10 @@
+{#- Cloudflare Web Analytics (#190): Cloudflare's own snippet, on every page,
+    only when analytics is on (the publish from main; see mkdocs.yml). -#}
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+  {%- if config.extra.analytics and config.extra.cloudflare_token %}
+  <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "{{ config.extra.cloudflare_token }}"}'></script><!-- End Cloudflare Web Analytics -->
+  {%- endif %}
+{% endblock %}

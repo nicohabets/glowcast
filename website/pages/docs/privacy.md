@@ -8,7 +8,9 @@ The diagnostics you can download for a problem report leave out keys, addresses,
 
 ## This website
 
-This website sets no cookies, has no analytics or tracking, and loads nothing from other sites. Your choice of light or dark mode is kept in your own browser.
+This website counts its visits with [Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/), to see how many people visit and which sites they come from. It sets no cookies and stores nothing in your browser for this. Each page loads one script from Cloudflare, which reports the visit to Cloudflare: the page, the site you came from, your browser and your country. Not who you are, and the site has no other analytics or tracking. Your choice of light or dark mode is kept in your own browser.
+
+This is only about the website. Glowcast itself, in Home Assistant, never sends anything anywhere.
 
 ## Disclaimer
 

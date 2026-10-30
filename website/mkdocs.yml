@@ -17,6 +17,8 @@ hooks:
 
 theme:
   name: material
+  # Cloudflare Web Analytics (overrides/main.html).
+  custom_dir: overrides
   language: en
   # No web fonts: Material would load them from Google, a third-party request.
   font: false
@@ -59,6 +61,13 @@ extra:
       link: https://github.com/nicohabets/glowcast
       name: Glowcast on GitHub
   generator: false
+  # Visitor numbers with Cloudflare Web Analytics (#190): no cookies or local
+  # storage, one script from Cloudflare (see docs/privacy.md). The token is
+  # public by design (it ends up in the page source). Only the publish from
+  # main sets GLOWCAST_ANALYTICS=true (.github/workflows/website.yml), so
+  # pull request builds and local `mkdocs serve` do not count visits.
+  analytics: !ENV [GLOWCAST_ANALYTICS, false]
+  cloudflare_token: b93011ad04024829911b34bf57dc5b2e
 
 plugins:
   - search
