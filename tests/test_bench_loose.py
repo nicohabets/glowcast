@@ -256,6 +256,26 @@ def test_commands_too_close_or_a_wrong_transition_fail() -> None:
     assert not silent.ok and "no command" in silent.note
 
 
+def test_the_fade_is_the_actual_interval() -> None:
+    # 1.0 s, then 1.5 s (a colour that waited a tick), then a wait of 4 s
+    # (more than two intervals): its interval again.
+    times = [0.0, 1.0, 2.5, 6.5]
+    assert loose.expected_transitions(times, 1.0, 2.0) == [
+        (1.0,),
+        (1.0,),
+        (1.5,),
+        (1.0,),
+    ]
+    good = {"light.p1": list(zip(times, [1.0, 1.0, 1.5, 1.0], strict=True))}
+    assert _judge(good, {"light.p1": "hue:a"}).ok
+    fixed = {"light.p1": list(zip(times, [1.0, 1.0, 1.0, 1.0], strict=True))}
+    result = _judge(fixed, {"light.p1": "hue:a"})
+    assert not result.ok
+    assert result.numbers["light 1 transition not the actual interval"] == 1
+    # At the limit of the wait both fades are right.
+    assert loose.expected_transitions([0.0, 2.05], 1.0, 2.0, 0.15)[1] == (2.05, 1.0)
+
+
 def test_five_lights_on_a_network_share_it() -> None:
     # Five lights: each every 1.25 s (Glowcast's schedule); five commands
     # within 0.8 s are more than the network's 4 a second.

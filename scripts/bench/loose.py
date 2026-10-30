@@ -275,8 +275,8 @@ def commands(
     """Glowcast's colour commands per local entity: (time, transition).
 
     From the local HA's `call_service` events of `light.turn_on`: a colour
-    command carries `rgb_color` and `transition`; a restore (Home Assistant's
-    reproduce state) carries no transition and is left out.
+    command carries `rgb_color` and `transition`; a restore (a light service call with
+    the saved state) carries no transition and is left out.
     """
     wanted = set(entity_ids)
     out: dict[str, list[tuple[float, float | None]]] = {e: [] for e in wanted}
@@ -315,6 +315,26 @@ class RateResult:
     note: str
 
 
+def expected_transitions(
+    times: Sequence[float], interval: float, gap: float, slack: float = 0.0
+) -> list[tuple[float, ...]]:
+    """The fade each command may have, as Glowcast's schedule sets it: the
+    time since the light's command before, or its interval for the first
+    command and after a wait of `gap` intervals or more (a colour that did
+    not change). Within `slack` of that limit, either."""
+    ordered = sorted(times)
+    out: list[tuple[float, ...]] = []
+    for i, t in enumerate(ordered):
+        since = t - ordered[i - 1] if i else None
+        if since is None or since >= gap * interval + slack:
+            out.append((interval,))
+        elif since < gap * interval - slack:
+            out.append((since,))
+        else:
+            out.append((since, interval))
+    return out
+
+
 def judge_rate(
     sent: Mapping[str, Sequence[tuple[float, float | None]]],
     network: Mapping[str, str | None],
@@ -322,12 +342,13 @@ def judge_rate(
     network_label: Mapping[str, str],
     *,
     slack: float,
-    transition_tolerance: float = 0.05,
 ) -> RateResult:
     """The rate limits of Glowcast's loose lights, on the commands it sent.
 
     Per light (`sent`: local entity -> commands): at least its interval minus
-    `slack` between two commands, and `transition` equal to that interval.
+    `slack` between two commands, and `transition` its actual interval (the
+    time since its command before, within `slack`; its interval for the
+    first command and after a wait, see expected_transitions).
     Per network: at most NETWORK_COMMANDS_PER_SECOND commands in any window
     of 1 s minus `slack`. The intervals come from Glowcast's own schedule
     (each light once per second; more than 4 lights on a network share it).
@@ -352,10 +373,14 @@ def judge_rate(
             problems.append(f"{label[entity]}: commands too close")
         bad = [
             tr
-            for _, tr in sent[entity]
-            if tr is None or abs(float(tr) - interval) > transition_tolerance
+            for tr, want in zip(
+                [tr for _, tr in sorted(sent[entity])],
+                expected_transitions(times, interval, sch.TRANSITION_GAP, slack),
+                strict=True,
+            )
+            if tr is None or all(abs(float(tr) - w) > slack for w in want)
         ]
-        numbers[f"{label[entity]} transition other than the interval"] = len(bad)
+        numbers[f"{label[entity]} transition not the actual interval"] = len(bad)
         if bad:
             problems.append(f"{label[entity]}: transition")
     by_network: dict[str, list[float]] = {}

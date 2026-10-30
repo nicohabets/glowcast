@@ -284,7 +284,7 @@ def rate_step(bench: Any, start: float, end: float) -> None:
     bench.report.add(
         Step(
             "the rate: per light its interval, per network at most 4 commands "
-            "a second, transition = the interval",
+            "a second, transition = the actual interval",
             MODE,
             PASS if result.ok else FAIL,
             seconds=end - start,

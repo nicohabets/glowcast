@@ -108,7 +108,8 @@ PLAN = {
         "    a light whose band takes from both halves)",
         "black (all zero): released after the no-picture wait, each light back",
         "the rate (the local HA's light.turn_on calls): per light its interval,\n"
-        "    per network at most 4 commands in any second, transition = interval",
+        "    per network at most 4 commands in any second, the fade = the actual\n"
+        "    interval",
         "switch off: each loose light back (owner state; camera)",
         "switch on, stop the helper: tv_off, each loose light back",
     ],
