@@ -251,7 +251,8 @@ async def test_hue_lights_without_an_area_get_the_how_to(
     result = await configure(hass, result, {"lights": [light.entity_id]})
     assert result["step_id"] == "ha_lights_hue_no_area"
     assert (
-        "github.com/nicohabets/glowcast" in result["description_placeholders"]["link"]
+        "nicohabets.github.io/glowcast/docs/loose-lights/"
+        in result["description_placeholders"]["link"]
     )
 
 

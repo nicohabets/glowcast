@@ -69,9 +69,10 @@ FIELD_POSITION = "position"
 FIELD_X = "x"
 FIELD_Z = "z"
 CUSTOM = "custom"
-# How to make an entertainment area in the Hue app (the README's section).
+# How to make an entertainment area in the Hue app (a section on the site).
 ENTERTAINMENT_AREA_HELP = (
-    "https://github.com/nicohabets/glowcast#make-an-entertainment-area-in-the-hue-app"
+    "https://nicohabets.github.io/glowcast/docs/loose-lights/"
+    "#make-an-entertainment-area-in-the-hue-app"
 )
 NONE_TEXT = "-"
 
