@@ -36,6 +36,7 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 - Write `tests/test_color_engine.py` first; the ColorEngine is the heart and is fully testable without hardware.
 - Pipeline tests use fake source/output classes, not mocks of internals.
 - Run `pytest` and `ruff check` before every commit. Keep the build green.
+- Before opening a pull request that touches a source, the pipeline, the colour engine or an output, run the end-to-end check `python3 scripts/demo.py e2e` (the screen helper's test patterns through Glowcast to the demo's fake bridge, all on `127.0.0.1`; see `scripts/README.md`) and say in the pull request that it passed. CI runs it too.
 - The screen helper (`screen_helper/`, its own package) has its own tests: `uv run --project screen_helper --group dev pytest screen_helper/tests`. Run them too when you change the helper.
 
 ### The screen helper for tests without the TV
