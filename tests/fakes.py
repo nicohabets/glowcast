@@ -23,6 +23,13 @@ from custom_components.glowcast.core.pipeline import (
 )
 from custom_components.glowcast.core.ports import SourceUnavailable
 
+# The screen helper of the screen source's tests (#109, #110): its id, the
+# token it hands out on pairing, its generic name and its pairing code.
+HELPER_ID = "4f0c9a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+HELPER_TOKEN = "Zq3vX8pL1mN7cR4tY9wK2bF6hJ0dS5aG"
+HELPER_NAME = "Test PC"
+PAIRING_CODE = "123456"
+
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 # A dark scene: black by the colour engine, but not all zero (#68).

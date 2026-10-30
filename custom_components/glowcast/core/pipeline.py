@@ -33,7 +33,12 @@ _LOGGER = logging.getLogger(__name__)
 
 STARTUP_GRACE = 10.0  # seconds for the TV to start and deliver a frame
 START_RETRY_INTERVAL = 1.0
-MAX_CAPTURE_FAILURES = 5  # in a row, after the startup grace
+# Failed captures stop with TV_OFF once there are this many in a row, after
+# the startup grace, and they have lasted this long: as long as the wait for
+# no picture (#68) and a screen's own wait before it counts as off (#110), so
+# a fast source (4 per second) is not stopped after about 1.25 s.
+MAX_CAPTURE_FAILURES = 5
+CAPTURE_FAILURE_WAIT = 3.0
 LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
@@ -188,6 +193,7 @@ class Pipeline:
         self._retried_at: float | None = None
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
+        self._failing_since = 0.0  # when the first of them failed
         self._no_picture_since: float | None = None
         self._black_picture = False
 
@@ -443,8 +449,13 @@ class Pipeline:
         try:
             frame = await self._source.capture()
         except SourceUnavailable:
+            if self._failures == 0:
+                self._failing_since = self._clock.now()
             self._failures += 1
-            if self._failures >= MAX_CAPTURE_FAILURES:
+            if (
+                self._failures >= MAX_CAPTURE_FAILURES
+                and self._clock.now() - self._failing_since >= CAPTURE_FAILURE_WAIT
+            ):
                 _LOGGER.info("%d captures in a row failed", self._failures)
                 raise _Stop(StopReason.TV_OFF) from None
             return None

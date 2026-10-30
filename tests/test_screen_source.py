@@ -20,8 +20,8 @@ from custom_components.glowcast.core.ports import SourceAuthFailed, SourceUnavai
 from custom_components.glowcast.sources import SOURCES, screen
 from custom_components.glowcast.sources.screen import ScreenFrameSource
 
-TOKEN = "Zq3vX8pL1mN7cR4tY9wK2bF6hJ0dS5aG"
-HELPER_ID = "4f0c9a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+from .fakes import HELPER_ID, HELPER_TOKEN, PAIRING_CODE
+
 RED = bytes((255, 0, 0)) * (64 * 36)
 BLUE = bytes((0, 0, 255)) * (64 * 36)
 
@@ -43,7 +43,10 @@ class FakeHelper:
         self.frame_requests = 0
         self.authorization: list[str | None] = []
         # The /v1/pair answer: (status, body); body None is a page, not JSON.
-        self.pair_answer: tuple[int, Any] = (200, {"token": TOKEN, "id": HELPER_ID})
+        self.pair_answer: tuple[int, Any] = (
+            200,
+            {"token": HELPER_TOKEN, "id": HELPER_ID},
+        )
         self.pair_bodies: list[Any] = []
         app = web.Application()
         app.router.add_post("/v1/pair", self._pair)
@@ -103,33 +106,55 @@ def short_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(screen, "RETRY_DELAY", 0.01)
 
 
-def source_for(hass: HomeAssistant, helper: FakeHelper) -> ScreenFrameSource:
-    """The source as the registry builds it from an entry's data."""
+class FakeTime:
+    """The source's clock; only moves when the test says so."""
+
+    def __init__(self) -> None:
+        self.time = 0.0
+
+    def now(self) -> float:
+        return self.time
+
+
+@pytest.fixture
+def clock() -> FakeTime:
+    return FakeTime()
+
+
+@pytest.fixture
+def source_for(clock: FakeTime) -> Any:
+    """Builds the source for the fake helper, with the fake clock."""
+
+    def build(hass: HomeAssistant, helper: FakeHelper) -> ScreenFrameSource:
+        return ScreenFrameSource(
+            hass, HELPER_ID, "127.0.0.1", helper.port, HELPER_TOKEN, now=clock.now
+        )
+
+    return build
+
+
+async def test_frames_come_from_the_helper(
+    hass: HomeAssistant, helper: FakeHelper
+) -> None:
+    """Built as the registry builds it from an entry's data."""
     data = {
         "source": {
             "type": "screen",
             "helper_id": HELPER_ID,
             "host": "127.0.0.1",
             "port": helper.port,
-            "token": TOKEN,
+            "token": HELPER_TOKEN,
         }
     }
     source = SOURCES["screen"].create(hass, data, {})
     assert isinstance(source, ScreenFrameSource)
-    return source
-
-
-async def test_frames_come_from_the_helper(
-    hass: HomeAssistant, helper: FakeHelper
-) -> None:
-    source = source_for(hass, helper)
     assert not source.is_on()
     await source.start()
     assert source.is_on()
     assert await source.capture() == Frame(width=64, height=36, pixels=RED)
     helper.default = BLUE
     assert (await source.capture()).pixels == BLUE
-    assert helper.authorization == [f"Bearer {TOKEN}"] * 3
+    assert helper.authorization == [f"Bearer {HELPER_TOKEN}"] * 3
     await source.close()
     await source.close()  # safe twice
     assert not source.is_on()
@@ -150,7 +175,7 @@ async def test_the_registry(hass: HomeAssistant) -> None:
 
 
 async def test_one_no_picture_is_asked_again(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
@@ -161,53 +186,87 @@ async def test_one_no_picture_is_asked_again(
 
 
 @pytest.mark.parametrize("answer", [204, 500, b"\x00" * 100])
-async def test_no_picture_twice_turns_the_source_off(
-    hass: HomeAssistant, helper: FakeHelper, answer: Any
+async def test_no_picture_for_3_s_turns_the_source_off(
+    hass: HomeAssistant,
+    helper: FakeHelper,
+    answer: Any,
+    source_for: Any,
+    clock: FakeTime,
 ) -> None:
-    """Locked, asleep or broken: the pipeline then stops with TV_OFF."""
+    """Locked, asleep or broken for 3 s: the pipeline then stops with TV_OFF.
+    Each failed capture raises, but a short gap keeps it on (#110)."""
     source = source_for(hass, helper)
     await source.start()
     await source.capture()
-    helper.frames = [answer, answer]
+    helper.default = answer
+    for clock.time in (10.0, 11.0, 12.9):
+        with pytest.raises(SourceUnavailable):
+            await source.capture()
+        assert source.is_on()
+    clock.time = 13.0
     with pytest.raises(SourceUnavailable):
         await source.capture()
     assert not source.is_on()
-    assert helper.frame_requests == 3
+    requests = helper.frame_requests
     with pytest.raises(SourceUnavailable):
         await source.capture()  # off: not asked again
-    assert helper.frame_requests == 3
+    assert helper.frame_requests == requests
+
+
+async def test_a_frame_resets_the_no_picture_wait(
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
+) -> None:
+    source = source_for(hass, helper)
+    await source.start()
+    await source.capture()
+    helper.frames = [204, 204, 204, 204, RED, 204, 204]
+    clock.time = 10.0
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    clock.time = 12.5
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert (await source.capture()).pixels == RED
+    clock.time = 14.0  # 4 s after the first no picture, 1.5 s after the frame
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
+    assert source.is_on()
 
 
 async def test_no_picture_before_the_first_frame_keeps_it_on(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     """The startup grace asks again while the computer wakes or unlocks; if
     no frame comes within it, the pipeline stops with TV_OFF."""
     source = source_for(hass, helper)
     await source.start()
-    helper.frames = [204, 204]
-    with pytest.raises(SourceUnavailable):
-        await source.capture()
-    assert source.is_on()
+    helper.frames = [204] * 4
+    for clock.time in (0.0, 9.0):
+        with pytest.raises(SourceUnavailable):
+            await source.capture()
+        assert source.is_on()
     assert (await source.capture()).pixels == RED
 
 
 async def test_a_new_start_after_no_picture(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
     await source.capture()
-    helper.frames = [204, 204]
-    with pytest.raises(SourceUnavailable):
-        await source.capture()
+    helper.frames = [204] * 4
+    for clock.time in (0.0, 3.0):
+        with pytest.raises(SourceUnavailable):
+            await source.capture()
     assert not source.is_on()
     await source.start()
     assert source.is_on()
     assert (await source.capture()).pixels == RED
 
 
-async def test_unreachable_at_start(hass: HomeAssistant, helper: FakeHelper) -> None:
+async def test_unreachable_at_start(
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
+) -> None:
     source = source_for(hass, helper)
     await helper.server.close()
     with pytest.raises(SourceUnavailable):
@@ -216,19 +275,20 @@ async def test_unreachable_at_start(hass: HomeAssistant, helper: FakeHelper) -> 
 
 
 async def test_unreachable_while_syncing(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
     await source.capture()
     await helper.server.close()
-    with pytest.raises(SourceUnavailable):
-        await source.capture()
+    for clock.time in (0.0, 3.0):
+        with pytest.raises(SourceUnavailable):
+            await source.capture()
     assert not source.is_on()
 
 
 async def test_an_unexpected_answer_at_start(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     helper.info_status = 500
     source = source_for(hass, helper)
@@ -248,7 +308,7 @@ async def test_an_unexpected_answer_at_start(
     ids=["another helper", "another protocol", "no protocol", "a list", "not json"],
 )
 async def test_frames_only_from_glowcasts_own_helper(
-    hass: HomeAssistant, helper: FakeHelper, info: Any
+    hass: HomeAssistant, helper: FakeHelper, info: Any, source_for: Any, clock: FakeTime
 ) -> None:
     """Another helper or service at the stored address is never asked for
     frames (#110)."""
@@ -263,7 +323,7 @@ async def test_frames_only_from_glowcasts_own_helper(
 
 
 async def test_an_oversized_frame_is_not_a_picture(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
@@ -274,7 +334,7 @@ async def test_an_oversized_frame_is_not_a_picture(
 
 
 async def test_a_rejected_token_at_start(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     helper.info_status = 401
     source = source_for(hass, helper)
@@ -284,7 +344,7 @@ async def test_a_rejected_token_at_start(
 
 
 async def test_a_rejected_token_while_syncing(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     """Pair again: no second request, no "no picture"."""
     source = source_for(hass, helper)
@@ -296,7 +356,7 @@ async def test_a_rejected_token_while_syncing(
 
 
 async def test_a_slow_answer_is_asked_again(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
@@ -306,7 +366,7 @@ async def test_a_slow_answer_is_asked_again(
 
 
 async def test_a_capture_that_hangs_ends_within_the_timeout(
-    hass: HomeAssistant, helper: FakeHelper
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
 ) -> None:
     source = source_for(hass, helper)
     await source.start()
@@ -317,10 +377,16 @@ async def test_a_capture_that_hangs_ends_within_the_timeout(
     with pytest.raises(SourceUnavailable):
         await source.capture()
     assert loop.time() - began < screen.CAPTURE_TIMEOUT
+    assert source.is_on()  # one hang is not off
+    clock.time = 3.0
+    with pytest.raises(SourceUnavailable):
+        await source.capture()
     assert not source.is_on()
 
 
-async def test_a_start_that_hangs(hass: HomeAssistant, helper: FakeHelper) -> None:
+async def test_a_start_that_hangs(
+    hass: HomeAssistant, helper: FakeHelper, source_for: Any, clock: FakeTime
+) -> None:
     helper.info_status = "slow"
     source = source_for(hass, helper)
     with pytest.raises(SourceUnavailable):
@@ -328,7 +394,11 @@ async def test_a_start_that_hangs(hass: HomeAssistant, helper: FakeHelper) -> No
 
 
 async def test_the_token_and_frames_are_never_logged(
-    hass: HomeAssistant, helper: FakeHelper, caplog: pytest.LogCaptureFixture
+    hass: HomeAssistant,
+    helper: FakeHelper,
+    caplog: pytest.LogCaptureFixture,
+    source_for: Any,
+    clock: FakeTime,
 ) -> None:
     caplog.set_level(logging.DEBUG)
     source = source_for(hass, helper)
@@ -340,7 +410,7 @@ async def test_the_token_and_frames_are_never_logged(
     with pytest.raises(SourceAuthFailed) as err:
         await source.capture()
     text = caplog.text + str(err.value)
-    assert TOKEN not in text
+    assert HELPER_TOKEN not in text
     assert "\\x01" not in text
 
 
@@ -351,13 +421,13 @@ async def test_pairing_returns_the_token_and_the_id(
     hass: HomeAssistant, helper: FakeHelper, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    assert await screen.async_pair(hass, "127.0.0.1", helper.port, "123456") == (
-        TOKEN,
+    assert await screen.async_pair(hass, "127.0.0.1", helper.port, PAIRING_CODE) == (
+        HELPER_TOKEN,
         HELPER_ID,
     )
-    assert helper.pair_bodies == [{"code": "123456"}]
-    assert TOKEN not in caplog.text
-    assert "123456" not in caplog.text
+    assert helper.pair_bodies == [{"code": PAIRING_CODE}]
+    assert HELPER_TOKEN not in caplog.text
+    assert PAIRING_CODE not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -379,14 +449,19 @@ async def test_a_refused_code(
 
 @pytest.mark.parametrize(
     "answer",
-    [(200, None), (200, {"token": TOKEN}), (500, {"error": "oops"}), (403, None)],
+    [
+        (200, None),
+        (200, {"token": HELPER_TOKEN}),
+        (500, {"error": "oops"}),
+        (403, None),
+    ],
 )
 async def test_an_unexpected_pairing_answer(
     hass: HomeAssistant, helper: FakeHelper, answer: tuple[int, Any]
 ) -> None:
     helper.pair_answer = answer
     with pytest.raises(SourceUnavailable):
-        await screen.async_pair(hass, "127.0.0.1", helper.port, "123456")
+        await screen.async_pair(hass, "127.0.0.1", helper.port, PAIRING_CODE)
 
 
 async def test_pairing_with_an_unreachable_helper(
@@ -395,23 +470,23 @@ async def test_pairing_with_an_unreachable_helper(
     port = helper.port
     await helper.server.close()
     with pytest.raises(SourceUnavailable):
-        await screen.async_pair(hass, "127.0.0.1", port, "123456")
+        await screen.async_pair(hass, "127.0.0.1", port, PAIRING_CODE)
     assert not await screen.async_reachable(hass, "127.0.0.1", port)
 
 
 async def test_the_info_with_the_token(hass: HomeAssistant, helper: FakeHelper) -> None:
     assert await screen.async_reachable(hass, "127.0.0.1", helper.port)
-    info = await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+    info = await screen.async_info(hass, "127.0.0.1", helper.port, HELPER_TOKEN)
     assert info == {"id": HELPER_ID, "protocol": 1}
-    assert helper.authorization[-1] == f"Bearer {TOKEN}"
+    assert helper.authorization[-1] == f"Bearer {HELPER_TOKEN}"
 
     helper.info_status = 401
     with pytest.raises(SourceAuthFailed):
-        await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+        await screen.async_info(hass, "127.0.0.1", helper.port, HELPER_TOKEN)
     helper.info_status = 200
     helper.info = None
     with pytest.raises(SourceUnavailable):
-        await screen.async_info(hass, "127.0.0.1", helper.port, TOKEN)
+        await screen.async_info(hass, "127.0.0.1", helper.port, HELPER_TOKEN)
 
 
 async def test_an_address_that_is_not_a_host_is_not_reachable(

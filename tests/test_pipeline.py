@@ -501,6 +501,30 @@ async def test_five_failed_captures_in_a_row() -> None:
     assert h.log[-3:] == CLEANUP
 
 
+@pytest.mark.parametrize(
+    ("rate", "seconds"),
+    [
+        # 4 per second: 5 failures take about 1.25 s, so the 3 s decide (#110).
+        (UpdateRate.MAXIMUM, 3.0),
+        # 1 per second: the 5 failures take longer than 3 s and decide.
+        (UpdateRate.LOW, 4.0),
+    ],
+)
+async def test_failed_captures_stop_after_five_and_3_s(
+    rate: UpdateRate, seconds: float
+) -> None:
+    h = Harness(rate=rate)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.default = SourceUnavailable("no picture")
+    failing_since = h.clock.now()
+    assert await h.finish() == StopReason.TV_OFF
+    stopped_after = h.status_times[-1] - failing_since
+    assert seconds <= stopped_after < seconds + 1.0
+
+
 async def test_four_failed_captures_then_a_good_one() -> None:
     h = Harness()
     await h.start()
