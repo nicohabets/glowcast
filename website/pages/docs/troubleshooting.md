@@ -12,6 +12,16 @@ When it stops by itself, the switch turns off, the [status](status.md) shows Pic
 - **The Home Assistant lights have no colour lights left to follow** (the area or light group was removed, or has no colour lights left): Home Assistant shows a repair; choose other lights in Glowcast's settings. It goes away after the next start that works.
 - **None of the Home Assistant lights is available**: Glowcast does not start (Error, `output_unavailable`); it starts again once a light is back.
 - **The TV or the bridge is no longer set up in Home Assistant**: Home Assistant shows a repair saying which integration to set up again.
+- **The TV does not allow screenshots**: Home Assistant shows a repair; see [below](#the-tv-does-not-allow-screenshots).
+
+## The TV does not allow screenshots { #the-tv-does-not-allow-screenshots }
+
+Glowcast sees the picture through the TV's screenshot call, which LG does not document. When the TV refuses that call, Glowcast stops at once (it does not wait for more tries), the [status](status.md) shows Error, and Home Assistant shows a repair. The TV is on; it is not a connection problem. There are two answers:
+
+- **The TV does not offer the call** ("no such service or method", stop reason `source_not_supported`): this model or its software does not have it, so Glowcast cannot work on it for now.
+- **The TV does not permit the call** ("insufficient permissions", stop reason `source_not_permitted`): the pairing the LG webOS TV integration made with the TV does not allow screenshots. Update Home Assistant, then pair the TV again: delete the TV in the LG webOS TV integration (**Settings → Devices & services**), add it again and accept the request on the TV. Then switch Glowcast on again.
+
+In both cases, please [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model and webOS version, and attach Glowcast's diagnostics (see [below](#reporting-a-problem)), so that we can look at supporting it.
 
 ## The lights let go during a streaming app
 

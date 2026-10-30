@@ -7,6 +7,7 @@ colours.
 import asyncio
 import logging
 import math
+import os
 import time
 from collections.abc import Mapping
 from types import MappingProxyType
@@ -14,7 +15,10 @@ from typing import Any
 
 from custom_components.glowcast.const import CONF_OUTPUT
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
-from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.core.ports import (
+    SourceNotSupported,
+    SourceUnavailable,
+)
 from custom_components.glowcast.outputs.hue_entertainment import CONF_AREA_ID
 from custom_components.glowcast.sources.webos import FRAME_SIZE
 
@@ -31,6 +35,9 @@ BLOBS = [
     ((0.6, 0.15, 0.9), 0.7, 0.025),
 ]
 BLOB_WIDTH = 0.18  # in the picture's widths
+# A TV that refuses the screenshot call (#214), to show its repair issue:
+# "not_supported" or "not_permitted" in this variable when the demo starts.
+REFUSE = "GLOWCAST_DEMO_REFUSE"
 # Channels per entertainment area, as the fake bridge reports them
 # (AREAS in fake_bridge.py; this stub cannot import it).
 AREA_CHANNELS = {
@@ -83,6 +90,11 @@ class FakeTvSource:
         if not self._started:
             raise SourceUnavailable("The fake TV is not started")
         await asyncio.sleep(CAPTURE_SECONDS)
+        if (refuse := os.environ.get(REFUSE)) in ("not_supported", "not_permitted"):
+            raise SourceNotSupported(
+                f"The fake TV refuses the screenshot call ({refuse})",
+                not_permitted=refuse == "not_permitted",
+            )
         return picture(time.monotonic())
 
     async def close(self) -> None:
