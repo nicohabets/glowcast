@@ -1,12 +1,14 @@
 # When something is wrong
 
-When Glowcast stops by itself, its switch turns off and the **Status** sensor shows **TV off** or **Error**. Its attribute **Stop reason** says why, and so does the Home Assistant log. [Troubleshooting](../docs/troubleshooting.md) lists every reason; these are the common ones.
+When Glowcast stops by itself, its switch turns off and the **Status** sensor shows **Picture source off** or **Error**. Its attribute **Stop reason** says why, and so does the Home Assistant log. [Troubleshooting](../docs/troubleshooting.md) lists every reason; these are the common ones.
 
 ## Another app is streaming
 
 The switch turns off again soon after you switch it on, and the stop reason is **Another app is streaming** (`output_busy`). A Hue bridge streams to one entertainment area at a time, and something else is using it: the Hue Sync app, a Hue Play HDMI Sync Box, or another Glowcast entry on the same bridge. Glowcast does not take over from it.
 
 Stop the other app first (in that app, or by switching off the other Glowcast), then switch Glowcast on again.
+
+With [an entertainment area and loose lights together](lights.md#both-together), Glowcast does not stop: the loose lights follow the picture without the area, and the status shows which part dropped out; see [Part of the lights drops out](#part-of-the-lights-drops-out).
 
 ## No entertainment areas
 
@@ -30,7 +32,7 @@ For a computer screen it is **Pair with the screen helper again**: enter the 6-d
 ## The TV is not found
 
 - **During setup**, "No LG webOS TV found": set up the TV with Home Assistant's **LG webOS Smart TV** integration first, then add Glowcast again. "Glowcast is already set up for every LG webOS TV in Home Assistant" means each TV already has its Glowcast entry; open that one instead.
-- **When you switch Glowcast on**, it waits up to 10 seconds for the TV's picture. If the TV is off or cannot be reached, it stops and the status shows **TV off**. Glowcast cannot turn the TV on: turn the TV on first, or [start Glowcast with the TV](first-evening.md#start-it-with-the-tv).
+- **When you switch Glowcast on**, it waits up to 10 seconds for the TV's picture. If the TV is off or cannot be reached, it stops and the status shows **Picture source off**. Glowcast cannot turn the TV on: turn the TV on first, or [start Glowcast with the TV](first-evening.md#start-it-with-the-tv).
 - **A repair "Glowcast *name*: the TV is not set up"** means the TV is no longer set up in Home Assistant, or is not loaded. Set it up again with the LG webOS Smart TV integration (Settings → Devices & services), then switch Glowcast on again.
 
 ## The lights stutter
@@ -39,9 +41,15 @@ For a computer screen it is **Pair with the screen helper again**: enter the 6-d
 - **Loose lights:** each light changes about once per second, and less often with more than 4 lights on one Hue bridge or Thread network; see [How fast loose lights are](lights.md#how-fast-loose-lights-are). For Hue lights, an entertainment area is much smoother.
 - The TV gives about 3 pictures per second, so the lights follow scenes, not every flash or cut. That is a [known limit](../docs/limits.md).
 
+## Part of the lights drops out
+
+This is about [an entertainment area and loose lights together](lights.md#both-together). If one of the two cannot start (for example another app streams to the area, or none of the loose lights is available), the other starts without it. If one is lost while syncing (the bridge stops answering, or the loose lights become unavailable), the other keeps following the picture, and Glowcast tries the lost one again after 5 seconds. If that fails, or it is lost again within a minute, it stays off until you switch Glowcast on again.
+
+While a part is out, the **Status** sensor's attribute **Dropped lights** (`dropped_outputs`) lists it with the reason, for example `{"hue_entertainment": "output_busy"}` while another app streams to the area. The log says what happened too. Fix the cause (stop the other app, or bring the lights back), then switch Glowcast off and on. Only when both parts are lost does Glowcast stop. See [Status and diagnostics](../docs/status.md#why-it-stopped).
+
 ## The lights stay on the last colour
 
-After Glowcast stops, the lights in the entertainment area keep the last colour, while Home Assistant shows their earlier state. That is the area's **When syncing stops** setting in the Hue app: change it to **Last on-state**, and set the lights again from Home Assistant or the Hue app this once. See ["When syncing stops"](lights.md#when-syncing-stops-last-on-state).
+Loose lights are put back by Glowcast itself. After Glowcast stops, the lights in an entertainment area may keep the last colour, while Home Assistant shows their earlier state. That is the area's **When syncing stops** setting in the Hue app: change it to **Last on-state**, and set the lights again from Home Assistant or the Hue app this once. See ["When syncing stops"](lights.md#when-syncing-stops-last-on-state).
 
 ## An automation does nothing while Glowcast syncs
 

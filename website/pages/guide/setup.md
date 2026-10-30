@@ -44,20 +44,31 @@ If the button was not pressed in time, press it and click **Submit** again. If t
 
 A light that joins the area or group later follows the middle of the picture until you place it under **Configure**.
 
+### Both together
+
+An entertainment area and loose lights together are set up under **Configure**, after setup:
+
+1. Open **Settings → Devices & services → Glowcast → Configure** and choose **Entertainment area and loose lights**.
+2. The entertainment area's steps: **Choose the entertainment area** (first **Choose the Hue bridge** and **Pair with the Hue bridge** if Glowcast has not paired with the bridge yet).
+3. The loose lights' steps, as above. A light that is already in the entertainment area cannot also be a loose light: the step says which lights, and you pick others.
+4. **Glowcast settings**: brightness, intensity and the update rate, which apply to both.
+
+[Choosing your lights](lights.md#both-together) says when this is useful.
+
 ## 4. Done
 
 Glowcast adds one device, "Glowcast *TV name*", with:
 
 - a **switch** to start and stop syncing, for example `switch.glowcast_living_room_tv`;
 - a **Status** sensor that says what Glowcast is doing ([Status and diagnostics](../docs/status.md));
-- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with loose lights, **Lights** ([Settings](../docs/settings.md)).
+- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with loose lights, **Lights** (both when you use the two together) ([Settings](../docs/settings.md)).
 
 The switch is off. Next: [the first evening](first-evening.md).
 
 ## Changing it later
 
-Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights should follow the picture?**, then the lights' own settings (the area, or the loose lights and their places), then brightness, intensity and the update rate.
+Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights should follow the picture?** (**Hue entertainment area - the smoothest**, **Loose lights - any colour light, slower**, or **Entertainment area and loose lights**), then the lights' own settings (the area, the loose lights and their places, or both), then brightness, intensity and the update rate.
 
 - Switching from loose lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before. Switching back and forth later needs no new pairing.
-- Switching between the two reloads Glowcast, so syncing stops; switch it on again.
-- The TV and the bridge are fixed. To change them, remove Glowcast and add it again.
+- Switching between these reloads Glowcast, so syncing stops; switch it on again.
+- The TV is fixed, and so is the bridge once Glowcast has paired with it. To change them, remove Glowcast and add it again.
