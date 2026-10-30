@@ -10,6 +10,8 @@ import pytest
 
 from custom_components.glowcast.core.light_state import (
     BLACK_HOLD,
+    CUT,
+    CUT_FADE,
     FADE_IN,
     LightState,
 )
@@ -17,6 +19,10 @@ from custom_components.glowcast.core.models import ChannelColor
 
 RED = (1.0, 0.0, 0.0)
 BLUE = (0.0, 0.0, 1.0)
+# Two colours that differ by 0.2 at most per component: no cut (#258), so
+# they fade linearly over the capture interval.
+ROSE = (0.8, 0.2, 0.2)
+LILAC = (0.6, 0.2, 0.4)
 BLACK = (0.0, 0.0, 0.0)
 RED_SENT = (1.0, 0.0, 0.0)  # red at brightness 100 %: no glow mixed in (#43)
 GLOW_ONLY = (0.10, 0.078, 0.050)  # black at brightness 100 %
@@ -60,24 +66,71 @@ def test_the_first_target_is_shown_at_once() -> None:
 
 def test_fades_linearly_over_the_measured_capture_interval() -> None:
     lights = LightState()
+    lights.set_target(target(ROSE), False, 0.0)
+    lights.set_target(target(ROSE), False, 2.0)  # measured interval: 2 s
+    lights.set_target(target(LILAC), False, 4.0)
+    assert rgb_at(lights, 4.0) == approx_rgb(ROSE)
+    assert rgb_at(lights, 4.5) == approx_rgb((0.75, 0.2, 0.25))
+    assert rgb_at(lights, 5.0) == approx_rgb((0.70, 0.2, 0.30))
+    assert rgb_at(lights, 6.0) == approx_rgb(LILAC)
+    assert rgb_at(lights, 9.0) == approx_rgb(LILAC)  # stays there
+
+
+def test_a_cut_fades_over_cut_fade() -> None:
+    """A change of more than CUT shows at once: over CUT_FADE, not the
+    capture interval (#258)."""
+    lights = LightState()
     lights.set_target(target(RED), False, 0.0)
     lights.set_target(target(RED), False, 2.0)  # measured interval: 2 s
     lights.set_target(target(BLUE), False, 4.0)
     assert rgb_at(lights, 4.0) == approx_rgb(RED_SENT)
-    assert rgb_at(lights, 4.5) == approx_rgb((0.75, 0.0, 0.25))
-    assert rgb_at(lights, 5.0) == approx_rgb((0.50, 0.0, 0.50))
-    assert rgb_at(lights, 6.0) == approx_rgb(BLUE)
-    assert rgb_at(lights, 9.0) == approx_rgb(BLUE)  # stays there
+    assert rgb_at(lights, 4.0 + CUT_FADE / 2) == approx_rgb((0.50, 0.0, 0.50))
+    assert rgb_at(lights, 4.0 + CUT_FADE) == approx_rgb(BLUE)
+    assert rgb_at(lights, 5.0) == approx_rgb(BLUE)
+
+
+def test_a_change_of_exactly_cut_is_not_a_cut() -> None:
+    lights = LightState()
+    lights.set_target(target((0.5, 0.5, 0.5)), False, 0.0)
+    lights.set_target(target((0.5, 0.5, 0.5)), False, 1.0)
+    lights.set_target(target((0.5 + CUT, 0.5, 0.5)), False, 2.0)
+    assert rgb_at(lights, 2.5) == approx_rgb((0.5 + CUT / 2, 0.5, 0.5))
+
+
+def test_the_cut_is_per_channel() -> None:
+    """In one frame, a channel that jumps fades fast and one that drifts fades
+    over the interval."""
+    lights = LightState()
+    both = [ChannelColor("a", RED), ChannelColor("b", ROSE)]
+    lights.set_target(both, False, 0.0)
+    lights.set_target(both, False, 1.0)
+    lights.set_target([ChannelColor("a", BLUE), ChannelColor("b", LILAC)], False, 2.0)
+    a, b = lights.colors(2.0 + CUT_FADE, 1.0)
+    assert a.rgb == approx_rgb(BLUE)
+    assert b.rgb == approx_rgb((0.8 - 0.2 * CUT_FADE, 0.2, 0.2 + 0.2 * CUT_FADE))
+
+
+def test_the_fade_to_the_glow_after_the_hold_stays_soft() -> None:
+    """Black is never a cut: after the hold on black the colours fade to the
+    glow over the capture interval."""
+    lights = LightState()
+    lights.set_target(target(RED), False, 0.0)
+    lights.set_target(target(RED), False, 1.0)  # measured interval: 1 s
+    for i in range(2, 2 + int(BLACK_HOLD) + 2):
+        lights.set_target(target(BLACK), True, float(i))
+    end_of_hold = 2 + int(BLACK_HOLD) + 1  # the first black frame after the hold
+    halfway = rgb_at(lights, end_of_hold + 0.5)
+    assert halfway[0] == pytest.approx(0.5, abs=0.02)  # a cut would be at 0 already
 
 
 def test_a_new_target_fades_from_where_the_lights_are() -> None:
     lights = LightState()
-    lights.set_target(target(RED), False, 0.0)
-    lights.set_target(target(BLUE), False, 1.0)
-    assert rgb_at(lights, 1.5) == approx_rgb((0.50, 0.0, 0.50))
-    lights.set_target(target(BLACK), False, 1.5)  # half way to blue
-    assert rgb_at(lights, 1.5) == approx_rgb((0.50, 0.0, 0.50))
-    assert rgb_at(lights, 1.75) == approx_rgb((0.25, 0.0, 0.25))
+    lights.set_target(target(ROSE), False, 0.0)
+    lights.set_target(target(LILAC), False, 1.0)
+    assert rgb_at(lights, 1.5) == approx_rgb((0.70, 0.2, 0.30))
+    lights.set_target(target(ROSE), False, 1.5)  # half way to lilac
+    assert rgb_at(lights, 1.5) == approx_rgb((0.70, 0.2, 0.30))
+    assert rgb_at(lights, 1.75) == approx_rgb((0.75, 0.2, 0.25))
 
 
 # Brightness and the minimal glow (architecture 3.5)
@@ -126,9 +179,11 @@ def test_a_fade_from_black_to_a_bright_colour_has_no_jumps(brightness: float) ->
     lights = LightState()
     lights.set_target(target(BLACK), True, 0.0)
     lights.set_target(target(BLACK), True, 1.0)  # measured interval: 1 s
-    lights.set_target(target(RED), False, 2.0)
+    lights.set_target(target(RED), False, 2.0)  # a cut: over CUT_FADE (#258)
     steps = 1000
-    sent = [rgb_at(lights, 2.0 + i / steps, brightness) for i in range(steps + 1)]
+    sent = [
+        rgb_at(lights, 2.0 + CUT_FADE * i / steps, brightness) for i in range(steps + 1)
+    ]
     assert sent[0] == approx_rgb(tuple(min(0.10, brightness) * c for c in WARM))
     assert sent[-1] == approx_rgb((brightness, 0.0, 0.0))
     # The engine colour moves brightness / steps per step; the glow may add
@@ -305,9 +360,9 @@ def test_resume_keeps_only_the_channels_that_still_exist() -> None:
 
 def test_resume_does_not_stretch_the_next_fade_over_the_gap() -> None:
     lights = LightState()
-    lights.set_target(target(RED), False, 0.0)
-    lights.set_target(target(RED), False, 1.0)  # measured interval: 1 s
+    lights.set_target(target(ROSE), False, 0.0)
+    lights.set_target(target(ROSE), False, 1.0)  # measured interval: 1 s
     lights.resume({"1"})
-    lights.set_target(target(BLUE), False, 7.0)  # 6 s later, after the retry
-    assert rgb_at(lights, 7.5) == approx_rgb((0.50, 0.0, 0.50))
-    assert rgb_at(lights, 8.0) == approx_rgb(BLUE)
+    lights.set_target(target(LILAC), False, 7.0)  # 6 s later, after the retry
+    assert rgb_at(lights, 7.5) == approx_rgb((0.70, 0.2, 0.30))
+    assert rgb_at(lights, 8.0) == approx_rgb(LILAC)

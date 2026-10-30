@@ -15,6 +15,7 @@ import pytest
 from custom_components.glowcast.core.letterbox import NO_BARS, STABLE, Bars, Letterbox
 from custom_components.glowcast.core.light_state import (
     BLACK_HOLD,
+    CUT_FADE,
     FADE_IN,
     GLOW,
     GLOW_COLOR,
@@ -57,6 +58,9 @@ from .fakes import (
 )
 
 TICK = 1 / 25
+# Two colours 51 of 255 (0.2) apart per component: below the cut (#258).
+ROSE = (204, 51, 51)
+LILAC = (153, 51, 102)
 
 
 class Harness:
@@ -332,9 +336,10 @@ async def test_no_fade_in_after_a_retry() -> None:
 
 @pytest.mark.usefixtures("no_fade_in")
 async def test_fades_linearly_over_the_measured_capture_interval() -> None:
+    """A change below the cut threshold (#258) fades over the interval."""
     h = Harness(rate=UpdateRate.LOW)  # one capture per second
-    h.source.frames = [solid(RED), solid(RED)]
-    h.source.default = solid(BLUE)
+    h.source.frames = [solid(ROSE), solid(ROSE)]
+    h.source.default = solid(LILAC)
     await h.start()
     # Captures take 0.25 s and start every second: they complete at 0.25
     # (startup), 0.5 and 1.5 s, so blue arrives at 1.5 s after an interval of 1 s.
@@ -344,13 +349,15 @@ async def test_fades_linearly_over_the_measured_capture_interval() -> None:
     sends = [(t, c[0].rgb) for t, c in h.output.sent if blue_at <= t]
     for t, rgb in sends:
         p = min(1.0, (t - blue_at) / interval)
-        assert rgb[0] == pytest.approx(1.0 - p, abs=0.01)
-        assert rgb[1] == 0.0  # a bright fade gets no glow (#43)
-        assert rgb[2] == pytest.approx(p, abs=0.01)
+        assert rgb[0] == pytest.approx((204 - 51 * p) / 255, abs=0.01)
+        assert rgb[1] == pytest.approx(51 / 255, abs=0.01)  # no glow (#43)
+        assert rgb[2] == pytest.approx((51 + 51 * p) / 255, abs=0.01)
     await h.clock.advance(1.0)
     # The next capture arrives one tick before a fade ends, so the colour
     # trails the target by a fraction and converges.
-    assert h.output.sent[-1][1][0].rgb == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
+    assert h.output.sent[-1][1][0].rgb == pytest.approx(
+        (153 / 255, 51 / 255, 102 / 255), abs=0.01
+    )
     steps = [t for t, _ in h.output.sent if blue_at <= t <= blue_at + interval]
     assert all(b - a == pytest.approx(TICK) for a, b in itertools.pairwise(steps))
     assert await h.stop() == StopReason.USER
@@ -1686,3 +1693,20 @@ async def test_a_new_pipeline_starts_without_bars() -> None:
     box, bars = first_compute_of_claim(again, 1)
     assert box is not learned and bars == NO_BARS
     assert await again.stop() == StopReason.USER
+
+
+async def test_a_cut_shows_at_once() -> None:
+    """A scene cut fades over CUT_FADE, not the capture interval (#258)."""
+    h = Harness(rate=UpdateRate.LOW)  # one capture per second
+    # Blue arrives at 2.5 s, after the fade-in of the claim (FADE_IN).
+    h.source.frames = [solid(RED)] * 3
+    h.source.default = solid(BLUE)
+    await h.start()
+    await h.clock.advance(3.0)
+    sends = [(t, c[0].rgb) for t, c in h.output.sent]
+    first = next(t for t, rgb in sends if rgb[2] > 0)
+    assert first > FADE_IN
+    # From the first tick with some blue, blue within CUT_FADE.
+    done = [rgb for t, rgb in sends if t >= first + CUT_FADE]
+    assert done[0] == pytest.approx((0.0, 0.0, 1.0), abs=0.01)
+    assert await h.stop() == StopReason.USER
