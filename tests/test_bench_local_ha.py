@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parent.parent
 DEMO_API = {
     "_default_name": [],
     "_lock": [],
-    "_install": [],
+    "_install": [],  # called with browser=False
     "_python": [],
     "_free_port": ["preferred", "taken"],
     "_write_config": ["instance"],
@@ -52,6 +52,7 @@ def test_the_demo_helpers_it_uses_exist() -> None:
         function = getattr(demo, name)
         assert list(inspect.signature(function).parameters)[: len(params)] == params
     assert "CONFIGURATION" in vars(demo)
+    assert "browser" in inspect.signature(demo._install).parameters
     instance = local_ha.instance()
     assert instance.home.parent == local_ha.INSTANCES
     assert ".cache/glowcast-bench" in str(instance.home)

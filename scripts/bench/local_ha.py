@@ -43,7 +43,7 @@ def instance() -> demo.Instance:
 def install() -> None:
     """The demo's shared environment (Home Assistant), installed if needed."""
     with demo._lock():
-        demo._install()
+        demo._install(browser=False)  # the bench needs no Chromium
 
 
 def python() -> Path:
@@ -85,7 +85,7 @@ def start(bridge_host: str, glowcast: dict[str, Any]) -> tuple[demo.Instance, st
     inst = instance()
     stop()
     with demo._lock():
-        demo._install()
+        demo._install(browser=False)  # the bench needs no Chromium
         port = demo._free_port(HA_PORT, set())
         inst.home.mkdir(parents=True, exist_ok=True)
         state = inst.home / "state.json"
