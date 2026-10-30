@@ -77,9 +77,11 @@ variables:
        else none }}
   source_ok: "{{ sources | count == 0 or source in sources }}"
   # "Started by this automation": the switch's state still carries the context
-  # of this automation's last run. Only runs that act pass the conditions below
-  # and give the automation a new context, so `this` (the automation's state
-  # before this run) holds the context of the run that turned the switch on.
+  # of this automation's last run. Only runs that pass the conditions below
+  # give the automation a new context. With "also stop" on (the only case that
+  # reads this) every such run turns the switch on or off, so `this` (the
+  # automation's state before this run) holds the context of the run that
+  # turned the switch on.
   started_here: >-
     {{ this is not none and states[glowcast_switch] is not none
        and states[glowcast_switch].context.id == this.context.id }}
