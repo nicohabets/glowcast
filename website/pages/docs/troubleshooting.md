@@ -16,7 +16,7 @@ When it stops by itself, the switch turns off, the [status](status.md) shows Pic
 
 ## The TV does not allow screenshots { #the-tv-does-not-allow-screenshots }
 
-Glowcast sees the picture through the TV's screenshot call, which LG does not document. When the TV refuses that call, Glowcast stops at once (it does not wait for more tries), the [status](status.md) shows Error, and Home Assistant shows a repair. The TV is on; it is not a connection problem. There are two answers:
+Glowcast sees the picture through the TV's screenshot call, which LG does not document. When the TV refuses that call, Glowcast stops: at once while it syncs, or after about 10 seconds of asking again when it starts, the [status](status.md) shows Error, and Home Assistant shows a repair. The TV is on; it is not a connection problem. There are two answers:
 
 - **The TV does not offer the call** ("no such service or method", stop reason `source_not_supported`): this model or its software does not have it, so Glowcast cannot work on it for now.
 - **The TV does not permit the call** ("insufficient permissions", stop reason `source_not_permitted`): the pairing the LG webOS TV integration made with the TV does not allow screenshots. Update Home Assistant, then pair the TV again: delete the TV in the LG webOS TV integration (**Settings → Devices & services**), add it again and accept the request on the TV. Then switch Glowcast on again.

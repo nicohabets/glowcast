@@ -881,15 +881,17 @@ async def test_the_real_pipeline_stopping_by_itself_turns_the_switch_off(
 async def test_the_real_pipeline_stops_at_once_when_the_source_refuses(
     hass: HomeAssistant, adapters: FakeAdapters
 ) -> None:
-    """The first refused capture stops, without touching the lights (#214)."""
+    """A refused capture while syncing stops at once, releasing the lights
+    (#214); a refusal at the start is retried for the startup grace (tested
+    with the fake clock in test_pipeline.py)."""
     entry = await setup(hass)
-    adapters.source_picture = False  # no picture until the refusal below
     await switch(hass, SERVICE_TURN_ON)
+    await wait_for(lambda: "output.start" in adapters.log)
     [source] = adapters.sources
     source.default = SourceNotSupported("refused", not_permitted=True)
     await wait_for(lambda: state(hass) == STATE_OFF)
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert "output.start" not in adapters.log
+    assert "output.stop" in adapters.log
     assert adapters.log[-1] == "source.close"
     assert issues(hass, entry) == {"webos_not_permitted"}
     status = entry.runtime_data.status
