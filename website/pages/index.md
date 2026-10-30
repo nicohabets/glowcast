@@ -92,6 +92,7 @@ Then follow the [installation steps](docs/installation.md).
 
 ## More
 
+- [User guide](guide/index.md): from installing to the first evening, step by step
 - [Documentation](docs/index.md): installation, setup, settings, starting it with the TV, troubleshooting
 - [Releases](https://github.com/nicohabets/glowcast/releases): what changed in each version
 - [Glowcast on GitHub](https://github.com/nicohabets/glowcast): the code, and the place to [report a problem](https://github.com/nicohabets/glowcast/issues) or [tell how it works on your TV](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md)
