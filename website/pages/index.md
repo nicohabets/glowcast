@@ -32,35 +32,27 @@ If you already run Home Assistant with the LG webOS and Philips Hue integrations
 
 ## What it does
 
-<div class="grid cards" markdown>
+<div class="grid cards gc-features" markdown>
 
--   <div class="gc-feature" markdown>
-    ![The picture on the TV changes colour and the lights follow it.](images/illustrations/scene-1-picture-leads.svg){ loading=lazy }
-    </div>
+-   ![The picture on the TV changes colour and the lights follow it.](images/illustrations/scene-1-picture-leads.svg){ .gc-feature loading=lazy }
 
     **The lights follow the picture**
 
     Each light gets the colour of the part of the screen beside it: left, right, top and bottom. A gradient lightstrip shows several colours along its length.
 
--   <div class="gc-feature" markdown>
-    ![A dark picture on the TV: every light keeps a faint warm glow.](images/illustrations/scene-2-dark-scene.svg){ loading=lazy }
-    </div>
+-   ![A dark picture on the TV: every light keeps a faint warm glow.](images/illustrations/scene-2-dark-scene.svg){ .gc-feature loading=lazy }
 
     **Dark scenes stay cosy**
 
     When the picture goes dark, the lights keep a faint warm glow instead of going off.
 
--   <div class="gc-feature" markdown>
-    ![A strong red picture on the TV: the lights show the same pure red.](images/illustrations/scene-3-saturated-colour.svg){ loading=lazy }
-    </div>
+-   ![A strong red picture on the TV: the lights show the same pure red.](images/illustrations/scene-3-saturated-colour.svg){ .gc-feature loading=lazy }
 
     **Pure colours**
 
     A strong colour on the screen shows as that pure colour on the lights, not mixed with white.
 
--   <div class="gc-feature" markdown>
-    ![Glowcast's device page in Home Assistant: the switch, the status and the settings.](images/device-page.png){ loading=lazy }
-    </div>
+-   ![Glowcast's device page in Home Assistant: the switch, the status and the settings.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
 
     **Part of Home Assistant**
 
