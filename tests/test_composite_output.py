@@ -23,6 +23,7 @@ from custom_components.glowcast.core.ports import (
     OutputGone,
     OutputLost,
     OutputNotFound,
+    OutputUnavailable,
 )
 from custom_components.glowcast.outputs.composite import CompositeOutput
 
@@ -43,7 +44,7 @@ class Parts:
         self.lights = FakeOutput(self.clock, self.lights_log, channels=LIGHT_CHANNELS)
         self.lights.max_rate_hz = 4.0
         self.output = CompositeOutput(
-            [("area", self.area), ("lights", self.lights)], self.clock, "Test TV"
+            [("area", self.area), ("lights", self.lights)], self.clock
         )
 
     async def tick(self, seconds: float, step: float = 1 / 25) -> None:
@@ -106,6 +107,16 @@ async def test_a_part_that_cannot_start_is_dropped() -> None:
     await p.tick(1)
     assert p.area.sent == []
     assert p.lights.sent
+
+
+async def test_parts_dropped_from_the_outset_are_reported() -> None:
+    clock = FakeClock()
+    lights = FakeOutput(clock, [], channels=LIGHT_CHANNELS)
+    output = CompositeOutput(
+        [("lights", lights)], clock, {"area": OutputUnavailable("not set up")}
+    )
+    assert [c.id for c in await output.start()] == ["0/0"]
+    assert list(output.dropped_parts) == ["area"]
 
 
 async def test_no_part_can_start_raises_the_first_error() -> None:

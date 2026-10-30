@@ -23,7 +23,8 @@ from .const import (
 )
 from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
 from .issues import Issue
-from .outputs import OUTPUTS, OutputType
+from .outputs import OUTPUTS, OutputType, part_options
+from .outputs.blocks import output_blocks, output_types
 from .settings import read_settings
 from .sources import SOURCES, SourceType
 
@@ -70,6 +71,9 @@ class GlowcastData:
         # What follows the TV as the pipeline started with it (or as stored,
         # before the first start); the update listener gets no old options.
         self._output: Mapping[str, Any] = entry.options[CONF_OUTPUT]
+        # The parts of a combined output the running pipeline dropped, with
+        # the reason their follow-up (repair issue, reauth) was for.
+        self._dropped: dict[str, StopReason] = {}
 
     @property
     def is_on(self) -> bool:
@@ -123,6 +127,7 @@ class GlowcastData:
         )
         self._pipeline = pipeline
         self._output = options[CONF_OUTPUT]
+        self._dropped = {}
         self._task = self._entry.async_create_background_task(
             self._hass, pipeline.run(), f"glowcast {self._entry.title}"
         )
@@ -154,10 +159,11 @@ class GlowcastData:
         options.
         """
         options = self._entry.options
-        if options[CONF_OUTPUT][CONF_TYPE] != self._output[CONF_TYPE]:
-            # Another output type has other entities: reload the entry, which
-            # stops syncing and adds the new type's entities; the previous
-            # type's entities are removed at setup (__init__.py).
+        if output_types(options) != output_types({CONF_OUTPUT: self._output}):
+            # Another output type (or another combination of them) has other
+            # entities: reload the entry, which stops syncing and adds the new
+            # type's entities; the previous type's entities are removed at
+            # setup (__init__.py).
             self._output = options[CONF_OUTPUT]
             self._delete_output_issues(missing=True)
             self._hass.config_entries.async_schedule_reload(self._entry.entry_id)
@@ -211,22 +217,50 @@ class GlowcastData:
     def _missing_reference(
         self, source_type: SourceType, output_type: OutputType
     ) -> bool:
-        """Raise the type's repair issue if an entry it uses is gone or not loaded."""
+        """Raise the type's repair issue if an entry it uses is gone or not loaded.
+
+        True when Glowcast cannot sync: the source's entry is missing, or the
+        entry of every output part. A part of a combined output whose entry
+        is missing gets its repair issue, and the other parts start without it.
+        """
         data, options = self._entry.data, self._entry.options
-        for part in (source_type, output_type):
-            if part.is_missing(self._hass, data, options):
-                if (issue := part.missing) is None:
-                    _LOGGER.warning(
-                        "Glowcast %s cannot sync: an integration it uses is not set up",
-                        self._entry.title,
-                    )
-                else:
-                    _LOGGER.warning(
-                        "Glowcast %s cannot sync: %s", self._entry.title, issue.message
-                    )
-                    self._raise_issue(issue.key)
-                return True
-        return False
+        if source_type.is_missing(self._hass, data, options):
+            self._log_missing(source_type.missing, cannot_sync=True)
+            return True
+        parts = self._parts()
+        missing = [
+            part
+            for _, part, part_opts in parts
+            if part.is_missing(self._hass, data, part_opts)
+        ]
+        for part in missing:
+            self._log_missing(part.missing, cannot_sync=len(missing) == len(parts))
+        return bool(parts) and len(missing) == len(parts)
+
+    def _log_missing(self, issue: Issue | None, *, cannot_sync: bool) -> None:
+        """Log and raise the repair issue of a part whose entry is missing."""
+        if issue is None:
+            message = "an integration it uses is not set up"
+        else:
+            message = issue.message
+            self._raise_issue(issue.key)
+        if cannot_sync:
+            _LOGGER.warning("Glowcast %s cannot sync: %s", self._entry.title, message)
+        else:
+            _LOGGER.warning(
+                "Glowcast %s syncs without some of its lights: %s",
+                self._entry.title,
+                message,
+            )
+
+    def _parts(self) -> list[tuple[str, OutputType, Mapping[str, Any]]]:
+        """Each output type the entry uses, with the options as it sees them."""
+        options = self._entry.options
+        return [
+            (block[CONF_TYPE], OUTPUTS[block[CONF_TYPE]], part_options(options, block))
+            for block in output_blocks(options[CONF_OUTPUT])
+            if block.get(CONF_TYPE) in OUTPUTS
+        ]
 
     @callback
     def _async_status(self, pipeline: Pipeline, status: PipelineStatus) -> None:
@@ -234,17 +268,76 @@ class GlowcastData:
         if pipeline is not self._pipeline:
             return  # an old pipeline, for example after a restart
         previous, self._status = self._status, status
-        if status.phase is Phase.STREAMING:
-            # The lights were claimed: earlier problems are solved. Later
-            # streaming reports only update the captures per second.
-            if previous is None or previous.phase is not Phase.STREAMING:
-                self.async_remove_issues()
-        elif status.phase is Phase.STOPPED:
+        # The lights were claimed: earlier problems are solved, except those
+        # of parts that did not start. Later streaming reports only update
+        # the captures per second.
+        if status.phase is Phase.STREAMING and (
+            previous is None or previous.phase is not Phase.STREAMING
+        ):
+            self._remove_issues_except(status.dropped_parts)
+        self._async_parts_dropped(status.dropped_parts)
+        if status.phase is Phase.STOPPED:
             # The pipeline always gives a reason; without one, still turn off.
             self._async_stopped(status.stop_reason or StopReason.OUTPUT_UNAVAILABLE)
             return
         for update in list(self._status_listeners):
             update()
+
+    def _remove_issues_except(self, dropped: Mapping[str, StopReason]) -> None:
+        """Remove the entry's repair issues, but not those of dropped parts."""
+        keep = {
+            issue.key
+            for type_id, reason in dropped.items()
+            if (output_type := OUTPUTS.get(type_id)) is not None
+            for issue in (output_type.missing, output_type.stop_issues.get(reason))
+            if issue is not None
+        }
+        for key in issue_keys():
+            if key not in keep:
+                ir.async_delete_issue(
+                    self._hass, DOMAIN, issue_id(self._entry.entry_id, key)
+                )
+
+    @callback
+    def _async_parts_dropped(self, dropped: Mapping[str, StopReason]) -> None:
+        """The follow-up of each part of a combined output that was dropped.
+
+        As for a single output that stops with that reason: reauth for a
+        rejected key, the type's repair issue, or the missing-entry issue. Once
+        per part and reason; the combined output logs the drop itself.
+        """
+        self._dropped = {
+            type_id: reason
+            for type_id, reason in self._dropped.items()
+            if type_id in dropped
+        }
+        for type_id, reason in dropped.items():
+            if self._dropped.get(type_id) is reason:
+                continue
+            self._dropped[type_id] = reason
+            if (output_type := OUTPUTS.get(type_id)) is None:
+                continue
+            if reason is StopReason.AUTH_FAILED:
+                self._entry.async_start_reauth(self._hass, data={REAUTH_PART: type_id})
+            elif (issue := output_type.stop_issues.get(reason)) is not None:
+                self._raise_issue(issue.key)
+            elif (
+                reason is StopReason.OUTPUT_UNAVAILABLE
+                and output_type.missing is not None
+                and any(
+                    part.is_missing(self._hass, self._entry.data, part_opts)
+                    for part_id, part, part_opts in self._parts()
+                    if part_id == type_id
+                )
+            ):
+                self._raise_issue(output_type.missing.key)
+
+    @property
+    def dropped_parts(self) -> Mapping[str, StopReason]:
+        """The parts of a combined output that do not run now, while syncing."""
+        if self._pipeline is None or self._status is None:
+            return {}
+        return self._status.dropped_parts
 
     @callback
     def _async_stopped(self, reason: StopReason) -> None:
@@ -265,7 +358,9 @@ class GlowcastData:
             message = "Home Assistant is stopping"
         log("Glowcast %s stopped: %s", self._entry.title, message)
         if reason is StopReason.AUTH_FAILED:
-            self._entry.async_start_reauth(self._hass)
+            # A part's own reauth started already when it was dropped.
+            if StopReason.AUTH_FAILED not in self._dropped.values():
+                self._entry.async_start_reauth(self._hass)
         elif reason is StopReason.SOURCE_AUTH_FAILED:
             self._entry.async_start_reauth(
                 self._hass, data={REAUTH_PART: REAUTH_SOURCE}
@@ -282,17 +377,13 @@ class GlowcastData:
         self._notify()
 
     def _raise_issue(self, key: str) -> None:
-        """Raise the repair issue with this key of the entry's source or output."""
+        """Raise the repair issue with this key of the entry's source or outputs."""
         source_type = SOURCES[self._entry.data[CONF_SOURCE][CONF_TYPE]]
-        output_type = OUTPUTS[self._entry.options[CONF_OUTPUT][CONF_TYPE]]
+        issues = [source_type.missing]
+        for _, output_type, _ in self._parts():
+            issues.extend((output_type.missing, *output_type.stop_issues.values()))
         issue = next(
-            issue
-            for issue in (
-                source_type.missing,
-                output_type.missing,
-                *output_type.stop_issues.values(),
-            )
-            if issue is not None and issue.key == key
+            issue for issue in issues if issue is not None and issue.key == key
         )
         ir.async_create_issue(
             self._hass,

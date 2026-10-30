@@ -11,9 +11,10 @@ from homeassistant.helpers.entity import Entity
 
 from ..const import CONF_OUTPUT, CONF_TYPE
 from ..core.pipeline import StopReason
-from ..core.ports import LightOutput
+from ..core.ports import LightOutput, OutputUnavailable
 from ..issues import Issue
 from . import (
+    composite_flow,
     ha_lights,
     ha_lights_flow,
     ha_lights_select,
@@ -21,6 +22,8 @@ from . import (
     hue_entertainment,
     hue_entertainment_flow,
 )
+from .blocks import OUTPUT_COMBINED, output_blocks, output_types
+from .composite import CompositeOutput
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,17 @@ OUTPUTS = {
         entity_keys=(ha_lights_select.ENTITY_KEY,),
         stop_issues={StopReason.OUTPUT_NOT_FOUND: ha_lights.NO_LIGHTS},
     ),
+    # An entertainment area and loose lights together (#11): a part per type,
+    # each with its own block, issues and entities. Chosen in the settings.
+    OUTPUT_COMBINED: OutputType(
+        lambda hass, data, options: create_combined(hass, data, options),
+        lambda hass, data, options: all(
+            missing for _, missing in parts_missing(hass, data, options)
+        ),
+        lambda hass, data: None,
+        options_steps=composite_flow.CombinedOptionsSteps,
+        options_step="combined_options",
+    ),
 }
 
 # Every output type's setup steps, for the one registered flow, and its
@@ -113,11 +127,57 @@ OUTPUT_OPTIONS_STEPS = tuple(
 def output_entities(
     hass: HomeAssistant, entry: ConfigEntry, platform: Platform
 ) -> list[Entity]:
-    """The entities the entry's output type provides on this platform.
+    """The entities the entry's output types provide on this platform.
 
     None for a type this version does not know, so the common settings still
-    appear.
+    appear. A combined output has the entities of each of its parts.
     """
-    output_type = OUTPUTS.get(entry.options[CONF_OUTPUT][CONF_TYPE])
-    create = None if output_type is None else output_type.entities.get(platform)
-    return [] if create is None else create(hass, entry)
+    entities: list[Entity] = []
+    for type_id in output_types(entry.options):
+        output_type = OUTPUTS.get(type_id)
+        create = None if output_type is None else output_type.entities.get(platform)
+        if create is not None:
+            entities.extend(create(hass, entry))
+    return entities
+
+
+def part_options(
+    options: Mapping[str, Any], block: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The options as one part of a combined output sees them: its own block."""
+    return {**options, CONF_OUTPUT: block}
+
+
+def parts_missing(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> list[tuple[str, bool]]:
+    """Each output type the entry uses, and whether the entry it uses is missing."""
+    return [
+        (
+            block[CONF_TYPE],
+            OUTPUTS[block[CONF_TYPE]].is_missing(
+                hass, data, part_options(options, block)
+            ),
+        )
+        for block in output_blocks(options[CONF_OUTPUT])
+    ]
+
+
+def create_combined(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> CompositeOutput:
+    """The combined output: a part per block; a part whose entry is missing is
+    dropped from the start (its repair issue says why)."""
+    parts: list[tuple[str, LightOutput]] = []
+    dropped: dict[str, Exception] = {}
+    for block in output_blocks(options[CONF_OUTPUT]):
+        type_id = block[CONF_TYPE]
+        output_type = OUTPUTS[type_id]
+        block_options = part_options(options, block)
+        if output_type.is_missing(hass, data, block_options):
+            dropped[type_id] = OutputUnavailable(
+                "An integration these lights use is not set up"
+            )
+        else:
+            parts.append((type_id, output_type.create(hass, data, block_options)))
+    return CompositeOutput(parts, dropped=dropped)

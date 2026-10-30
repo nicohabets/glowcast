@@ -523,6 +523,65 @@ async def async_entertainment_hint(
     return hint
 
 
+async def async_area_lights(
+    hass: HomeAssistant, data: Mapping[str, Any], output: Mapping[str, Any]
+) -> set[str]:
+    """The entity ids of Home Assistant's lights in the chosen entertainment area.
+
+    For a combined output (#11): these lights follow the TV through the area,
+    so they cannot also be loose lights. `data` has the `bridge` block and
+    `output` this type's block. Asks the bridge through Home Assistant's own
+    hue entry (its host and key, read at runtime, never stored): the area's
+    lights, and the lights of the devices its channels stream to. Empty when
+    the bridge cannot be asked; nothing is refused then.
+    """
+    bridge, area_id = data.get(CONF_BRIDGE), output.get(CONF_AREA_ID)
+    if not bridge or not area_id:
+        return set()
+    hue_entry = _loaded_bridge(hass, bridge[CONF_UNIQUE_ID])
+    if hue_entry is None:
+        return set()
+    host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+    try:
+        async with asyncio.timeout(HINT_TIMEOUT):
+            areas = await _async_clip_data(hass, host, key, AREAS_PATH)
+            area = next((item for item in areas if item.get("id") == area_id), None)
+            if area is None:
+                return set()
+            renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
+            lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
+    except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+        return set()
+    light_ids = {
+        service.get("rid")
+        for service in area.get("light_services") or []
+        if isinstance(service, dict)
+    }
+    services = {
+        (member.get("service") or {}).get("rid")
+        for channel in area.get("channels") or []
+        if isinstance(channel, dict)
+        for member in channel.get("members") or []
+        if isinstance(member, dict)
+    }
+    devices = {
+        (item.get("owner") or {}).get("rid")
+        for item in renderers
+        if item.get("id") in services
+    }
+    light_ids |= {
+        light.get("id")
+        for light in lights
+        if (light.get("owner") or {}).get("rid") in devices
+    }
+    registry = er.async_get(hass)
+    return {
+        entry.entity_id
+        for entry in er.async_entries_for_config_entry(registry, hue_entry.entry_id)
+        if entry.domain == "light" and entry.unique_id in light_ids
+    }
+
+
 async def _async_clip_data(
     hass: HomeAssistant, host: str, key: str, path: str
 ) -> list[dict[str, Any]]:

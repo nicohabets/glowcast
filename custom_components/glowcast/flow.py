@@ -13,7 +13,14 @@ The steps talk to the flow that runs them through what that flow provides:
   source's block for `data["source"]` and the entry's title;
 - `async_output_chosen(data, output)`: the output's steps are done, with what
   the output stores in `data` (for example its secrets) and its block for
-  `options["output"]`.
+  `options["output"]`;
+- `chosen_outputs`: in the settings screen of a combined output (#11), the
+  data and block each earlier type's steps handed in this flow, so a later
+  type's steps can leave out the lights an earlier one drives; empty
+  otherwise.
+
+A type reads its own stored block with `outputs.blocks.output_block`, which
+also finds it inside a combined output.
 """
 
 from homeassistant.helpers.selector import (

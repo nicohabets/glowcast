@@ -553,7 +553,9 @@ async def test_a_new_capture_rate_is_not_a_new_claim(
     await switch(hass, SERVICE_TURN_ON)
     cleared: list[None] = []
     monkeypatch.setattr(
-        entry.runtime_data, "async_remove_issues", lambda: cleared.append(None)
+        entry.runtime_data,
+        "_remove_issues_except",
+        lambda dropped: cleared.append(None),
     )
     pipeline = FakePipeline.instances[-1]
     for rate in (3.9, 4.0, 4.1):

@@ -70,3 +70,16 @@ def test_core_does_not_import_home_assistant(path: Path) -> None:
 def test_the_core_modules_are_found() -> None:
     """This list only guards the glob."""
     assert {"pipeline.py", "ports.py", "models.py"} <= {path.name for path in CORE}
+
+
+# The combined output (#11) and the blocks it is stored in are generic too.
+COMBINED = ["outputs/blocks.py", "outputs/composite.py", "outputs/composite_flow.py"]
+
+
+@pytest.mark.parametrize("name", COMBINED)
+def test_the_combined_output_knows_no_type(name: str) -> None:
+    path = PACKAGE / name
+    imports = imported_modules(path)
+    assert [module for module in imports if TYPE_MODULES.search(module)] == []
+    assert TYPE_WORDS.findall(path.read_text()) == []
+    assert LIGHT_SERVICE.findall(path.read_text()) == []

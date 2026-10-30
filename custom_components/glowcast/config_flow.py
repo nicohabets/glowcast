@@ -37,6 +37,7 @@ from .const import (
     UPDATE_RATES,
 )
 from .outputs import OUTPUT_OPTIONS_STEPS, OUTPUT_STEPS, OUTPUTS
+from .outputs.blocks import output_types
 from .settings import read_settings, write_settings
 from .sources import SOURCE_STEPS, SOURCES
 
@@ -61,6 +62,11 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
     def entry_title(self) -> str:
         """The entry's name, which the steps may use (flow.py)."""
         return self._title
+
+    @property
+    def chosen_outputs(self) -> list[tuple[Mapping[str, Any], Mapping[str, Any]]]:
+        """No earlier output types at setup: an entry starts with one (flow.py)."""
+        return []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -118,13 +124,28 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Pair again with the source or the output that rejected Glowcast's key."""
+        """Pair again with the source or the output that rejected Glowcast's key.
+
+        For an output, REAUTH_PART names the output type (a part of a combined
+        output); without it, the first of the entry's output types that has a
+        reauth step.
+        """
         entry = self._get_reauth_entry()
         self._title = entry.title
-        if entry_data.get(REAUTH_PART) == REAUTH_SOURCE:
+        part = entry_data.get(REAUTH_PART)
+        if part == REAUTH_SOURCE:
             step = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]].reauth_step
         else:
-            step = OUTPUTS[entry.options[CONF_OUTPUT][CONF_TYPE]].reauth_step
+            type_ids = [part] if part in OUTPUTS else output_types(entry.options)
+            step = next(
+                (
+                    output_type.reauth_step
+                    for type_id in type_ids
+                    if (output_type := OUTPUTS.get(type_id)) is not None
+                    and output_type.reauth_step
+                ),
+                None,
+            )
         if step is None:
             return self.async_abort(reason="reauth_unavailable")
         return await self._async_step(step)
@@ -136,12 +157,14 @@ class GlowcastConfigFlow(*SOURCE_STEPS, *OUTPUT_STEPS, ConfigFlow, domain=DOMAIN
         return await getattr(self, f"async_step_{step_id}")(user_input)
 
 
-class GlowcastOptionsFlow(*OUTPUT_OPTIONS_STEPS, OptionsFlow):
+class GlowcastOptionsBase(OptionsFlow):
     """The settings screen: what follows the TV, then the common settings.
 
     First the choice of output type, then that type's own steps (which may
     pair with the device the lights are on), then brightness, intensity and the
-    update rate (architecture 4.2).
+    update rate (architecture 4.2). A base class after the types' steps, so a
+    type's steps can take part in what the flow provides (the combined output
+    collects its parts' choices in `async_output_chosen`).
     """
 
     def __init__(self) -> None:
@@ -153,6 +176,14 @@ class GlowcastOptionsFlow(*OUTPUT_OPTIONS_STEPS, OptionsFlow):
     def entry_title(self) -> str:
         """The entry's name, which the steps may use (flow.py)."""
         return self.config_entry.title
+
+    @property
+    def chosen_outputs(self) -> list[tuple[Mapping[str, Any], Mapping[str, Any]]]:
+        """The data and block of the output types chosen before in this flow.
+
+        Empty unless the combined output's steps run (flow.py).
+        """
+        return []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -228,6 +259,10 @@ class GlowcastOptionsFlow(*OUTPUT_OPTIONS_STEPS, OptionsFlow):
                 }
             ),
         )
+
+
+class GlowcastOptionsFlow(*OUTPUT_OPTIONS_STEPS, GlowcastOptionsBase):
+    """The settings screen with every output type's steps."""
 
 
 def _percentage(minimum: int, maximum: int) -> NumberSelector:

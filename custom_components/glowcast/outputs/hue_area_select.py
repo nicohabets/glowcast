@@ -24,6 +24,7 @@ from homeassistant.config_entries import (
     ConfigEntryState,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_call_later
@@ -33,14 +34,17 @@ from homeassistant.helpers.restore_state import (
     RestoreEntity,
 )
 
-from ..const import CONF_OUTPUT, CONF_UNIQUE_ID
+from ..const import CONF_TYPE, CONF_UNIQUE_ID, DOMAIN
 from ..core.ports import OutputAuthFailed, OutputUnavailable
 from ..entity import GlowcastSettingEntity
+from .blocks import output_block, with_output_block
+from .ha_lights import OUTPUT_HA_LIGHTS, async_lights_in_area
 from .hue_entertainment import (
     CONF_APP_KEY,
     CONF_AREA_ID,
     CONF_BRIDGE,
     HUE_DOMAIN,
+    OUTPUT_HUE_ENTERTAINMENT,
     async_areas,
     bridge_host,
     signal_areas_read,
@@ -95,13 +99,25 @@ class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
     async def async_select_option(self, option: str) -> None:
         """Store the area's id; a running pipeline restarts on it."""
         area_id = next(i for i, label in self._labels.items() if label == option)
-        options = self._entry.options
+        block = output_block(self._entry.options, OUTPUT_HUE_ENTERTAINMENT) or {
+            CONF_TYPE: OUTPUT_HUE_ENTERTAINMENT
+        }
+        lights = output_block(self._entry.options, OUTPUT_HA_LIGHTS)
+        if lights is not None and (
+            names := await async_lights_in_area(
+                self.hass, self._entry.data, {**block, CONF_AREA_ID: area_id}, lights
+            )
+        ):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="lights_in_area",
+                translation_placeholders={"lights": names},
+            )
         self.hass.config_entries.async_update_entry(
             self._entry,
-            options={
-                **options,
-                CONF_OUTPUT: {**options[CONF_OUTPUT], CONF_AREA_ID: area_id},
-            },
+            options=with_output_block(
+                self._entry.options, {**block, CONF_AREA_ID: area_id}
+            ),
         )
 
     async def async_added_to_hass(self) -> None:
@@ -129,7 +145,8 @@ class HueAreaSelect(GlowcastSettingEntity, SelectEntity, RestoreEntity):
 
     @property
     def _area_id(self) -> str | None:
-        return self._entry.options[CONF_OUTPUT].get(CONF_AREA_ID)
+        block = output_block(self._entry.options, OUTPUT_HUE_ENTERTAINMENT)
+        return None if block is None else block.get(CONF_AREA_ID)
 
     @callback
     def _async_changed(self) -> None:

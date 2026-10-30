@@ -19,9 +19,10 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from ..const import CONF_OUTPUT, CONF_TYPE, CONF_UNIQUE_ID
+from ..const import CONF_TYPE, CONF_UNIQUE_ID
 from ..core.ports import OutputAuthFailed, OutputUnavailable
 from ..flow import dropdown
+from .blocks import output_block
 from .hue_entertainment import (
     CONF_APP_KEY,
     CONF_AREA_ID,
@@ -255,8 +256,9 @@ class HueEntertainmentOptionsSteps(HueEntertainmentSteps, OptionsFlow):
         if CONF_BRIDGE not in entry.data:
             return await self.async_step_bridge()
         bridge = entry.data[CONF_BRIDGE]
-        output = entry.options[CONF_OUTPUT]
-        if output.get(CONF_TYPE) == OUTPUT_HUE_ENTERTAINMENT:
+        if (
+            output := output_block(entry.options, OUTPUT_HUE_ENTERTAINMENT)
+        ) is not None:
             self._hue_area_default = output.get(CONF_AREA_ID)
         host = bridge_host(self.hass, bridge[CONF_UNIQUE_ID])
         if host is None:

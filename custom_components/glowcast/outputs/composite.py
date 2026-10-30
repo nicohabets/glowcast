@@ -1,7 +1,7 @@
 """A combined output: several outputs follow the same picture (#11).
 
-Architecture 4.4 and 8.1. Generic: it knows nothing about Hue or Home
-Assistant lights, only the LightOutput port of its parts. No Home Assistant
+Architecture 4.4 and 8.1. Generic: it knows no output type, only the
+LightOutput port of its parts. No Home Assistant
 imports either, so it is tested with fake parts and a fake clock.
 
 - Each part gets the colours of its own channels at its own rate; the
@@ -63,18 +63,22 @@ class CompositeOutput:
         self,
         parts: Sequence[tuple[str, LightOutput]],
         clock: Clock | None = None,
-        title: str = "",
+        dropped: Mapping[str, Exception] | None = None,
     ) -> None:
         """Initialize with (name, output) per part; the names are unique.
 
-        `title` names the Glowcast entry in the log.
+        `dropped` are parts that could not be made (for example because the
+        integration they use is not set up), with why: they are reported as
+        dropped from the start.
         """
         self._parts = [
             _Part(index, name, output) for index, (name, output) in enumerate(parts)
         ]
         self._clock = clock or MonotonicClock()
-        self._title = title
-        self.max_rate_hz = max(part.output.max_rate_hz for part in self._parts)
+        self._dropped = dict(dropped or {})
+        self.max_rate_hz = max(
+            (part.output.max_rate_hz for part in self._parts), default=1.0
+        )
         # Parts at the combined rate get every send; slower ones are sent to
         # on the tick nearest to when they are due.
         self._tolerance = 0.5 / self.max_rate_hz
@@ -84,7 +88,10 @@ class CompositeOutput:
     @property
     def dropped_parts(self) -> Mapping[str, Exception]:
         """The parts that do not run now, with why (the port, 3.2)."""
-        return {part.name: part.error for part in self._parts if part.error is not None}
+        running = {
+            part.name: part.error for part in self._parts if part.error is not None
+        }
+        return {**self._dropped, **running}
 
     async def start(self) -> list[Channel]:
         """Start every part that is not dropped, together.
@@ -109,8 +116,7 @@ class CompositeOutput:
             channels.extend(self._started(part, result))
         for part, error in failed:
             _LOGGER.warning(
-                "Glowcast %s: %s could not start (%s)%s",
-                self._title,
+                "Glowcast: %s could not start (%s)%s",
                 part.name,
                 error,
                 "; it stays off until the next start, the other lights start without it"
@@ -199,9 +205,8 @@ class CompositeOutput:
         if isinstance(error, OutputAuthFailed):
             part.dropped = True
             _LOGGER.warning(
-                "Glowcast %s: %s rejected Glowcast's key (%s); the other lights "
+                "Glowcast: %s rejected Glowcast's key (%s); the other lights "
                 "keep following the picture",
-                self._title,
                 part.name,
                 error,
             )
@@ -209,8 +214,7 @@ class CompositeOutput:
             part.retried_at is None or now - part.retried_at >= LOST_AGAIN_WINDOW
         ):
             _LOGGER.warning(
-                "Glowcast %s: %s was lost (%s); retrying in %.0f s",
-                self._title,
+                "Glowcast: %s was lost (%s); retrying in %.0f s",
                 part.name,
                 error,
                 LOST_RETRY_DELAY,
@@ -219,9 +223,8 @@ class CompositeOutput:
         else:
             part.dropped = True
             _LOGGER.warning(
-                "Glowcast %s: %s was lost (%s)%s; it stays off until the next "
+                "Glowcast: %s was lost (%s)%s; it stays off until the next "
                 "start, the other lights keep following the picture",
-                self._title,
                 part.name,
                 error,
                 " again soon after its retry" if part.retried_at is not None else "",
@@ -237,9 +240,8 @@ class CompositeOutput:
             part.error = self._last_error = err
             part.dropped = True
             _LOGGER.warning(
-                "Glowcast %s: the retry of %s failed (%s); it stays off until the "
+                "Glowcast: the retry of %s failed (%s); it stays off until the "
                 "next start",
-                self._title,
                 part.name,
                 err,
             )
@@ -252,8 +254,7 @@ class CompositeOutput:
         self._started(part, channels)
         part.retried_at = self._clock.now()
         _LOGGER.warning(
-            "Glowcast %s: %s follows the picture again after its retry",
-            self._title,
+            "Glowcast: %s follows the picture again after its retry",
             part.name,
         )
 

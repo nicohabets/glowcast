@@ -13,6 +13,9 @@ from .entity import GlowcastEntity
 from .runtime import GlowcastConfigEntry
 
 ATTR_STOP_REASON = "stop_reason"
+# The parts of a combined output that do not run while syncing (#11): their
+# output type and why, as a stop reason.
+ATTR_DROPPED_OUTPUTS = "dropped_outputs"
 
 
 class Status(StrEnum):
@@ -106,11 +109,20 @@ class GlowcastStatus(GlowcastStatusEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Why it stopped, for TV off and error; the repair issues explain it."""
+        """Why it stopped, for TV off and error; the repair issues explain it.
+
+        While syncing, the parts of a combined output that were dropped.
+        """
         status = self._data.status
         if self.native_value in (Status.TV_OFF, Status.ERROR) and status is not None:
             reason = status.stop_reason or StopReason.OUTPUT_UNAVAILABLE
             return {ATTR_STOP_REASON: reason.value}
+        if dropped := self._data.dropped_parts:
+            return {
+                ATTR_DROPPED_OUTPUTS: {
+                    type_id: reason.value for type_id, reason in dropped.items()
+                }
+            }
         return None
 
 
