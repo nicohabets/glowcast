@@ -252,6 +252,8 @@ class HueEntertainmentOutput:
                 x=c.get("position", {}).get("x", 0.0),
                 z=c.get("position", {}).get("z", 0.0),
                 start_rgb=starts.get(c["channel_id"]),
+                y=c.get("position", {}).get("y"),
+                light=_light_of(c),
             )
             for c in channels
         ]
@@ -510,7 +512,7 @@ async def _async_clip_get(
         raise OutputUnavailable("Could not reach the Hue bridge") from None
 
 
-# For loose lights (#9): whether picked Hue lights could stream instead.
+# For Home Assistant lights (#9): whether picked Hue lights could stream instead.
 HINT_AREA = "area"  # they can join an entertainment area, and the bridge has one
 HINT_NO_AREA = "no_area"  # they can join one, but the bridge has none yet
 HINT_TIMEOUT = 10.0
@@ -568,7 +570,7 @@ async def async_area_lights(
     """The entity ids of Home Assistant's lights in the chosen entertainment area.
 
     For a combined output (#11): these lights follow the TV through the area,
-    so they cannot also be loose lights. `data` has the `bridge` block and
+    so they cannot also be Home Assistant lights. `data` has the `bridge` block and
     `output` this type's block. Asks the bridge through Home Assistant's own
     hue entry (its host and key, read at runtime, never stored): the area's
     lights, and the lights of the devices its channels stream to. Empty when
@@ -730,3 +732,13 @@ def _to_8bit(value: float) -> int:
     Upstream report: https://github.com/music-assistant/hue-entertainment/issues/5
     """
     return min(255, max(0, round(value * 255)))
+
+
+def _light_of(channel: dict[str, Any]) -> str | None:
+    """The light a channel is a segment of: its one member's entertainment
+    service, which every segment of a gradient light shares; None for a
+    channel of several lights."""
+    members = channel.get("members") or []
+    if len(members) != 1:
+        return None
+    return (members[0].get("service") or {}).get("rid")

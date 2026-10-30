@@ -1,4 +1,4 @@
-"""The loose-lights output (#9): lights, areas and groups, rates and restore.
+"""The Home Assistant lights output (#9): lights, areas and groups, rates and restore.
 
 Real Home Assistant registries and states, with the light services replaced by
 recorders (no light integration runs).

@@ -1,4 +1,4 @@
-"""The loose-lights output type's steps (architecture 4.1 and 4.2, #9).
+"""The Home Assistant lights output type's steps (architecture 4.1 and 4.2, #9).
 
 The same steps at setup and in the settings screen: what the lights follow
 (single lights, an area or a light group), the lights or the area or group,
@@ -78,14 +78,14 @@ FIELD_Z = "z"
 CUSTOM = "custom"
 # How to make an entertainment area in the Hue app (a section on the site).
 ENTERTAINMENT_AREA_HELP = (
-    "https://nicohabets.github.io/glowcast/docs/loose-lights/"
+    "https://nicohabets.github.io/glowcast/docs/home-assistant-lights/"
     "#make-an-entertainment-area-in-the-hue-app"
 )
 NONE_TEXT = "-"
 
 
 class HaLightsSteps(ConfigEntryBaseFlow):
-    """Choose the loose lights and place each one.
+    """Choose the Home Assistant lights and place each one.
 
     Uses only what the setup flow and the options flow both have, plus the
     hooks in flow.py (`async_output_chosen`).

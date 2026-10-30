@@ -1,4 +1,4 @@
-"""The test bench's loose lights at the end of a run and the proxies' rules.
+"""The test bench's Home Assistant lights at the end of a run and the proxies' rules.
 
 No hardware: run.py's end check and cleanup on fakes, and the proxy's
 allow-list (scripts/bench/stubs/proxy.py) with a fake HTTP session.
@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from .test_bench_loose import BENCH, _bench, _load, _on, proxy, rp
+from .test_bench_ha_lights import BENCH, _bench, _load, _on, proxy, rp
 
-run = _load("bench_run_for_loose", BENCH / "run.py")
-END = "end: loose lights set back explicitly, state as before the run"
+run = _load("bench_run_for_ha_lights", BENCH / "run.py")
+END = "end: Home Assistant lights set back explicitly, state as before the run"
 LABEL = "light 3 (state) state as before the run"
 
 
@@ -30,7 +30,7 @@ class FailingOwner:
 async def test_a_state_that_cannot_be_read_is_not_verified() -> None:
     bench = _bench()
     bench.owner = FailingOwner()
-    ok, numbers = await run._loose_restored(bench, within=0.0)
+    ok, numbers = await run._ha_lights_restored(bench, within=0.0)
     assert not ok
     assert numbers == {LABEL: "not verified"}
 
@@ -58,7 +58,7 @@ async def test_the_end_check_waits_for_the_state() -> None:
             return next(late, bench.pre_states["light.desk_lamp"])
 
     bench.owner = LateOwner()
-    ok, numbers = await run._loose_restored(bench, within=1.0, every=0.01)
+    ok, numbers = await run._ha_lights_restored(bench, within=1.0, every=0.01)
     assert ok
     assert numbers[LABEL] == "yes"
 
@@ -85,7 +85,7 @@ async def _nothing() -> None:
 async def test_a_failing_close_never_leaves_another_connection_open() -> None:
     ha, owner, bridge = Client(True), Client(True), Client(False)
     bench = SimpleNamespace(
-        report=rp.Report(suite="loose", modes=["pattern"], started="-"),
+        report=rp.Report(suite="ha-lights", modes=["pattern"], started="-"),
         ha_start=None,
         ha=ha,
         screen=None,
@@ -187,7 +187,7 @@ def test_the_network_window_is_glowcasts_bound() -> None:
     def judge(times: list[float]) -> Any:
         sent = {f"light.p{i}": [(t, 1.25)] for i, t in enumerate(times)}
         label = {e: f"light {i}" for i, e in enumerate(sent, 1)}
-        return run_loose().judge_rate(
+        return run_ha_lights().judge_rate(
             sent,
             dict.fromkeys(sent, "hue:a"),
             label,
@@ -199,7 +199,7 @@ def test_the_network_window_is_glowcasts_bound() -> None:
     assert not judge([0.0, 0.245, 0.49, 0.735, 0.98]).ok
 
 
-def run_loose() -> Any:
-    from .test_bench_loose import loose
+def run_ha_lights() -> Any:
+    from .test_bench_ha_lights import bench_lights
 
-    return loose
+    return bench_lights

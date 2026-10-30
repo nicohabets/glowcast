@@ -1,4 +1,5 @@
-"""The test bench's combined suite (#11): an area and loose lights in one entry.
+"""The test bench's combined suite (#11): an area and Home Assistant lights in
+one entry.
 
 No hardware: the pure parts (scripts/bench/combined.py), the entry and the
 output block the bench writes, the bench's availability service, and the
@@ -16,15 +17,15 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.glowcast.outputs import OUTPUTS
 
-from .test_bench_loose import (
+from .test_bench_ha_lights import (
     BENCH,
     CAMERA,
-    LOOSE,
+    HA_LIGHTS,
     _bench,
     _load,
+    bench_lights,
     bench_stub,
     local_ha,
-    loose,
     proxy,
     rp,
     suite,
@@ -67,7 +68,9 @@ def test_one_stream_all_along() -> None:
 
 # ---- config, entry and output block ----------------------------------------
 def test_the_combined_suite_drives_the_lights_beside_the_area() -> None:
-    lights = loose.beside_area(loose.parse({"lights": CAMERA, "loose_lights": LOOSE}))
+    lights = bench_lights.beside_area(
+        bench_lights.parse({"lights": CAMERA, "ha_lights": HA_LIGHTS})
+    )
     assert [light.entity_id for light in lights] == ["light.desk_lamp"]
 
 
@@ -78,7 +81,7 @@ def test_the_combined_suite_needs_a_light_beside_the_area(tmp_path: Path) -> Non
         "home_assistant": {"url": "http://192.0.2.10:8123", "token_file": "t"},
         "lights": CAMERA,
         "helper": {"port": 8489, "pairing_code": "123456"},
-        "loose_lights": LOOSE[:2],  # only the area's own lights
+        "ha_lights": HA_LIGHTS[:2],  # only the area's own lights
     }
     with pytest.raises(run.ConfigError, match="beside the bench area"):
         run.check_config(cfg, ["pattern"], "combined")
@@ -114,10 +117,10 @@ class FakeLocalHA:
         self.calls.append((domain, service, data))
 
 
-def _combined_bench(loose_lights: list[dict[str, Any]] = LOOSE) -> Any:
+def _combined_bench(ha_lights: list[dict[str, Any]] = HA_LIGHTS) -> Any:
     cfg = {
         "lights": CAMERA,
-        "loose_lights": loose_lights,
+        "ha_lights": ha_lights,
         "bench_area_id": "area-0000",
         "home_assistant": {"url": "http://192.0.2.10:8123", "tv_switch": "switch.tv"},
         "helper": {"port": 8489, "pairing_code": "123456"},
@@ -128,8 +131,8 @@ def _combined_bench(loose_lights: list[dict[str, Any]] = LOOSE) -> Any:
 
 async def test_the_lights_go_into_the_combined_block() -> None:
     bench = _combined_bench()
-    assert [light.index for light in bench.loose] == [3]
-    assert bench.loose_label == {3: "light 3 (state)"}
+    assert [light.index for light in bench.ha_lights] == [3]
+    assert bench.ha_lights_label == {3: "light 3 (state)"}
     bench.ha = FakeLocalHA(
         [
             {
@@ -141,7 +144,7 @@ async def test_the_lights_go_into_the_combined_block() -> None:
             }
         ]
     )
-    await bench.place_loose_lights()
+    await bench.place_ha_lights()
     ((_, _, data),) = bench.ha.calls
     assert data["output"] == {
         "type": "combined",
@@ -239,7 +242,7 @@ async def test_a_part_failing_and_the_area_streaming_on(
     monkeypatch.setattr(combined_suite, "sleep", _no_wait)
     monkeypatch.setattr(combined_suite, "LOST_AGAIN_WINDOW", 0.0)
     bench = _bench()
-    bench.loose = [bench.loose[2]]
+    bench.ha_lights = [bench.ha_lights[2]]
     bench.ha = ScriptedHA()
     active = {"status": "active", "streamer": "app"}
     bench.bridge = SimpleNamespace(statuses=lambda start, end: [active, active])
@@ -260,7 +263,7 @@ async def test_a_released_area_fails_the_part_steps(
     monkeypatch.setattr(combined_suite, "sleep", _no_wait)
     monkeypatch.setattr(combined_suite, "LOST_AGAIN_WINDOW", 0.0)
     bench = _bench()
-    bench.loose = [bench.loose[2]]
+    bench.ha_lights = [bench.ha_lights[2]]
     bench.ha = ScriptedHA()
     inactive = {"status": "inactive", "streamer": None}
     bench.bridge = SimpleNamespace(statuses=lambda start, end: [inactive])
@@ -270,9 +273,9 @@ async def test_a_released_area_fails_the_part_steps(
     assert through.result == rp.FAIL
 
 
-# ---- a loose light in the area too (#198) ----------------------------------
+# ---- a Home Assistant light in the area too (#198) ----------------------------------
 clients = _load("bench_clients_for_combined", BENCH / "clients.py")
-IN_AREA = [{**LOOSE[0], "in_area": True}, *LOOSE[1:]]
+IN_AREA = [{**HA_LIGHTS[0], "in_area": True}, *HA_LIGHTS[1:]]
 
 
 def test_any_light_call_to_the_in_area_proxy_counts() -> None:
@@ -324,10 +327,10 @@ def _in_area_bench(rid_of: dict[str, str | None]) -> Any:
 def test_only_the_combined_suite_has_an_in_area_light() -> None:
     bench = _in_area_bench({})
     assert bench.in_area is not None and bench.in_area.index == 1
-    assert [light.index for light in bench.loose] == [3]
-    loose_bench = suite.Bench(bench.cfg, "loose", bench.report, None, {})
-    assert loose_bench.in_area is None
-    assert [light.index for light in loose_bench.loose] == [1, 2, 3]
+    assert [light.index for light in bench.ha_lights] == [3]
+    ha_lights_bench = suite.Bench(bench.cfg, "ha-lights", bench.report, None, {})
+    assert ha_lights_bench.in_area is None
+    assert [light.index for light in ha_lights_bench.ha_lights] == [1, 2, 3]
 
 
 async def test_the_in_area_proxy_carries_its_bridge_lights_id() -> None:
@@ -352,7 +355,7 @@ async def test_the_in_area_proxy_carries_its_bridge_lights_id() -> None:
             },
         ]
     )
-    await bench.place_loose_lights()
+    await bench.place_ha_lights()
     assert set(bench.proxies) == {1, 3}
     # Steps 1 to 3 store only the lights beside the area.
     ((_, _, data),) = bench.ha.calls
@@ -458,24 +461,26 @@ async def _owner_state(entity_id: str) -> dict[str, Any]:
     return {"state": "on", "attributes": {}}
 
 
-async def test_a_loose_light_in_the_area_is_left_out(
+async def test_a_ha_light_in_the_area_is_left_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ha = InAreaHA()
     bench = await _run_in_area(monkeypatch, ha, {"wall": "rid-wall"})
     steps = {step.name: step for step in bench.report.steps}
     assert all(step.result == rp.PASS for step in steps.values()), steps
-    issue = steps["a loose light in the area too: the repair issue is raised"]
+    issue = steps["a Home Assistant light in the area too: the repair issue is raised"]
     assert issue.numbers == {"repair issue before": "no", "repair issue": "yes"}
     beside = steps[
-        "a loose light in the area too: the loose lights beside the area follow"
+        "a Home Assistant light in the area too: the Home Assistant lights beside "
+        "the area follow"
     ]
     assert beside.numbers == {
         "light 3 (state) commands": 1,
-        "loose lights dropped": "no",
+        "Home Assistant lights dropped": "no",
     }
     left_out = steps[
-        "a loose light in the area too: Glowcast sent it no light command (on to off)"
+        "a Home Assistant light in the area too: Glowcast sent it no light command "
+        "(on to off)"
     ]
     assert left_out.numbers == {"light calls": 0}
     # Stored with the in-area proxy, then without it again.
@@ -495,8 +500,9 @@ async def test_a_driven_in_area_light_fails(monkeypatch: pytest.MonkeyPatch) -> 
     bench = await _run_in_area(monkeypatch, ha, {"wall": "rid-wall"})
     failed = {step.name for step in bench.report.steps if step.result == rp.FAIL}
     assert failed == {
-        "a loose light in the area too: the repair issue is raised",
-        "a loose light in the area too: Glowcast sent it no light command (on to off)",
+        "a Home Assistant light in the area too: the repair issue is raised",
+        "a Home Assistant light in the area too: Glowcast sent it no light command "
+        "(on to off)",
     }
 
 

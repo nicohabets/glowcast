@@ -19,7 +19,7 @@ Usage:
     python scripts/demo.py clean
     python scripts/demo.py clean --all [--yes]
     python scripts/demo.py status
-    python scripts/demo.py room [--compare] [--lights area|loose|combined]
+    python scripts/demo.py room [--compare] [--lights area|ha|combined]
                                 [--place LIGHT=PLACE ...] [--versus LIGHT=PLACE ...]
                                 [--names] [--out DIR]
 
@@ -271,17 +271,18 @@ def main() -> None:
     )
     room.add_argument(
         "--lights",
-        choices=("area", "loose", "combined"),
+        choices=("area", "ha", "combined"),
         default="area",
-        help="the room's lights as an entertainment area (default), loose "
-        "lights, or the area with the room's other lights as loose lights",
+        help="the room's lights as an entertainment area (default), as Home "
+        "Assistant lights (ha), or the area with the room's other lights as Home "
+        "Assistant lights",
     )
     room.add_argument(
         "--place",
         action="append",
         default=[],
         metavar="LIGHT=PLACE",
-        help="a loose light's place, for example floor_lamp=left or "
+        help="a Home Assistant light's place, for example floor_lamp=left or "
         "light_bar=0.5,-0.2 (can be repeated)",
     )
     room.add_argument(
@@ -294,7 +295,7 @@ def main() -> None:
     room.add_argument(
         "--names",
         action="store_true",
-        help="each loose light's name and place next to it (for reviews)",
+        help="each Home Assistant light's name and place next to it (for reviews)",
     )
     room.add_argument(
         "--out", type=Path, default=ROOM_OUT, help=f"where to save them ({ROOM_OUT})"

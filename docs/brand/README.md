@@ -69,7 +69,7 @@ The illustrations of what Glowcast does live in [`docs/images/illustrations/`](.
 | `scene-1-picture-leads` | A sunset on the TV; the strip and lamps take warm on the left, blue on the right. The `-loop.webp` (800 px wide, 5 s) changes the picture and the lights follow. |
 | `scene-2-dark-scene` | A dark picture; every light at a faint warm glow |
 | `scene-3-saturated-colour` | A strong red picture; the lights show pure red |
-| `scene-4-loose-lights` | Planned ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps elsewhere in the room each follow their own side of the picture |
+| `scene-4-home-assistant-lights` | Planned ([#76](https://github.com/nicohabets/glowcast/issues/76)): lamps elsewhere in the room each follow their own side of the picture. Its old name `scene-4-loose-lights-800.png` stays too: the v0.2.0 README links to it on `main`. |
 | `scene-5-before` | The same room with the TV and all lights off |
 
 Like the icon, they show no Philips Hue or LG branding, no people and no text.

@@ -18,7 +18,7 @@ TYPE_MODULES = re.compile(r"hue_entertainment|hue_area_select|webos|ha_lights")
 TYPE_WORDS = re.compile(
     r"hue|webos|webostv|bridge|entertainment|\barea|ha_lights|loose", re.I
 )
-# How the loose lights set Home Assistant's lights: light entity ids and
+# How the Home Assistant lights set Home Assistant's lights: light entity ids and
 # actions, and the colour fields of light.turn_on (#9).
 LIGHT_SERVICE = re.compile(r"\blight\.[a-z_]|\bturn_on\b|rgb_color|hs_color|xy_color")
 CORE = sorted((PACKAGE / "core").glob("*.py"))
@@ -55,7 +55,8 @@ def test_no_hue_or_webos_wording(name: str) -> None:
 
 @pytest.mark.parametrize("name", GENERIC)
 def test_no_light_service_details(name: str) -> None:
-    """Only the loose-lights output knows how Home Assistant's lights are set."""
+    """Only the Home Assistant lights output knows how Home Assistant's lights
+    are set."""
     assert LIGHT_SERVICE.findall((PACKAGE / name).read_text()) == []
 
 

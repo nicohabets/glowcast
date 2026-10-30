@@ -24,7 +24,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-->  Hue Bridge  -->  your lights
 ```
 
-Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integration (no extra prompt on the TV) and asks the TV for a small screen capture about 3 times per second. Each light gets the average colour of the part of the screen that matches its position, taken inside any black bars around the picture, and the colours stream to an entertainment area on your Hue Bridge, fading smoothly between frames; a gradient lightstrip shows several colours along its length. Or they go to Home Assistant lights: any colour light in Home Assistant, each at the place you give it, about once per second. When Glowcast takes the lights over, they fade in slowly from how they were. On a black picture the lights keep a faint warm glow instead of going dark. Everything stays on your local network.
+Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integration (no extra prompt on the TV) and asks the TV for a small screen capture about 3 times per second. Each light gets the average colour of the part of the screen that matches its position, taken inside any black bars around the picture, and the colours stream to an entertainment area on your Hue Bridge, fading smoothly between frames; a gradient lightstrip shows several colours along its length, its segments following the edges of the picture. Or they go to Home Assistant lights: any colour light in Home Assistant, each at the place you give it, about once per second. When Glowcast takes the lights over, they fade in slowly from how they were. On a black picture the lights keep a faint warm glow instead of going dark. Everything stays on your local network.
 
 At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
 
@@ -52,6 +52,10 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 
 *Setting up Glowcast: the TV, Hue entertainment area, the Hue bridge and its link button, then the entertainment area.*
 
+<img width="400" alt="The Glowcast setup flow with Home Assistant lights in Home Assistant: choose LG webOS TV and the TV, choose Home Assistant lights, follow a Home Assistant area, choose the area Living Room, put Floor lamp left of the screen, fine-tune Light bar with the two sliders, done." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/ha-lights-setup.gif">
+
+*Or with Home Assistant lights: the TV, Home Assistant lights, a Home Assistant area, then a place for each light. More: [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/).*
+
 **HACS does not find Glowcast?** Add it as a custom repository: in HACS, open the menu (⋮) in the top right corner → **Custom repositories**, enter `https://github.com/nicohabets/glowcast`, choose type **Integration** and click **Add**. Close the dialog and search again.
 
 Updates show up in HACS and under Settings → System → Updates.
@@ -65,7 +69,7 @@ More: [installation](https://nicohabets.github.io/glowcast/docs/installation/), 
 During setup you pick:
 
 1. **What the lights follow** - **LG webOS TV**, then one of your LG webOS TVs in Home Assistant (or **Computer screen**, see [A computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/))
-2. **Which lights follow the picture** - **Hue entertainment area** (the smoothest) or **Home Assistant lights** (any colour light, about one change per second, no Hue bridge needed; see [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/loose-lights/)). Under **Configure** you can also use both together ([an entertainment area and Home Assistant lights](https://nicohabets.github.io/glowcast/docs/loose-lights/#together-with-an-entertainment-area)). For an entertainment area:
+2. **Which lights follow the picture** - **Hue entertainment area** (the smoothest) or **Home Assistant lights** (any colour light, about one change per second, no Hue bridge needed; see [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/)). Under **Configure** you can also use both together ([an entertainment area and Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/#together-with-an-entertainment-area)). For an entertainment area:
    1. **Hue Bridge** - and press its link button when asked, then click Submit within 30 seconds. Streaming needs a key that Home Assistant's own Hue connection does not have, so Glowcast pairs once itself. It shows up in the Hue app as an app called "glowcast".
    2. **Entertainment area** - set up in the Hue app; it decides which lights take part and where they stand
 
@@ -77,7 +81,7 @@ Under **Configure**, or on Glowcast's device page (see [Settings](https://nicoha
 
 *The last page of the settings screen under Configure, after the lights, with the default settings.*
 
-More: [setup](https://nicohabets.github.io/glowcast/docs/setup/), [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/loose-lights/) (places, how fast, Hue lights), [settings](https://nicohabets.github.io/glowcast/docs/settings/) (also as entities on the device page, to change from an automation), and [a computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) as the picture (a preview).
+More: [setup](https://nicohabets.github.io/glowcast/docs/setup/), [Home Assistant lights](https://nicohabets.github.io/glowcast/docs/home-assistant-lights/) (places, how fast, Hue lights), [settings](https://nicohabets.github.io/glowcast/docs/settings/) (also as entities on the device page, to change from an automation), and [a computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) as the picture (a preview).
 
 ## Starting and stopping
 
