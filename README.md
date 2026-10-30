@@ -172,7 +172,7 @@ The **Status** sensor on Glowcast's device (for example `sensor.glowcast_living_
 | Streaming | The lights follow the picture. |
 | Black picture | Syncing, but the picture is black (a dark scene): the lights keep the last colours for a moment, then show the faint glow. |
 | No picture | The TV gives no picture (for example a streaming app with DRM, see [Known limits](#known-limits)): the lights are released; Glowcast stays on and follows again when the picture returns. Before this, the status shows Black picture for about 3 seconds. |
-| TV off | Stopped because the TV turned off or could not be reached. |
+| TV off | Stopped because the TV turned off or could not be reached. For a computer screen, TV off means the screen helper stopped or cannot be reached, or the screen is locked, asleep or gone. |
 | Error | Stopped for another reason; Home Assistant shows a repair or asks to pair again where you can fix it, and the log says why. |
 
 For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key), `source_unavailable` (the TV source failed) or `source_auth_failed` (the computer's screen helper rejected Glowcast's key; Home Assistant asks for a new pairing code). Use it in automations, for example to get a notification when Glowcast stops with an error.
