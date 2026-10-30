@@ -46,6 +46,7 @@ BRIDGE_RESOURCE_ID = "6c0b2f7a-3d1e-4a5b-9c8d-7e6f5a4b3c2d"
 BRIDGE_HOST = "192.168.178.57"
 BRIDGE_API_KEY = "Xz7pQ2mL9vR4tY8wK3nB6cF1hJ5dS0aG-eUoIi"
 BRIDGE_SERIAL = "C42B1A0B2C3D"
+BRIDGE_NAME = "Bridge in the cupboard"
 APP_KEY = "kq9VbN2xM7cL4pR8tW1yZ6sD3fG0hJ5aE-uIoPq"
 CLIENT_KEY = "0F1E2D3C4B5A69788796A5B4C3D2E1F0"
 AREA_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
@@ -62,6 +63,7 @@ SECRETS = [
     BRIDGE_HOST,
     BRIDGE_API_KEY,
     BRIDGE_SERIAL,
+    BRIDGE_NAME,
     APP_KEY,
     CLIENT_KEY,
     AREA_ID,
@@ -109,7 +111,7 @@ async def entry(
                 "model": "Hue Bridge Pro",
                 "sw_version": "1.72.2072152000",
                 "serial_number": BRIDGE_SERIAL,
-                "name": "Hue Bridge Pro",
+                "name": BRIDGE_NAME,
             },
         ),
     ):
@@ -447,6 +449,34 @@ async def test_the_bridge_is_found_however_hue_names_it(
         registry.async_update_device(light.id, via_device_id=bridge.id)
     if bridge_via_light:
         registry.async_update_device(bridge.id, via_device_id=lights[0].id)
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+    assert diagnostics["output"]["device"]["model"] == "Hue Bridge Pro"
+
+
+async def test_the_identifier_wins_over_a_busier_device(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    """The bridge is found by its identifier, also when another device of the
+    entry has more devices linked through it: the links are only a fallback."""
+    registry = dr.async_get(hass)
+    hue_entry_id = _remove_hue_devices(hass)
+    registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", BRIDGE_ID), ("hue", BRIDGE_RESOURCE_ID)},
+        model="Hue Bridge Pro",
+    )
+    room = registry.async_get_or_create(
+        config_entry_id=hue_entry_id,
+        identifiers={("hue", "room-resource-id")},
+        model="Room",
+    )
+    for n in range(2):
+        light = registry.async_get_or_create(
+            config_entry_id=hue_entry_id,
+            identifiers={("hue", f"light-resource-id-{n}")},
+            model="Hue gradient lightstrip",
+        )
+        registry.async_update_device(light.id, via_device_id=room.id)
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     assert diagnostics["output"]["device"]["model"] == "Hue Bridge Pro"
 
