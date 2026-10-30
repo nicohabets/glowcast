@@ -1,0 +1,81 @@
+name: Website
+
+# The project website (#167, website/): built on every pull request that
+# touches it, so a broken build or link fails here (and never blocks CI's own
+# checks); published to GitHub Pages from main. GitHub Pages is set to
+# "GitHub Actions" as its source.
+on:
+  pull_request:
+    paths:
+      - website/**
+      - docs/images/**
+      - docs/brand/**
+      - README.md
+      - screen_helper/README.md
+      - blueprints/**
+      - LICENSE
+      - docs/releases/**
+      - scripts/check_links.py
+      - .github/workflows/website.yml
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - docs/images/**
+      - docs/brand/**
+      - README.md
+      - screen_helper/README.md
+      - blueprints/**
+      - LICENSE
+      - docs/releases/**
+      - scripts/check_links.py
+      - .github/workflows/website.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A pull request's newer run cancels its older one; publishes from main run
+# one at a time (a newer push waits for the running one).
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build and check links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install -r website/requirements.txt
+      # --strict: a broken link, a missing image or a missing anchor fails.
+      - run: mkdocs build --strict -f website/mkdocs.yml
+      # The README's and the site's links to the site, to this repository's
+      # files and to other sites. On main, other sites are not fetched: one
+      # that is down must not hold back the publish (pull requests check them).
+      - run: python3 scripts/check_links.py README.md screen_helper/README.md
+        if: github.event_name == 'pull_request'
+      - run: python3 scripts/check_links.py --offline README.md screen_helper/README.md
+        if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/site
+
+  deploy:
+    name: publish
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,145 @@
+/* Glowcast's colours (docs/brand/README.md): the dark tile, the warm white
+   and the six segments of the light strip, from blue on the left to warm on
+   the right. */
+:root {
+  --gc-tile: #101218;
+  --gc-screen: #15171e;
+  --gc-warm-white: #f4f1ea;
+  --gc-blue: #3d7bff;
+  --gc-indigo: #6a6cf5;
+  --gc-violet: #b05cc8;
+  --gc-pink: #ea5aa6;
+  --gc-coral: #ff8f6a;
+  --gc-amber: #ffc37a;
+  --gc-strip: linear-gradient(90deg, var(--gc-blue), var(--gc-indigo), var(--gc-violet), var(--gc-pink), var(--gc-coral), var(--gc-amber));
+}
+
+/* Light mode: the dark tile as the header, the blue segment for links. */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--gc-tile);
+  --md-primary-fg-color--light: #2a2d38;
+  --md-primary-fg-color--dark: #000000;
+  --md-primary-bg-color: var(--gc-warm-white);
+  --md-primary-bg-color--light: rgba(244, 241, 234, 0.7);
+  --md-accent-fg-color: #5a3fd6;
+  --md-accent-fg-color--transparent: rgba(90, 63, 214, 0.1);
+  --md-typeset-a-color: #2f5fd0;
+}
+
+/* Dark mode: the TV screen as the background, the lighter segments for
+   links. */
+[data-md-color-scheme="slate"] {
+  --md-hue: 230;
+  --md-default-bg-color: var(--gc-screen);
+  --md-primary-fg-color: var(--gc-tile);
+  --md-primary-fg-color--light: #2a2d38;
+  --md-primary-fg-color--dark: #000000;
+  --md-primary-bg-color: var(--gc-warm-white);
+  --md-primary-bg-color--light: rgba(244, 241, 234, 0.7);
+  --md-accent-fg-color: var(--gc-coral);
+  --md-accent-fg-color--transparent: rgba(255, 143, 106, 0.1);
+  --md-typeset-a-color: #8fb0ff;
+}
+
+/* The light strip under the header and the tabs. */
+.md-header {
+  box-shadow: none;
+}
+.md-tabs {
+  border-bottom: 3px solid transparent;
+  border-image: var(--gc-strip) 1;
+}
+@media screen and (max-width: 76.2344em) {
+  .md-header {
+    border-bottom: 3px solid transparent;
+    border-image: var(--gc-strip) 1;
+  }
+}
+
+/* The landing page. */
+.gc-hero {
+  text-align: center;
+  margin: 0 auto 2rem;
+  max-width: 44rem;
+}
+.gc-hero h1 {
+  font-weight: 700;
+  font-size: 2.2rem;
+  line-height: 1.2;
+  margin: 0.5rem 0 1rem;
+  color: var(--md-default-fg-color);
+}
+.gc-hero .gc-lead {
+  font-size: 1.05rem;
+  margin: 0 0 1.25rem;
+}
+.gc-hero img {
+  width: 100%;
+  max-width: 40rem;
+  height: auto;
+}
+.gc-hero .md-button {
+  margin: 0.25rem;
+}
+.md-typeset img.gc-feature {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 0.5rem;
+  border-radius: 0.2rem;
+}
+.md-typeset img.gc-feature {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+/* The device page is a tall phone screenshot: show its top, like the
+   illustrations' square. */
+.md-typeset img.gc-shot {
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+.md-typeset .grid.gc-features {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media screen and (min-width: 76.25em) {
+  .md-typeset .grid.gc-features {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media screen and (max-width: 29.9844em) {
+  .md-typeset .grid.gc-features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.md-typeset .gc-strip {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--gc-strip);
+  margin: 2rem 0;
+  border: 0;
+}
+
+@media screen and (max-width: 44.9844em) {
+  .gc-hero h1 {
+    font-size: 1.6rem;
+  }
+}
+
+/* Buttons: the dark tile would vanish on the dark page, so the main button
+   takes the blue segment and the other one the text colour, in both modes. */
+.md-typeset .md-button {
+  color: var(--md-typeset-color);
+  border-color: currentcolor;
+}
+.md-typeset .md-button--primary {
+  color: #ffffff;
+  background-color: #2f5fd0;
+  border-color: #2f5fd0;
+}
+.md-typeset .md-button:focus,
+.md-typeset .md-button:hover {
+  color: #ffffff;
+  background-color: var(--gc-violet);
+  border-color: var(--gc-violet);
+}

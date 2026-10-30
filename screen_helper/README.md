@@ -2,7 +2,7 @@
 
 A small program for a PC or Mac that lets Glowcast follow that computer's screen. It shrinks the screen to 64x36 pixels and serves the latest picture on the local network. Glowcast, in Home Assistant, pulls the pictures the same way it pulls them from the TV. It can also serve synthetic **test patterns** without a screen, for agents and automated tests.
 
-It is a developer tool for now: you start it from a clone of the repository. Home Assistant finds a running helper on the network by itself (Settings → Devices & services → Discovered: Glowcast - *computer name*); click Add and enter the pairing code it shows. Without discovery, add Glowcast by hand and choose Computer screen (see Glowcast's [README](../README.md#a-computer-screen-in-development)). You can also try the helper with `curl`. Home Assistant (HACS) does not install this folder, and the integration does not import it.
+It is a developer tool for now: you start it from a clone of the repository. Home Assistant finds a running helper on the network by itself (Settings → Devices & services → Discovered: Glowcast - *computer name*); click Add and enter the pairing code it shows. Without discovery, add Glowcast by hand and choose Computer screen (see [A computer screen](https://nicohabets.github.io/glowcast/docs/computer-screen/) on Glowcast's website). You can also try the helper with `curl`. Home Assistant (HACS) does not install this folder, and the integration does not import it.
 
 ## Start it
 

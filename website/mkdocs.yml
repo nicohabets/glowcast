@@ -1,0 +1,103 @@
+# The Glowcast website (#167): https://nicohabets.github.io/glowcast/
+# Build: pip install -r website/requirements.txt, then
+#   mkdocs build --strict -f website/mkdocs.yml
+# or `mkdocs serve -f website/mkdocs.yml` for a local preview. The workflow
+# .github/workflows/website.yml builds it on pull requests and publishes it
+# from main.
+site_name: Glowcast
+site_url: https://nicohabets.github.io/glowcast/
+site_description: Let your Philips Hue lights follow what's on your LG webOS TV, from Home Assistant.
+copyright: Glowcast is an independent project, not affiliated with Signify (Philips Hue) or LG Electronics. MIT licence.
+
+docs_dir: pages
+# The output (website/site/) is not committed; see .gitignore.
+
+hooks:
+  - hooks.py
+
+theme:
+  name: material
+  language: en
+  # No web fonts: Material would load them from Google, a third-party request.
+  font: false
+  logo: brand/icon.svg
+  favicon: brand/icon.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+
+extra_css:
+  - assets/extra.css
+
+extra:
+  # Plain links, no widget: Material's repository widget would ask GitHub's
+  # API for stars and forks from the visitor's browser.
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nicohabets/glowcast
+      name: Glowcast on GitHub
+  generator: false
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Documentation:
+      - docs/index.md
+      - Installation: docs/installation.md
+      - Setup: docs/setup.md
+      - Settings: docs/settings.md
+      - Starting automatically: docs/starting.md
+      - Status and diagnostics: docs/status.md
+      - Troubleshooting: docs/troubleshooting.md
+      - Known limits: docs/limits.md
+      - A computer screen: docs/computer-screen.md
+      - Uninstalling: docs/uninstalling.md
+      - Privacy: docs/privacy.md
+  # The user guide (#20) adds its section here, as
+  #   - User guide:
+  #       - <its pages under guide/>
+  - Releases: https://github.com/nicohabets/glowcast/releases
