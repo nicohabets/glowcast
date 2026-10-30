@@ -283,7 +283,7 @@
       "ha_lights_no_area": "No area in Home Assistant has colour lights. Assign lights to an area first.",
       "ha_lights_no_group": "Home Assistant has no light groups with colour lights.",
       "ha_lights_none_chosen": "Choose at least one colour light.",
-      "ha_lights_in_area": "{lights} already follow the TV through the entertainment area, so they cannot also be Home Assistant lights. Pick other lights, or an area or group without them."
+      "ha_lights_in_area": "{lights} already follow the picture through the entertainment area, so they cannot also be Home Assistant lights. Pick other lights, or an area or group without them."
     }
   },
   "selector": {
@@ -432,7 +432,7 @@
   },
   "exceptions": {
     "lights_in_area": {
-      "message": "{lights} already follow the TV through the entertainment area, so they cannot also be Home Assistant lights."
+      "message": "{lights} already follow the picture through the entertainment area, so they cannot also be Home Assistant lights."
     }
   }
 }

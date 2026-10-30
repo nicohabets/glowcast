@@ -283,7 +283,7 @@
       "ha_lights_no_area": "Geen enkele ruimte in Home Assistant heeft kleurenlampen. Wijs eerst lampen toe aan een ruimte.",
       "ha_lights_no_group": "Home Assistant heeft geen lampgroepen met kleurenlampen.",
       "ha_lights_none_chosen": "Kies minstens één kleurenlamp.",
-      "ha_lights_in_area": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn. Kies andere lampen, of een ruimte of groep zonder deze lampen."
+      "ha_lights_in_area": "{lights} volgen het beeld al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn. Kies andere lampen, of een ruimte of groep zonder deze lampen."
     }
   },
   "selector": {
@@ -432,7 +432,7 @@
   },
   "exceptions": {
     "lights_in_area": {
-      "message": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn."
+      "message": "{lights} volgen het beeld al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn."
     }
   }
 }
