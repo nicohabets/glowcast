@@ -33,7 +33,7 @@ Switch Glowcast off, or turn the TV off: Glowcast stops by itself when the TV tu
 - **Loose lights**: Glowcast puts each light back as it was before: on or off, its brightness and its colour or colour temperature.
 - **Both together**: the area follows its Hue app setting, and Glowcast puts every loose light back.
 
-Glowcast never starts by itself: the switch is off after a restart of Home Assistant.
+Glowcast does not start by itself, with one exception: when Home Assistant restarts while Glowcast syncs, Glowcast continues once Home Assistant is back, if the TV still shows a picture; otherwise the switch stays off.
 
 ## Start it with the TV
 
