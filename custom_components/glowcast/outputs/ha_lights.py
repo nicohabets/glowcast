@@ -86,7 +86,7 @@ NO_LIGHTS = Issue(
 IN_AREA = Issue(
     "loose_lights_in_area",
     "loose_lights_in_area",
-    "some loose lights are in the entertainment area too",
+    "some Home Assistant lights are in the entertainment area too",
 )
 
 # The send loop's rhythm: one command per network per tick at most, so never
@@ -182,14 +182,14 @@ class HaLightsOutput:
         if in_area:
             _LOGGER.warning(
                 "%s follow the picture through the entertainment area, so they "
-                "are left out of the loose lights; choose the loose lights again "
-                "in Glowcast's settings",
+                "are left out of the Home Assistant lights; choose the Home "
+                "Assistant lights again in Glowcast's settings",
                 names,
             )
             candidates = [light for light in candidates if light not in in_area]
             if not candidates:
                 raise OutputUnavailable(
-                    "Every loose light is in the entertainment area"
+                    "Every Home Assistant light is in the entertainment area"
                 )
         lights: list[Light] = []
         unavailable = 0
