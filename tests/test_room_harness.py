@@ -4,7 +4,9 @@ The harness runs core/'s own pipeline; the drawing is checked on its SVG, not
 rendered (resvg-py is not part of the test requirements).
 """
 
+import colorsys
 import importlib.util
+import itertools
 import logging
 from pathlib import Path
 from types import ModuleType
@@ -16,6 +18,8 @@ from custom_components.glowcast.core.pipeline import LOST_RETRY_DELAY, NO_PICTUR
 
 REPO = Path(__file__).resolve().parent.parent
 CORE = REPO / "custom_components" / "glowcast" / "core"
+# Degrees of hue between two places that should not look the same.
+HUE_APART = 20
 
 
 def _load(name: str) -> ModuleType:
@@ -139,8 +143,9 @@ async def test_loose_lights_rate_place_and_drop(
 
 
 async def test_every_place_shows_in_the_sunset() -> None:
-    """Room v2 (#196): top, bottom and ambient each get their own colour; the
-    two lights at the bottom get the same one."""
+    """Room v2 (#196): in the sunset no two places look the same - their hues
+    differ by at least HUE_APART, brightness aside - and the two lights at the
+    bottom get the same colour."""
     harness = _load("room_harness")
     sunset = [harness.scenarios(BLACK_HOLD, NO_PICTURE_WAIT)[0]]
     recording = await harness.record_async(CORE, sunset, lights="loose")
@@ -154,13 +159,20 @@ async def test_every_place_shows_in_the_sunset() -> None:
         "console_strip": "bottom",
         "table_lamp": "ambient",
     }
-    top, bottom, ambient = (
-        lit["wall_light"],
-        lit["console_lamp"],
-        lit["table_lamp"],
-    )
-    assert len({tuple(top), tuple(bottom), tuple(ambient)}) == 3
-    assert lit["console_strip"] == bottom
+    hues = {
+        place: colorsys.rgb_to_hsv(*lit[id_])[0] * 360
+        for place, id_ in (
+            ("left", "floor_lamp"),
+            ("right", "light_bar"),
+            ("top", "wall_light"),
+            ("bottom", "console_lamp"),
+            ("ambient", "table_lamp"),
+        )
+    }
+    for (a, hue_a), (b, hue_b) in itertools.combinations(hues.items(), 2):
+        apart = abs(hue_a - hue_b) % 360
+        assert min(apart, 360 - apart) >= HUE_APART, (a, b, hues)
+    assert lit["console_strip"] == lit["console_lamp"]
 
 
 def test_a_room_says_what_is_unavailable_or_dropped() -> None:

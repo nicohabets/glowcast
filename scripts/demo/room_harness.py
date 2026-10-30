@@ -142,13 +142,24 @@ def _across(stops: list[RGB], x: float) -> RGB:
 
 
 def _sunset(x: float, y: float) -> RGB:
-    """Warm on the left, pink in the middle, blue on the right; a sun left."""
-    if math.hypot((x - 0.22) * 16 / 9, y - 0.5) < 0.1:
-        return 255, 226, 176
-    sky = _across([(255, 154, 74), (224, 122, 168), (61, 123, 255)], x)
-    if y < 0.58:
+    """A sunset with a place for every light (#196): an orange sky on the
+    left, pink above the middle and blue on the right; a golden sun on the
+    horizon in the middle; a teal sea below, warm where it mirrors the left
+    and blue on the right. Each place reads its own part (color_engine's
+    regions), so left, right, top, bottom and the middle differ in hue."""
+    horizon = 0.58
+    sun = math.hypot((x - 0.5) * 16 / 9, y - horizon + 0.04)
+    if sun < 0.13:
+        return 255, 230, 110
+    if y < horizon:
+        sky = _across([(255, 140, 60), (232, 96, 172), (70, 90, 230)], x)
+        if sun < 0.32:  # the golden glow around the sun
+            sky = _mix(sky, (255, 212, 50), min(1.0, (0.32 - sun) / 0.12))
         return sky
-    return _mix(sky, (16, 16, 32), 0.4)  # the sea, darker
+    sea = _across([(190, 105, 75), (20, 150, 165), (20, 150, 165), (25, 60, 190)], x)
+    if abs(x - 0.5) < 0.13 and y < horizon + 0.12:  # the sun's reflection
+        sea = _mix(sea, (255, 214, 70), 0.85)
+    return sea
 
 
 def _night(x: float, y: float) -> RGB:
@@ -224,9 +235,10 @@ def scenarios(
     """The fixed scenarios, in order; the timings follow `core/`.
 
     The combined output gets a seventh: its loose lights become unavailable,
-    one and then the other, until that part is dropped (the loose lights are
-    checked every 5 s, then released and started again once after
-    `lost_retry_delay`) while the strip keeps following the picture.
+    the first (the wall light) 1 s in and the others 3 s in, until that part
+    is dropped (the loose lights are checked every 5 s, then released and
+    started again once after `lost_retry_delay`) while the entertainment area
+    keeps following the picture.
     """
     run = [
         Scenario("1 Sunset", 2.5, _still(_sunset)),
@@ -620,9 +632,12 @@ class WatchedPart:
     The port does not tell a part that waits for its retry from one that is
     dropped for good: `dropped_parts` names a lost part from the moment it is
     lost. A part that started before and then fails to start is the
-    composite's retry that failed, so from then on it is dropped. (A part
-    whose key is rejected is dropped without a retry; the scenarios never do
-    that.)
+    composite's retry that failed, so from then on it is dropped.
+
+    The composite also drops a part without a retry: when its key is
+    rejected, when it fails with an error that is not OutputLost, or when it
+    is lost again within LOST_AGAIN_WINDOW of a retry. Such a part shows as
+    retrying here, because no start fails; the scenarios never do that.
     """
 
     def __init__(self, output: Any) -> None:

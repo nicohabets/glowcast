@@ -83,7 +83,7 @@ python3 scripts/demo.py e2e --keep    # leave Home Assistant and the fake bridge
 ```
 python3 scripts/demo.py room             # this working copy
 python3 scripts/demo.py room --compare   # the merge base with main and this working copy, side by side
-python3 scripts/demo.py room --lights loose      # the floor lamp and the light bar as loose lights
+python3 scripts/demo.py room --lights loose      # six loose lights, one at every place
 python3 scripts/demo.py room --lights combined   # the entertainment area, and the other lights as loose lights
 python3 scripts/demo.py room --lights loose --place floor_lamp=left --versus floor_lamp=right   # two places side by side
 ```
