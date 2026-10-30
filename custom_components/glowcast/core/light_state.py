@@ -26,6 +26,12 @@ BLACK_HOLD = 3.5
 # state from the stream start until the first colour (measured, "Verified
 # facts").
 FADE_IN = 2.0
+# A channel whose colour changes by more than this (the largest change of
+# one component, 0-1, in engine colours) between two frames has a cut: it
+# fades over CUT_FADE instead of the capture interval, so a scene change shows
+# at once while small changes stay soft (#35).
+CUT = 0.25
+CUT_FADE = 0.08
 
 RGB = tuple[float, float, float]
 
@@ -41,6 +47,8 @@ class LightState:
         self._target: dict[str, RGB] = {}
         self._fade_start = 0.0
         self._fade_duration = 0.0
+        # The channels with a cut in the current fade: they fade over CUT_FADE.
+        self._cuts: set[str] = set()
         self._last_capture: float | None = None
         self._black_since: float | None = None
         # The fade-in after a claim, in sent colours (after brightness and
@@ -80,6 +88,17 @@ class LightState:
         self._fade_from = dict(self._current)
         self._target = target
         self._fade_start = now
+        self._cuts = {
+            channel_id
+            for channel_id, rgb in target.items()
+            if channel_id in self._fade_from
+            and rgb != BLACK  # after the hold on black, fade softly to the glow
+            and max(
+                abs(a - b)
+                for a, b in zip(rgb, self._fade_from[channel_id], strict=True)
+            )
+            > CUT
+        }
 
     def resume(self, channel_ids: set[str]) -> None:
         """After a retry: keep showing the last colours on the channels that
@@ -98,16 +117,18 @@ class LightState:
             progress = min(1.0, (now - self._fade_start) / self._fade_duration)
         else:
             progress = 1.0
+        cut_progress = min(1.0, (now - self._fade_start) / CUT_FADE)
         level = min(GLOW, brightness)
         glow = tuple(level * c for c in GLOW_COLOR)
         fade_in = self._fade_in_progress(now)
         colors = []
         for channel_id, (tr, tg, tb) in self._target.items():
             sr, sg, sb = self._fade_from.get(channel_id, (tr, tg, tb))
+            p = cut_progress if channel_id in self._cuts else progress
             rgb = (
-                sr + (tr - sr) * progress,
-                sg + (tg - sg) * progress,
-                sb + (tb - sb) * progress,
+                sr + (tr - sr) * p,
+                sg + (tg - sg) * p,
+                sb + (tb - sb) * p,
             )
             self._current[channel_id] = rgb
             lit = [c * brightness for c in rgb]

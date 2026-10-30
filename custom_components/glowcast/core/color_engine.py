@@ -15,13 +15,24 @@ REGION_SIZE = 0.3
 BLACK_LEVEL = 32
 # A region with fewer lit pixels than this share is black.
 MIN_LIT_SHARE = 0.05
+# A lit pixel counts in its region's colour with (WEIGHT_FLOOR + saturation²)
+# x value (#233): the floor gives grey and white a say, so a small coloured
+# object only tints a white scene (spike #40: 0.5 kept the gain on mixed
+# scenes and left snow with a red jacket nearly white).
+WEIGHT_FLOOR = 0.5
 # A light with several channels at or above this depth (y) is around the TV,
-# like a gradient lightstrip behind it: its channels are stretched so its
-# outermost ones reach the edges of the picture (#23).
+# when they are all there and on both sides of the centre (x), like a gradient
+# lightstrip behind it: its channels are stretched so its outermost ones reach
+# the edges of the picture (#23).
 NEAR_TV = 0.5
 # Along an axis where a light's channels all sit closer to the centre than
 # this (all at the middle height, say), they are left where they are.
 MIN_SPREAD = 0.1
+# A light further back than NEAR_TV (y) blends its region's colour with the
+# colour of the whole picture: not at all at NEAR_TV, this share at the back
+# wall (y = -1), linearly in between (#15). So lights near the TV follow their
+# part of the picture and lights far from it follow more softly.
+FAR_BLEND = 0.5
 
 BLACK = (0.0, 0.0, 0.0)
 
@@ -92,23 +103,30 @@ def _stretched(channels: list[Channel]) -> list[Channel]:
 
     A gradient lightstrip behind the TV has its channels close to the centre
     (between -0.4 and 0.4 in a real area, see "Verified facts"), so with the
-    linear mapping they would sample about 30 % in from the edges. Each such
-    light is scaled from the centre until its outermost channel reaches the
-    edge, per axis; a light that reaches the edge already is left as it is,
-    never pulled in. Other lights keep their positions.
+    linear mapping they would sample about 30 % in from the edges. Such a
+    light has several channels, all on the TV side (y at least NEAR_TV) and
+    some left and some right of the centre (x); it is decided for the whole
+    light, so a strip from the TV to the back of the room is left as it is.
+    Each such light is scaled from the centre until its outermost channel
+    reaches the edge, per axis; a light that reaches the edge already is left
+    as it is, never pulled in. Other lights keep their positions.
     """
     lights: dict[str, list[int]] = {}
     for index, channel in enumerate(channels):
-        if channel.light is not None and channel.y is not None and channel.y >= NEAR_TV:
+        if channel.light is not None:
             lights.setdefault(channel.light, []).append(index)
     stretched = list(channels)
     for indexes in lights.values():
-        if len(indexes) < 2:
+        light = [channels[i] for i in indexes]
+        if (
+            len(light) < 2
+            or any(c.y is None or c.y < NEAR_TV for c in light)
+            or not min(c.x for c in light) < 0 < max(c.x for c in light)
+        ):
             continue
-        reach_x = max(abs(channels[i].x) for i in indexes)
-        reach_z = max(abs(channels[i].z) for i in indexes)
-        for i in indexes:
-            channel = channels[i]
+        reach_x = max(abs(c.x) for c in light)
+        reach_z = max(abs(c.z) for c in light)
+        for i, channel in zip(indexes, light, strict=True):
             stretched[i] = dataclasses.replace(
                 channel,
                 x=channel.x / reach_x if MIN_SPREAD <= reach_x < 1 else channel.x,
@@ -127,12 +145,40 @@ def compute(
 
     intensity scales saturation: 0 = grey/white, 1 = as on screen, 2 = boosted.
     `picture` is the part of the frame inside letterbox bars, if any.
+    A channel further back than NEAR_TV gets part of the whole picture's colour
+    (`_far_blend`, #15); one without a depth (y None) gets its region's only.
     """
     regions = channel_regions(channels, frame.width, frame.height, picture)
-    return [
-        ChannelColor(channel.id, _saturate(_average(frame, region), intensity))
-        for channel, region in zip(channels, regions, strict=True)
-    ]
+    whole: tuple[float, float, float] | None = None
+    colors: list[ChannelColor] = []
+    for channel, region in zip(channels, regions, strict=True):
+        rgb = _average(frame, region)
+        blend = _far_blend(channel.y)
+        if blend > 0:
+            if whole is None:  # the whole picture, once per frame
+                whole = _average(frame, picture or (0, frame.width, 0, frame.height))
+            rgb = _mix(rgb, whole, blend)
+        colors.append(ChannelColor(channel.id, _saturate(rgb, intensity)))
+    return colors
+
+
+def _far_blend(y: float | None) -> float:
+    """The share of the whole picture's colour for a channel at depth y (#15):
+    0 at NEAR_TV or nearer and without a depth, FAR_BLEND at y = -1 or further."""
+    if y is None or y >= NEAR_TV:
+        return 0.0
+    return FAR_BLEND * min(1.0, (NEAR_TV - y) / (NEAR_TV + 1))
+
+
+def _mix(
+    a: tuple[float, float, float], b: tuple[float, float, float], share: float
+) -> tuple[float, float, float]:
+    """a with `share` of b."""
+    return (
+        a[0] + (b[0] - a[0]) * share,
+        a[1] + (b[1] - a[1]) * share,
+        a[2] + (b[2] - a[2]) * share,
+    )
 
 
 def _band(centre: float, start: int, end: int) -> tuple[int, int]:
@@ -147,23 +193,37 @@ def _band(centre: float, start: int, end: int) -> tuple[int, int]:
 def _average(
     frame: Frame, region: tuple[int, int, int, int]
 ) -> tuple[float, float, float]:
-    """Average of the lit pixels in a region, or black."""
+    """The colour of the lit pixels in a region, or black.
+
+    A weighted average (#233, spike #40): each lit pixel counts with
+    (WEIGHT_FLOOR + saturation²) x value. Colourful pixels lead and dark ones
+    give way, so a mixed region shows its colour (spotlights on a dark stage,
+    signs in a city at night); bright white keeps its say, so a small coloured
+    object only tints a white scene; a region of one colour or a smooth
+    gradient gives about its average. With high the largest component and
+    spread = high - lowest, (F + s²) x v is (F + (spread / high)²) x high / 255.
+    """
     col0, col1, row0, row1 = region
     pixels = frame.pixels
     stride = frame.width * 3
-    red = green = blue = lit = 0
+    red = green = blue = weight = 0.0
+    lit = 0
     for row in range(row0, row1):
         start = row * stride
         for i in range(start + col0 * 3, start + col1 * 3, 3):
             r, g, b = pixels[i], pixels[i + 1], pixels[i + 2]
-            if r > BLACK_LEVEL or g > BLACK_LEVEL or b > BLACK_LEVEL:
-                red += r
-                green += g
-                blue += b
+            high = max(r, g, b)
+            if high > BLACK_LEVEL:
+                spread = (high - min(r, g, b)) / high
+                w = (WEIGHT_FLOOR + spread * spread) * high
+                red += w * r
+                green += w * g
+                blue += w * b
+                weight += w
                 lit += 1
     if lit == 0 or lit < MIN_LIT_SHARE * (col1 - col0) * (row1 - row0):
         return BLACK
-    scale = 255 * lit
+    scale = 255 * weight
     return red / scale, green / scale, blue / scale
 
 
