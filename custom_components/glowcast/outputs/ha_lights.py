@@ -13,10 +13,12 @@ left are no longer used.
 """
 
 import asyncio
+import json
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from types import MappingProxyType
 from typing import Any
 
@@ -38,8 +40,10 @@ from ..const import CONF_OUTPUT
 from ..core.models import Channel, ChannelColor
 from ..core.ports import OutputLost, OutputNotFound, OutputUnavailable
 from ..issues import Issue
+from .blocks import other_block
+from .colors import at_level, average
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
-from .hue_entertainment import async_area_lights
+from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT, async_area_lights
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +81,13 @@ NO_LIGHTS = Issue(
     "ha_lights_not_found",
     "there are no colour lights to follow",
 )
+# Loose lights that joined the entertainment area later, in the Hue app
+# (#198): left out while the area streams to them.
+IN_AREA = Issue(
+    "loose_lights_in_area",
+    "loose_lights_in_area",
+    "some loose lights are in the entertainment area too",
+)
 
 # The send loop's rhythm: one command per network per tick at most, so never
 # more than 4 per second per network (the schedule checks that too).
@@ -86,6 +97,9 @@ COMMAND_TIMEOUT = 5.0
 RESTORE_TIMEOUT = 10.0
 # Home Assistant's own light groups, whose members follow their commands.
 GROUP_PLATFORM = "group"
+# What each start left out because the entertainment area streams to it
+# (#198), for the notice: {_left_out_key(): names, or None} (hass.data key).
+LEFT_OUT = "glowcast_ha_lights_left_out"
 # Where the states restored at a release are kept, per light entity, across
 # outputs: every start of the pipeline builds a new output (hass.data key).
 RESTORED = "glowcast_ha_lights_restored"
@@ -120,14 +134,21 @@ class HaLightsOutput:
         hass: HomeAssistant,
         output: Mapping[str, Any],
         now: Callable[[], float] | None = None,
+        area_lights: Callable[[], Awaitable[set[str]]] | None = None,
+        left_out_key: str = "",
     ) -> None:
         """Initialize for the output block in the entry's options.
 
         `now` is the clock in seconds (the event loop's by default).
+        `area_lights` gives the entity ids of the lights an entertainment area
+        in the same entry streams to (#198): they are left out, and their
+        names kept under `left_out_key` for the notice.
         """
         self._hass = hass
         self._now = now or (lambda: asyncio.get_running_loop().time())
         self._output = dict(output)
+        self._area_lights = area_lights
+        self._left_out_key = left_out_key
         self._lights: dict[str, Light] = {}
         self._schedule: Schedule | None = None
         self._colors: dict[str, tuple[int, int, int, int]] = {}
@@ -142,16 +163,34 @@ class HaLightsOutput:
     async def start(self, *, retry: bool = False) -> list[Channel]:
         """Resolve the lights, save their state and return them as channels.
 
-        Unavailable lights are skipped for this run and keep their position.
-        Each light's state is read from Home Assistant, so `retry` changes
-        nothing.
+        Unavailable lights are skipped for this run and keep their position,
+        and so are lights the entertainment area of the same entry streams to
+        (#198). Each light's state is read from Home Assistant, so `retry`
+        changes nothing.
         Raises OutputNotFound when there are no colour lights to follow (the
         area or group was removed, or has none), OutputUnavailable when every
-        one of them is unavailable.
+        one of them is unavailable or in the entertainment area.
         """
         if self._saved is not None:
             await self.stop()
         candidates = resolve(self._hass, self._output)
+        in_area: list[Light] = []
+        if self._area_lights is not None:
+            in_area = lights_in(self._hass, candidates, await self._area_lights())
+            names = ", ".join(sorted(light.name for light in in_area))
+            _left_out(self._hass)[self._left_out_key] = names or None
+        if in_area:
+            _LOGGER.warning(
+                "%s follow the picture through the entertainment area, so they "
+                "are left out of the loose lights; choose the loose lights again "
+                "in Glowcast's settings",
+                names,
+            )
+            candidates = [light for light in candidates if light not in in_area]
+            if not candidates:
+                raise OutputUnavailable(
+                    "Every loose light is in the entertainment area"
+                )
         lights: list[Light] = []
         unavailable = 0
         for light in candidates:
@@ -317,8 +356,20 @@ class HaLightsOutput:
 def create(
     hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> HaLightsOutput:
-    """Build the output from a Glowcast entry's options (architecture 5)."""
-    return HaLightsOutput(hass, options[CONF_OUTPUT])
+    """Build the output from a Glowcast entry's options (architecture 5).
+
+    With an entertainment area in the same entry, the lights it streams to
+    are left out (#198).
+    """
+    area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
+    if area is None:
+        return HaLightsOutput(hass, options[CONF_OUTPUT])
+    return HaLightsOutput(
+        hass,
+        options[CONF_OUTPUT],
+        area_lights=partial(async_area_lights, hass, data, area),
+        left_out_key=_left_out_key(area, options[CONF_OUTPUT]),
+    )
 
 
 def is_missing(
@@ -439,12 +490,42 @@ async def async_lights_in_area(
         lights = resolve(hass, output)
     except (OutputNotFound, OutputUnavailable):
         return None
-    names = sorted(
-        light.name
+    names = sorted(light.name for light in lights_in(hass, lights, taken))
+    return ", ".join(names) or None
+
+
+def lights_in(
+    hass: HomeAssistant, lights: Iterable[Light], taken: set[str]
+) -> list[Light]:
+    """The lights that are among the `taken` entity ids; a light group when
+    one of its members is."""
+    return [
+        light
         for light in lights
         if {light.entity_id, *group_lights(hass, light.entity_id)} & taken
-    )
-    return ", ".join(names) or None
+    ]
+
+
+async def async_in_area_notice(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> Mapping[str, str] | None:
+    """The placeholders of IN_AREA when the last start of these loose lights
+    left lights out because the entertainment area streams to them, else None
+    (also when the bridge could not be asked)."""
+    area = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
+    if area is None:
+        return None
+    names = _left_out(hass).get(_left_out_key(area, options[CONF_OUTPUT]))
+    return None if names is None else {"lights": names}
+
+
+def _left_out(hass: HomeAssistant) -> dict[str, str | None]:
+    return hass.data.setdefault(LEFT_OUT, {})
+
+
+def _left_out_key(area: Mapping[str, Any], output: Mapping[str, Any]) -> str:
+    """The same for the same area and loose lights, whichever entry has them."""
+    return json.dumps([area, output], sort_keys=True)
 
 
 def area_lights(hass: HomeAssistant, area_id: str) -> list[str]:
@@ -626,11 +707,7 @@ def _start_rgb(states: Iterable[State | None]) -> tuple[float, float, float] | N
     its restored state yet counts with the state from before. For a group, the
     average of its members. None when none of them is on or off.
     """
-    colors = [rgb for state in states if (rgb := _state_rgb(state)) is not None]
-    if not colors:
-        return None
-    r, g, b = (sum(values) / len(colors) for values in zip(*colors, strict=True))
-    return r, g, b
+    return average([rgb for state in states if (rgb := _state_rgb(state)) is not None])
 
 
 def _state_rgb(state: State | None) -> tuple[float, float, float] | None:
@@ -653,12 +730,7 @@ def _state_rgb(state: State | None) -> tuple[float, float, float] | None:
         rgb = color_util.color_xy_to_RGB(*value)
     elif kelvin:
         rgb = color_util.color_temperature_to_rgb(kelvin)
-    peak = max(rgb)
-    if peak <= 0:
-        return 0.0, 0.0, 0.0
-    level = (attributes.get("brightness") or 255) / 255
-    r, g, b = (min(1.0, max(0.0, value / peak * level)) for value in rgb)
-    return r, g, b
+    return at_level(rgb, (attributes.get("brightness") or 255) / 255)
 
 
 def _restored(hass: HomeAssistant) -> dict[str, tuple[State, datetime]]:

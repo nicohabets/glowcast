@@ -31,6 +31,7 @@ from ..core.ports import (
 )
 from ..devices import entry_devices
 from ..issues import Issue
+from .colors import at_level, average
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -549,15 +550,11 @@ async def async_entertainment_hint(
                 areas = await _async_clip_data(hass, host, key, AREAS_PATH)
         except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
             continue
-        devices = {
-            (item.get("owner") or {}).get("rid")
-            for item in renderers
-            if item.get("renderer")
-        }
         if any(
             light.get("id") in light_ids
-            and (light.get("owner") or {}).get("rid") in devices
-            for light in lights
+            for renderer, found in _renderer_lights(renderers, lights)
+            if renderer.get("renderer")
+            for light in found
         ):
             if areas:
                 return HINT_AREA
@@ -606,15 +603,11 @@ async def async_area_lights(
         for member in channel.get("members") or []
         if isinstance(member, dict)
     }
-    devices = {
-        (item.get("owner") or {}).get("rid")
-        for item in renderers
-        if item.get("id") in services
-    }
     light_ids |= {
         light.get("id")
-        for light in lights
-        if (light.get("owner") or {}).get("rid") in devices
+        for renderer, found in _renderer_lights(renderers, lights)
+        if renderer.get("id") in services
+        for light in found
     }
     registry = er.async_get(hass)
     return {
@@ -645,25 +638,38 @@ def _channel_start_colors(
     channel of several lights gets their average. Channels whose light is not
     found are left out.
     """
-    device_of = {
-        item.get("id"): (item.get("owner") or {}).get("rid") for item in renderers
+    lights_of = {
+        renderer.get("id"): found
+        for renderer, found in _renderer_lights(renderers, lights)
     }
-    light_of = {(light.get("owner") or {}).get("rid"): light for light in lights}
     starts: dict[int, tuple[float, float, float]] = {}
     for channel in channels:
         colors = [
             rgb
             for member in channel.get("members") or []
             if isinstance(member, dict)
-            and (light := light_of.get(device_of.get(_service(member)))) is not None
-            and (rgb := _safe_light_rgb(light)) is not None
+            # A device with several lights: its last one, as before (#199).
+            and (found := lights_of.get(_service(member)))
+            and (rgb := _safe_light_rgb(found[-1])) is not None
         ]
-        if colors:
-            r, g, b = (
-                sum(values) / len(colors) for values in zip(*colors, strict=True)
-            )
-            starts[channel["channel_id"]] = (r, g, b)
+        if (color := average(colors)) is not None:
+            starts[channel["channel_id"]] = color
     return starts
+
+
+def _renderer_lights(
+    renderers: list[dict[str, Any]], lights: list[dict[str, Any]]
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Each entertainment service with the lights of its device, in the
+    bridge's order: an entertainment service belongs to a device, as its
+    lights do."""
+    of_device: dict[Any, list[dict[str, Any]]] = {}
+    for light in lights:
+        of_device.setdefault((light.get("owner") or {}).get("rid"), []).append(light)
+    return [
+        (item, of_device.get((item.get("owner") or {}).get("rid"), []))
+        for item in renderers
+    ]
 
 
 def _service(member: dict[str, Any]) -> str | None:
@@ -699,12 +705,8 @@ def _light_rgb(light: dict[str, Any]) -> tuple[float, float, float] | None:
     elif temperature.get("mirek_valid") and temperature.get("mirek"):
         kelvin = color_util.color_temperature_mired_to_kelvin(temperature["mirek"])
         rgb = color_util.color_temperature_to_rgb(kelvin + CT_CORRECTION_K)
-    peak = max(rgb)
     level = float((light.get("dimming") or {}).get("brightness", 100.0)) / 100
-    if peak <= 0:
-        return 0.0, 0.0, 0.0
-    r, g, b = (min(1.0, max(0.0, value / peak * level)) for value in rgb)
-    return r, g, b
+    return at_level(rgb, level)
 
 
 def _device_type(name: str) -> str:

@@ -89,6 +89,38 @@ def test_a_wrong_light_is_a_config_error(item: dict[str, Any], reason: str) -> N
         loose.parse({"lights": CAMERA, "loose_lights": [item]})
 
 
+def test_a_light_in_the_area_too() -> None:
+    marked = [{**LOOSE[0], "in_area": True}, *LOOSE[1:]]
+    lights = loose.parse({"lights": CAMERA, "loose_lights": marked})
+    assert [li.in_area for li in lights] == [True, False, False]
+    assert loose.in_area(lights) == lights[0]
+    assert loose.in_area(lights[1:]) is None
+    assert loose.beside_area(lights) == [lights[2]]
+    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": None}) == "rid-1"
+    assert loose.area_unique_id(lights[0], {"wall": None}) is None
+    assert loose.area_unique_id(lights[0], {}) is None
+    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": "rid-1"}) is None
+
+
+@pytest.mark.parametrize(
+    ("items", "reason"),
+    [
+        ([{**LOOSE[0], "in_area": "yes"}], "true or false"),
+        ([{**LOOSE[0], "kind": "matter", "in_area": True}], "kind hue"),
+        ([{**LOOSE[2], "kind": "hue", "in_area": True}], "camera `light`"),
+        (
+            [{**LOOSE[0], "in_area": True}, {**LOOSE[1], "in_area": True}],
+            "more than one",
+        ),
+    ],
+)
+def test_a_wrong_in_area_light_is_a_config_error(
+    items: list[dict[str, Any]], reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        loose.parse({"lights": CAMERA, "loose_lights": items})
+
+
 def test_a_light_twice_is_a_config_error() -> None:
     twice = [LOOSE[0], {"kind": "matter", "entity_id": "light.desk_up", "x": 0, "z": 0}]
     with pytest.raises(ValueError, match="twice"):
@@ -532,3 +564,19 @@ async def test_the_lights_are_stored_by_registry_id_with_their_positions() -> No
         ],
     }
     assert bench.proxies[3]["entity_id"] == "light.bench_proxy_3"
+
+
+def test_the_rate_step_leaves_out_a_proxy_of_no_loose_light() -> None:
+    """The combined suite's proxy of a light in the area too (#198) is not
+    one of `bench.loose`: the rate step judges the loose lights only."""
+    bench = _bench()
+    bench.proxies[9] = {
+        "id": "registry0009",
+        "entity_id": "light.bench_proxy_9",
+        "platform": "hue",
+        "config_entry_id": "hueentry",
+    }
+    bench.ha = SimpleNamespace(calls=[])
+    loose_suite.rate_step(bench, 99.0, 103.0)
+    (step,) = bench.report.steps
+    assert step.numbers["Hue network lights"] == 2

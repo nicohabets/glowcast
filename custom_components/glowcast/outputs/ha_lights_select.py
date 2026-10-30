@@ -46,6 +46,7 @@ from .ha_lights import (
     groups_with_lights,
 )
 from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT
+from .labels import unique_labels
 
 # Its unique id is f"{entry_id}_{ENTITY_KEY}", and its translation key.
 ENTITY_KEY = "loose_lights"
@@ -183,24 +184,18 @@ class HaLightsSelect(GlowcastSettingEntity, SelectEntity):
         self.async_write_ha_state()
 
     def _refresh(self) -> None:
-        names = [
-            *(
-                (name, (FOLLOW_AREA, key))
-                for key, name in areas_with_lights(self.hass).items()
-            ),
-            *(
-                (name, (FOLLOW_GROUP, key))
-                for key, name in groups_with_lights(self.hass).items()
-            ),
-        ]
-        choices: dict[str, tuple[str, str]] = {}
-        for name, choice in sorted(names, key=lambda item: (item[0], item[1])):
-            label, number = name, 1
-            while label in choices or label == CHOSEN_LIGHTS:
-                number += 1
-                label = f"{name} ({number})"
-            choices[label] = choice
-        self._choices = choices
+        names = {
+            (follow, key): name
+            for follow, found in (
+                (FOLLOW_AREA, areas_with_lights(self.hass)),
+                (FOLLOW_GROUP, groups_with_lights(self.hass)),
+            )
+            for key, name in found.items()
+        }
+        self._choices = {
+            label: choice
+            for choice, label in unique_labels(names, (CHOSEN_LIGHTS,)).items()
+        }
 
 
 @callback

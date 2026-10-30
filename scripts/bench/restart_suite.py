@@ -51,7 +51,7 @@ async def run(bench: Any) -> None:
         MODE,
         bench.win(on),
         bench.win(time.time()),
-        name="before the restart: each light the colour of its side",
+        title="before the restart: each light the colour of its side",
     )
     # 1: restarted while syncing.
     stopping = time.time()
@@ -203,7 +203,7 @@ async def resumed(bench: Any, done: local_ha.Restarted, stopping: float) -> None
             MODE,
             bench.win(first),
             bench.win(end),
-            name="after the restart: each light the colour of its side again",
+            title="after the restart: each light the colour of its side again",
         )
     found = logged_resume(await read_log())
     bench.report.add(
