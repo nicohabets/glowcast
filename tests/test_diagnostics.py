@@ -316,6 +316,33 @@ async def test_a_source_without_a_device(
     assert diagnostics["output"]["device"] is not None
 
 
+async def test_a_screen_source_shows_no_token_address_or_id(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: Any
+) -> None:
+    """The helper's token is Glowcast's own secret (#110)."""
+    token = "Zq3vX8pL1mN7cR4tY9wK2bF6hJ0dS5aG"
+    helper_id = "4f0c9a1b2c3d4e5f6a7b8c9d0e1f2a3b"
+    host = "192.0.2.63"
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            "source": {
+                "type": "screen",
+                "helper_id": helper_id,
+                "host": host,
+                "port": 8488,
+                "token": token,
+            },
+        },
+    )
+    download = await _get_diagnostics_for_config_entry(hass, hass_client, entry)
+    text = json.dumps(download)
+    for value in (token, helper_id, host, "8488"):
+        assert value not in text
+    assert download["data"]["source"] == {"type": "screen", "device": None}
+
+
 async def test_a_refused_start_does_not_show_the_previous_stop(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,

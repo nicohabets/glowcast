@@ -85,7 +85,13 @@ class FakeClock:
 
 
 class FakeSource:
-    """A TV. `frames` scripts the captures: a Frame, an exception, or "hang"."""
+    """A TV. `frames` scripts the captures: a Frame, an exception, or "hang".
+
+    `start_error` makes every start() raise it, after `start_failures`.
+    """
+
+    # As fast as the pipeline allows, like the TV.
+    max_rate_hz = 20.0
 
     def __init__(
         self, clock: Clock, log: list[str], capture_time: float = 0.25
@@ -93,6 +99,7 @@ class FakeSource:
         self.clock = clock
         self.log = log
         self.start_failures = 0
+        self.start_error: Exception | None = None
         self.on = True
         self.frames: list[Any] = []
         self.default: Any = solid(RED)
@@ -104,6 +111,8 @@ class FakeSource:
         if self.start_failures:
             self.start_failures -= 1
             raise SourceUnavailable("not reachable yet")
+        if self.start_error is not None:
+            raise self.start_error
 
     def is_on(self) -> bool:
         return self.on

@@ -226,6 +226,8 @@ async def _settle() -> None:
 class ScenarioSource:
     """A TV that shows the scenarios one after another."""
 
+    max_rate_hz = math.inf  # no cap of its own, like the TV
+
     def __init__(
         self, clock: FakeClock, run: list[Scenario], models: ModuleType
     ) -> None:

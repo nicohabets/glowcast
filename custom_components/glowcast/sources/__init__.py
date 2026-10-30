@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 
 from ..core.ports import FrameSource
 from ..issues import Issue
-from . import webos, webos_flow
+from . import screen, webos, webos_flow
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,8 @@ class SourceType:
     # methods, and the step that starts them.
     steps: type[ConfigFlow] | None = None
     setup_step: str | None = None
+    # The step that pairs again when the source rejects Glowcast's key.
+    reauth_step: str | None = None
     # The repair issue when the integration entry it uses is missing.
     missing: Issue | None = None
 
@@ -43,6 +45,13 @@ SOURCES = {
         steps=webos_flow.WebOsSteps,
         setup_step="tv",
         missing=webos.MISSING,
+    ),
+    # Its setup and reauth steps (discovery and the pairing code) are #109.
+    screen.SOURCE_SCREEN: SourceType(
+        screen.create,
+        screen.is_missing,
+        screen.device_identifier,
+        screen.device_id,
     ),
 }
 

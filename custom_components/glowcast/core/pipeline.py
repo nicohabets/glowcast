@@ -25,6 +25,7 @@ from .ports import (
     OutputNotFound,
     OutputTooManyChannels,
     OutputUnavailable,
+    SourceAuthFailed,
     SourceUnavailable,
 )
 
@@ -32,7 +33,14 @@ _LOGGER = logging.getLogger(__name__)
 
 STARTUP_GRACE = 10.0  # seconds for the TV to start and deliver a frame
 START_RETRY_INTERVAL = 1.0
-MAX_CAPTURE_FAILURES = 5  # in a row, after the startup grace
+# Failed captures stop with TV_OFF once there are this many in a row, after
+# the startup grace, and this long has passed since the first of them began:
+# as long as a screen's own wait before it counts as off (#110), so a fast
+# source (4 per second) is not stopped after about 1 s (4 intervals of 0.25 s
+# plus the capture time). It applies to the TV too (product owner's decision,
+# #110).
+MAX_CAPTURE_FAILURES = 5
+CAPTURE_FAILURE_WAIT = 3.0
 LOST_RETRY_DELAY = 5.0
 # Lost again this soon after a successful retry: stop instead of retrying.
 LOST_AGAIN_WINDOW = 60.0
@@ -59,6 +67,7 @@ class StopReason(StrEnum):
     OUTPUT_UNAVAILABLE = "output_unavailable"
     AUTH_FAILED = "auth_failed"
     SOURCE_UNAVAILABLE = "source_unavailable"
+    SOURCE_AUTH_FAILED = "source_auth_failed"
 
 
 class Phase(StrEnum):
@@ -100,7 +109,7 @@ class UpdateRate(StrEnum):
 
     @property
     def interval(self) -> float:
-        """Seconds between captures; 0 means as fast as the TV allows."""
+        """Seconds between captures; 0 means as fast as the source allows."""
         return {"low": 1.0, "medium": 0.5, "high": 1 / 3, "maximum": 0.0}[self.value]
 
 
@@ -187,6 +196,7 @@ class Pipeline:
         self._retried_at: float | None = None
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
+        self._failing_since = 0.0  # when the first of them began
         self._no_picture_since: float | None = None
         self._black_picture = False
 
@@ -306,6 +316,9 @@ class Pipeline:
             return started, await self._source.capture()
         except SourceUnavailable:
             return started, None
+        except SourceAuthFailed as err:
+            _LOGGER.warning("%s", err)
+            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the TV source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -436,14 +449,24 @@ class Pipeline:
 
     async def _async_capture(self) -> Frame | None:
         """One capture, or None if it failed; too many failures in a row stop."""
+        begin = self._clock.now()
         try:
             frame = await self._source.capture()
         except SourceUnavailable:
+            if self._failures == 0:
+                # Its start: a capture that hangs for seconds counts in full.
+                self._failing_since = begin
             self._failures += 1
-            if self._failures >= MAX_CAPTURE_FAILURES:
+            if (
+                self._failures >= MAX_CAPTURE_FAILURES
+                and self._clock.now() - self._failing_since >= CAPTURE_FAILURE_WAIT
+            ):
                 _LOGGER.info("%d captures in a row failed", self._failures)
                 raise _Stop(StopReason.TV_OFF) from None
             return None
+        except SourceAuthFailed as err:
+            _LOGGER.warning("%s", err)
+            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except Exception as err:
             _LOGGER.exception("Unexpected error from the TV source")
             raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
@@ -453,7 +476,12 @@ class Pipeline:
     async def _async_pace(self, begin: float) -> None:
         """Wait until the next capture is due after one that began at `begin`."""
         # Read on every capture: the update rate can change while streaming.
-        interval = max(self._settings.update_rate.interval, MIN_CAPTURE_INTERVAL)
+        # The source's own limit caps Maximum (and any faster level).
+        interval = max(
+            self._settings.update_rate.interval,
+            1 / self._source.max_rate_hz,
+            MIN_CAPTURE_INTERVAL,
+        )
         await self._clock.sleep(max(0.0, begin + interval - self._clock.now()))
 
     async def _async_send_loop(self) -> None:

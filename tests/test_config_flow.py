@@ -1,6 +1,7 @@
 """Setup, options and reauth flows, with a fake bridge and no network."""
 
 import asyncio
+import dataclasses
 import json
 from collections.abc import Generator
 from pathlib import Path
@@ -19,8 +20,9 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 )
 from yarl import URL
 
-from custom_components.glowcast.const import DOMAIN
+from custom_components.glowcast.const import DOMAIN, REAUTH_PART, REAUTH_SOURCE
 from custom_components.glowcast.outputs.hue_entertainment import _device_type
+from custom_components.glowcast.sources import SOURCES
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -475,6 +477,42 @@ async def test_area_list_fails_after_pairing(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert len(FakeHueAPI.instances) == 1
+
+
+async def test_reauth_for_the_source_runs_its_own_step(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source that rejects Glowcast's key never leads to the bridge's
+    pairing, which would add another app on the bridge (#110)."""
+    entry = glowcast_entry(hass)
+    result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
+    # No source type has a reauth step yet (#109).
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_unavailable"
+    assert FakeHueAPI.instances == []
+
+    monkeypatch.setitem(
+        SOURCES, "webos", dataclasses.replace(SOURCES["webos"], reauth_step="tv")
+    )
+    result = await entry.start_reauth_flow(hass, data={REAUTH_PART: REAUTH_SOURCE})
+    # The source's step ran (this entry's TV is the only one), not the bridge's.
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "all_tvs_configured"
+    assert FakeHueAPI.instances == []
+
+
+async def test_a_source_without_setup_steps_is_not_offered(
+    hass: HomeAssistant,
+) -> None:
+    """The screen source is set up through discovery (#109), not here."""
+    assert SOURCES["screen"].setup_step is None
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    # The webOS source's TV step, shown as the first screen.
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert list(result["data_schema"].schema) == ["tv"]
 
 
 async def test_reauth(hass: HomeAssistant) -> None:

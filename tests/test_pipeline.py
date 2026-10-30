@@ -29,6 +29,7 @@ from custom_components.glowcast.core.ports import (
     OutputNotFound,
     OutputTooManyChannels,
     OutputUnavailable,
+    SourceAuthFailed,
     SourceUnavailable,
 )
 
@@ -259,6 +260,41 @@ async def test_update_rate(rate: UpdateRate, per_second: int) -> None:
     assert await h.stop() == StopReason.USER
 
 
+@pytest.mark.parametrize(
+    ("rate", "per_second"),
+    [
+        (UpdateRate.LOW, 1),
+        (UpdateRate.MEDIUM, 2),
+        (UpdateRate.HIGH, 3),
+        (UpdateRate.MAXIMUM, 4),  # capped by the source, not by the capture time
+    ],
+)
+async def test_the_source_caps_the_update_rate(
+    rate: UpdateRate, per_second: int
+) -> None:
+    """A source that allows 4 per second (the screen, #110) caps only Maximum."""
+    h = Harness(rate=rate)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    before = h.source.captures
+    await h.clock.advance(10)
+    assert h.source.captures - before == pytest.approx(10 * per_second, abs=1)
+    assert await h.stop() == StopReason.USER
+
+
+async def test_maximum_without_a_cap_goes_as_fast_as_the_source() -> None:
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.capture_time = 0.1
+    await h.start()
+    await h.clock.advance(1)
+    before = h.source.captures
+    await h.clock.advance(10)
+    assert h.source.captures - before == pytest.approx(100, abs=2)
+    assert await h.stop() == StopReason.USER
+
+
 # Colour
 
 
@@ -467,6 +503,69 @@ async def test_five_failed_captures_in_a_row() -> None:
     assert h.log[-3:] == CLEANUP
 
 
+@pytest.mark.parametrize(
+    ("rate", "max_rate_hz", "seconds"),
+    [
+        # A screen at 4 per second: 5 failures take about 1 s, the 3 s decide.
+        (UpdateRate.MAXIMUM, 4.0, 3.0),
+        # The TV at Maximum, failing fast: the 3 s decide too (#110).
+        (UpdateRate.MAXIMUM, 20.0, 3.0),
+        # The TV at High: 5 failures take about 1.3 s, the 3 s decide.
+        (UpdateRate.HIGH, 20.0, 3.0),
+        # The TV at Medium: 5 failures take about 2 s, the 3 s decide.
+        (UpdateRate.MEDIUM, 20.0, 3.0),
+        # 1 per second: the 5 failures take longer than 3 s and decide.
+        (UpdateRate.LOW, 4.0, 4.0),
+    ],
+)
+async def test_failed_captures_stop_after_five_and_3_s(
+    rate: UpdateRate, max_rate_hz: float, seconds: float
+) -> None:
+    h = Harness(rate=rate)
+    h.source.max_rate_hz = max_rate_hz
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.default = SourceUnavailable("no picture")
+    failing_since = h.clock.now()
+    assert await h.finish() == StopReason.TV_OFF
+    stopped_after = h.status_times[-1] - failing_since
+    assert seconds <= stopped_after < seconds + 1.0
+
+
+async def test_a_capture_that_hangs_counts_from_its_start() -> None:
+    """The first failure hangs for 5 s: the 3 s are over when it ends, so
+    the stop comes with the fifth failure, not 3 s after the hang ended."""
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = ["hang"]
+    h.source.default = SourceUnavailable("no picture")
+    failing_since = h.clock.now()
+    assert await h.finish() == StopReason.TV_OFF
+    # The hang (5 s), then four more failures at 4 per second.
+    assert 5.5 <= h.status_times[-1] - failing_since < 7.0
+
+
+async def test_a_good_frame_starts_the_wait_again() -> None:
+    """Five failures within 3 s, a good frame, then failures again: the stop
+    comes 3 s after the second run of failures began."""
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.max_rate_hz = 4.0
+    h.source.capture_time = 0.01
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = [SourceUnavailable("no picture")] * 6 + [solid(RED)]
+    h.source.default = SourceUnavailable("no picture")
+    began = h.clock.now()
+    # 6 failures and the frame at 4 per second; the second run begins with
+    # the eighth capture, about 1.75 s later.
+    assert await h.finish() == StopReason.TV_OFF
+    assert 1.75 + 3.0 <= h.status_times[-1] - began < 1.75 + 3.0 + 0.6
+
+
 async def test_four_failed_captures_then_a_good_one() -> None:
     h = Harness()
     await h.start()
@@ -622,6 +721,27 @@ async def test_key_revoked_while_streaming() -> None:
     await h.clock.advance(1)
     h.output.check_error = OutputAuthFailed("revoked")
     assert await h.finish() == StopReason.AUTH_FAILED
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_source_rejects_the_key_at_start() -> None:
+    """No retrying for the startup grace: pair again (#110)."""
+    h = Harness()
+    h.source.start_error = SourceAuthFailed("rejected")
+    await h.start()
+    await h.clock.advance(0.5)
+    assert h.task is not None and h.task.done()
+    assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
+    assert "output.start" not in h.log
+    assert h.log[-1] == "source.close"
+
+
+async def test_source_rejects_the_key_while_streaming() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    h.source.frames = [SourceAuthFailed("rejected")]
+    assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
     assert h.log[-3:] == CLEANUP
 
 

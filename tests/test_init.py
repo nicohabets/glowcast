@@ -35,6 +35,8 @@ from custom_components.glowcast.const import (
     DEFAULT_INTENSITY,
     DEFAULT_UPDATE_RATE,
     DOMAIN,
+    REAUTH_PART,
+    REAUTH_SOURCE,
 )
 from custom_components.glowcast.core.pipeline import (
     Phase,
@@ -471,6 +473,37 @@ async def test_auth_failed_starts_reauth(
     assert state(hass) == STATE_OFF
     [flow] = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert flow["context"]["source"] == SOURCE_REAUTH
+
+
+async def test_the_source_reauth_reaches_the_flow_with_its_part(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """Home Assistant's own reauth start passes the part on: the flow runs
+    the source's step (none yet, #109), never the output's pairing."""
+    await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    FakePipeline.instances[-1].finish(StopReason.SOURCE_AUTH_FAILED)
+    await settle(hass)
+    assert state(hass) == STATE_OFF
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
+
+
+async def test_the_source_rejecting_its_key_starts_its_reauth(
+    hass: HomeAssistant, fakes: FakeAdapters, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not the output's reauth: the source pairs again (#110)."""
+    entry = await setup(hass)
+    started: list[dict[str, Any] | None] = []
+    monkeypatch.setattr(
+        type(entry),
+        "async_start_reauth",
+        lambda self, hass, context=None, data=None: started.append(data),
+    )
+    await switch(hass, SERVICE_TURN_ON)
+    FakePipeline.instances[-1].finish(StopReason.SOURCE_AUTH_FAILED)
+    await settle(hass)
+    assert state(hass) == STATE_OFF
+    assert started == [{REAUTH_PART: REAUTH_SOURCE}]
 
 
 @pytest.mark.parametrize(
