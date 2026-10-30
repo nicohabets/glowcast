@@ -1,0 +1,9 @@
+{
+  "domain": "glowcast_e2e",
+  "name": "Glowcast end-to-end run: the Hue stream to the fake bridge",
+  "codeowners": [],
+  "documentation": "https://github.com/nicohabets/glowcast/blob/main/scripts/README.md",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.0.0"
+}

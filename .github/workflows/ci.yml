@@ -78,6 +78,29 @@ jobs:
       # compiled (.pyd/.so) or runs as pure Python (.py).
       - run: uv run --project screen_helper --locked python -c "import zeroconf._dns as m; print(m.__file__)"
 
+  # The end-to-end run (#112): the screen helper's test patterns through
+  # Glowcast's real screen source, pipeline and Hue output to the demo's fake
+  # bridge, in a local Home Assistant (the "latest" version above), all on
+  # 127.0.0.1. See scripts/README.md.
+  e2e:
+    name: end-to-end (test patterns)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - run: python3 scripts/demo.py e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: |
+            ~/.cache/glowcast-demo/instances/*-e2e/e2e-summary.json
+            ~/.cache/glowcast-demo/instances/*-e2e/e2e/
+            ~/.cache/glowcast-demo/instances/*-e2e/run/
+            ~/.cache/glowcast-demo/instances/*-e2e/config/home-assistant.log
+          if-no-files-found: ignore
+
   hassfest:
     name: hassfest
     runs-on: ubuntu-latest
