@@ -3,8 +3,10 @@
 An entry follows the TV with one output block, `{"type": ..., ...}`, or with
 a combined one (#11) that holds a block per output type:
 `{"type": "combined", "parts": [{"type": ...}, {"type": ...}]}`. These
-helpers let a type find and replace its own block either way, so no type
-reads another type's keys. No type knowledge here.
+helpers let a type find and replace its own block either way. A type reads
+only its own keys; it may hand another type's block to that type's own code
+(for example a later type's settings steps pass an earlier type's block,
+found by its type, to that type's own lookup). No type knowledge here.
 """
 
 from collections.abc import Mapping, Sequence
