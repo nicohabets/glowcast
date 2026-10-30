@@ -80,9 +80,10 @@ def test_a_picture_that_changed_everywhere_has_no_contrast() -> None:
 
 # The wall's 95th percentiles from -11 to -5, recorded on the bench (30-10-2026,
 # the lights in warm white at full brightness); the spot's rim clips at
-# every exposure (its core). Means: the -8 reference scaled per step.
+# every exposure (its core); its clipped share recorded too. Means: the -8
+# reference scaled per step.
 WALL_P95 = {-11: 84, -10: 133, -9: 178, -8: 215, -7: 249, -6: 255, -5: 255}
-SPOT_CLIPPED = {-11: 0.18, -10: 0.25, -9: 0.33, -8: 0.42, -7: 0.55, -6: 0.68, -5: 0.8}
+SPOT_CLIPPED = {-11: 0.27, -10: 0.44, -9: 0.55, -8: 0.59, -7: 0.65, -6: 0.71, -5: 0.74}
 DARK = (1.0, 0.0, 1.0)
 
 
@@ -115,7 +116,7 @@ def test_a_clipping_spot_is_judged_on_its_rim() -> None:
     assert rp.choose_exposure(clipped, TH) == (None, ["spot"])
     # With the wall, the spot's rim still limits how bright it may go.
     sweep = {float(e): {"wall": _wall(e), "spot": _spot(e)} for e in WALL_P95}
-    strict = rp.Thresholds(max_clipped_share=0.3)
+    strict = rp.Thresholds(max_clipped_share=0.5)
     assert rp.choose_exposure(sweep, strict)[0] == -10.0
 
 

@@ -80,7 +80,7 @@ class Thresholds:
     warn_moved_px: float = 40.0
     # A region that clips at every exposure (a spot's core): at most this
     # share of its pixels may clip, so its rim is still measured.
-    max_clipped_share: float = 0.6
+    max_clipped_share: float = 0.7
     clip_p95: float = 240.0
     min_white_lift: float = 60.0
     max_ambient: float = 0.35
