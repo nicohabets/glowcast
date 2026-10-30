@@ -427,17 +427,16 @@ class Bench:
         )
         await self.screen.start()
         await self.screen.wait_event(lambda e: e["event"] == "started", 120)
-        await self.load_scenes()
+        await self.load_scenes([scenes.REST])
         await self.show_rest()
 
-    async def load_scenes(self) -> None:
-        """Render the rest screen and the scenes at the monitor's physical
-        resolution into Windows' temp folder, and have the window load them,
-        so that showing one is instant."""
+    async def load_scenes(self, names: list[str]) -> None:
+        """Render pictures at the monitor's physical resolution into Windows'
+        temp folder, and have the window load them, so that showing one is
+        instant."""
         assert self.screen is not None
         width, height = self.cfg["monitor"][2:4]
         folder = f"{self.win_temp}\\glowcast-bench\\scenes"
-        names = [scenes.REST, scenes.GLOW, *scenes.SCENES]
 
         def render() -> None:
             local = Path(winproc.to_wsl(folder))
@@ -452,9 +451,14 @@ class Bench:
         await asyncio.to_thread(render)
         for name in names:
             self.screen.send(f"load {name} {folder}\\{name}.png")
-            await self.screen.wait_event(
-                lambda e, n=name: e["event"] == "loaded" and e["name"] == n, 60
+            loaded = await self.screen.wait_event(
+                lambda e, n=name: (
+                    e["event"] == "error" or (e["event"] == "loaded" and e["name"] == n)
+                ),
+                60,
             )
+            if loaded["event"] == "error":
+                raise BenchError("the screen window could not load a scene")
 
     async def show_rest(self) -> None:
         """Glowcast's rest screen, whenever no test picture is measured."""
@@ -1411,8 +1415,14 @@ class Bench:
         assert self.screen is not None
         self.screen.send(picture)
         shown = await self.screen.wait_event(
-            lambda e: e["event"] == "shown" and e["picture"] == picture, 5
+            lambda e: (
+                e["event"] == "error"
+                or (e["event"] == "shown" and e["picture"] == picture)
+            ),
+            5,
         )
+        if shown["event"] == "error":
+            raise BenchError("the screen window could not show a picture")
         self.changes.append(["screen", picture, shown["t"]])
         return shown["t"]
 
@@ -1482,7 +1492,9 @@ class Bench:
         await self.show(f"image {scenes.GLOW}")
         await asyncio.sleep(0.5)
         status, glow = await self.helper.frame()
-        glow_ok = status == 200 and any(glow) and max(glow) <= scenes.GLOW_MAX + 4
+        glow_ok = (
+            status == 200 and any(glow) and max(glow) <= scenes.color_engine.BLACK_LEVEL
+        )
         ok &= worst <= SCENE_TOLERANCE and glow_ok
         await self.show_rest()
         self.report.add(
@@ -1549,6 +1561,7 @@ class Bench:
     async def screen_mode(self) -> None:
         mode = "screen"
         await self.start_screen()
+        await self.load_scenes([scenes.GLOW, *scenes.SCENES])
         await self.start_helper(mode)
         if not await self.screen_self_check(mode):
             return
@@ -1559,7 +1572,7 @@ class Bench:
         await asyncio.sleep(4)
         shown: list[
             tuple[str, str, float, float]
-        ] = []  # picture, kind, Windows time, seconds
+        ] = []  # scene, kind, Windows time, seconds
         for scene, seconds, kind in SCREEN_SEQUENCE:
             t = await self.show(f"image {scene}")
             shown.append((scene, kind, t, seconds))
