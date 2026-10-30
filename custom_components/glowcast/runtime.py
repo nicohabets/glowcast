@@ -83,7 +83,8 @@ class GlowcastData:
         self._dropped: dict[str, StopReason] = {}
         # Whether it synced when Home Assistant began to stop (#183).
         self._stopped_by_ha = False
-        self._resume: asyncio.Task[None] | None = None
+        # Set by async_resume(); every start and stop clears it.
+        self._resume_wanted = False
 
     @property
     def is_on(self) -> bool:
@@ -123,7 +124,7 @@ class GlowcastData:
         """Start syncing, unless an integration the TV or lights use is not set up."""
         if self._pipeline is not None:
             return
-        self._cancel_resume()
+        self._resume_wanted = False
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
@@ -155,31 +156,36 @@ class GlowcastData:
         Assistant has started and the picture source is on (#183).
 
         Looks for the source every RESUME_INTERVAL for RESUME_WINDOW; a
-        start or stop meanwhile (the switch, an automation) ends it.
+        start or stop meanwhile (the switch, an automation, an unload or Home
+        Assistant stopping) ends it, also before Home Assistant has started.
         """
+        self._resume_wanted = True
 
         @callback
         def started(hass: HomeAssistant) -> None:
-            self._resume = self._entry.async_create_background_task(
-                hass, self._async_resume(), f"glowcast {self._entry.title} resume"
-            )
+            if self._resume_wanted:
+                self._entry.async_create_background_task(
+                    hass, self._async_resume(), f"glowcast {self._entry.title} resume"
+                )
 
         self._entry.async_on_unload(async_at_started(self._hass, started))
 
     async def _async_resume(self) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + RESUME_WINDOW
-        while self._pipeline is None:
-            if await self._async_source_on():
-                if self._pipeline is None:
-                    _LOGGER.info(
-                        "Glowcast %s continues after Home Assistant's restart",
-                        self._entry.title,
-                    )
-                    self._resume = None
-                    await self.async_start()
+        while self._resume_wanted:
+            on = await self._async_source_on()
+            if not self._resume_wanted:
+                return  # started or stopped meanwhile
+            if on:
+                _LOGGER.info(
+                    "Glowcast %s continues after Home Assistant's restart",
+                    self._entry.title,
+                )
+                await self.async_start()
                 return
             if loop.time() + RESUME_INTERVAL > deadline:
+                self._resume_wanted = False
                 _LOGGER.info(
                     "Glowcast %s did not continue after Home Assistant's restart: "
                     "the picture source is off",
@@ -189,7 +195,8 @@ class GlowcastData:
             await asyncio.sleep(RESUME_INTERVAL)
 
     async def _async_source_on(self) -> bool:
-        """Whether the picture source can be reached and is on, by connecting."""
+        """Whether the picture source can be reached, is on and gives a
+        picture (a locked screen answers, but without one), by connecting."""
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         if source_type.is_missing(self._hass, data, options):
@@ -198,20 +205,18 @@ class GlowcastData:
         try:
             async with asyncio.timeout(RESUME_CHECK_TIMEOUT):
                 await source.start()
-            return source.is_on()
+                if not source.is_on():
+                    return False
+                await source.capture()
+            return True
         except (TimeoutError, SourceUnavailable, SourceAuthFailed):
             return False
         finally:
             await source.close()
 
-    def _cancel_resume(self) -> None:
-        if self._resume is not None and asyncio.current_task() is not self._resume:
-            self._resume.cancel()
-        self._resume = None
-
     async def async_stop(self) -> None:
         """Stop syncing and wait until the lights are released."""
-        self._cancel_resume()
+        self._resume_wanted = False
         # Switching off (or unloading) during a restart wins over the restart.
         self._stopped_during_restart = self._restarting
         await self._async_stop()

@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.glowcast import runtime
 from custom_components.glowcast.core.pipeline import StopReason
+from custom_components.glowcast.core.ports import SourceUnavailable
 
 from .fakes import FakeAdapters, FakePipeline, wait_for
 from .test_init import ENTITY, settle, setup, state, switch, tv_device  # noqa: F401
@@ -175,3 +176,58 @@ async def test_waits_until_home_assistant_has_started(
     hass.bus.async_fire("homeassistant_started")
     await wait_for(lambda: state(hass) == STATE_ON)
     await switch(hass, SERVICE_TURN_OFF)
+
+
+@pytest.mark.usefixtures("quick")
+async def test_stays_off_when_the_tv_cannot_be_reached(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    """As webOS does when the TV is off: start() raises."""
+    fakes.source_start_error = SourceUnavailable("the TV is off")
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: "did not continue" in caplog.text)
+    assert state(hass) == STATE_OFF
+    assert FakePipeline.instances == []
+    assert fakes.log.count("source.start") == fakes.log.count("source.close") > 1
+
+
+@pytest.mark.usefixtures("quick")
+async def test_stays_off_when_the_screen_is_locked(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    """As the screen helper does for a locked screen: it answers, no picture."""
+    fakes.source_picture = False
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: "did not continue" in caplog.text)
+    assert state(hass) == STATE_OFF
+    assert FakePipeline.instances == []
+    assert fakes.sources[0].captures == 1
+
+
+@pytest.mark.usefixtures("quick")
+async def test_not_looked_for_while_its_integration_is_not_loaded(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    fakes.source_missing = True
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: "did not continue" in caplog.text)
+    assert fakes.sources == []
+    assert state(hass) == STATE_OFF
+
+
+async def test_switching_before_home_assistant_has_started_ends_it(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    restored(hass, True)
+    hass.set_state(CoreState.starting)
+    await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)  # a startup automation, say
+    await switch(hass, SERVICE_TURN_OFF)
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire("homeassistant_started")
+    await settle(hass)
+    assert state(hass) == STATE_OFF
+    assert len(FakePipeline.instances) == 1  # only the one switched on

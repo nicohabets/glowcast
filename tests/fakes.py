@@ -211,8 +211,12 @@ class FakeAdapters:
         self.log: list[str] = []
         self.source_missing = False
         self.output_missing = False
-        # Whether the sources it builds are on (the TV, after a restart).
+        # How the sources it builds behave after a restart (#183): whether
+        # they say they are on, what start() raises (a TV that is off), and
+        # whether they give a picture (a locked screen does not).
         self.source_on = True
+        self.source_start_error: Exception | None = None
+        self.source_picture = True
         self.channels = [CHANNEL]
         self.sources: list[FakeSource] = []
         self.outputs: list[FakeOutput] = []
@@ -220,6 +224,9 @@ class FakeAdapters:
     def source(self) -> FakeSource:
         source = FakeSource(MonotonicClock(), self.log, capture_time=0)
         source.on = self.source_on
+        source.start_error = self.source_start_error
+        if not self.source_picture:
+            source.default = SourceUnavailable("no picture")
         self.sources.append(source)
         return source
 
