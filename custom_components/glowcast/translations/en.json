@@ -399,7 +399,7 @@
     },
     "webos_not_permitted": {
       "title": "Glowcast {name}: the TV does not permit screenshots",
-      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"insufficient permissions\": the pairing the LG webOS TV integration made with the TV does not allow screenshots.\n\nUpdate Home Assistant, then pair the TV again: delete the TV in the LG webOS TV integration (Settings > Devices & services), add it again and accept the request on the TV. Then switch Glowcast on again.\n\nIf the TV still refuses, please [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics). More in [troubleshooting]({help_url})."
+      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"insufficient permissions\": the pairing the LG webOS TV integration made with the TV does not allow screenshots.\n\nPlease [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at it.\n\nPairing the TV again may help: delete the TV in the LG webOS TV integration (Settings > Devices & services), add it again and accept the request on the TV, then switch Glowcast on again. The integration's Reconfigure keeps the existing pairing. More in [troubleshooting]({help_url})."
     },
     "hue_entertainment_missing": {
       "title": "Glowcast {name}: the Hue bridge is not set up",

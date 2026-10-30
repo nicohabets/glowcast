@@ -284,14 +284,14 @@ def is_missing(
     return entry is None or entry.state is not ConfigEntryState.LOADED
 
 
-def device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
-    """The TV's device in Home Assistant, to link Glowcast's device to."""
+def _device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
+    """The TV device's identifier in the device registry (for `device_id`)."""
     return (WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
 
 
 def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     """The TV device's id in Home Assistant's device registry, if it exists."""
-    identifier = device_identifier(data)
+    identifier = _device_identifier(data)
     devices = entry_devices(hass, WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
     return next(
         (device.id for device in devices if identifier in device.identifiers), None
@@ -310,7 +310,7 @@ def tvs(hass: HomeAssistant) -> dict[str, str]:
 def _is_insufficient_permissions(error: WebOsTvResponseTypeError) -> bool:
     """Whether the TV refused the call for lack of permission.
 
-    aiowebostv (0.7.4 to 0.10.0) raises this error with the TV's whole error
+    aiowebostv (0.9.2 to 0.10.0) raises this error with the TV's whole error
     response as its argument; only its "error" field is read.
     """
     response = error.args[0] if error.args else None
