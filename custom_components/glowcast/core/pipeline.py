@@ -343,15 +343,12 @@ class Pipeline:
             return started, await self._source.capture()
         except SourceUnavailable:
             return started, None
-        except SourceAuthFailed as err:
-            _LOGGER.warning("%s", err)
-            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
         except SourceNotSupported as err:
+            # Unlike while syncing, only recorded: the startup grace asks again.
             self._refusal = err
             return started, None
         except Exception as err:
-            _LOGGER.exception("Unexpected error from the picture source")
-            raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
+            raise _source_stop(err) from err
 
     async def _async_start_output(self) -> list[Channel]:
         try:
@@ -495,14 +492,8 @@ class Pipeline:
                 _LOGGER.info("%d captures in a row failed", self._failures)
                 raise _Stop(StopReason.TV_OFF) from None
             return None
-        except SourceAuthFailed as err:
-            _LOGGER.warning("%s", err)
-            raise _Stop(StopReason.SOURCE_AUTH_FAILED) from err
-        except SourceNotSupported as err:
-            raise _not_supported(err) from err
         except Exception as err:
-            _LOGGER.exception("Unexpected error from the picture source")
-            raise _Stop(StopReason.SOURCE_UNAVAILABLE) from err
+            raise _source_stop(err) from err
         self._failures = 0
         return frame
 
@@ -625,6 +616,22 @@ def stop_reason_of(error: Exception) -> StopReason:
         ),
         StopReason.OUTPUT_UNAVAILABLE,
     )
+
+
+def _source_stop(error: Exception) -> _Stop:
+    """How a source error other than `SourceUnavailable` stops, at the start
+    and while syncing alike; call it from the `except` block.
+
+    A rejected key, a refusal and an unexpected error. At the start a refusal
+    does not get here until the startup grace ends on it (#214).
+    """
+    if isinstance(error, SourceAuthFailed):
+        _LOGGER.warning("%s", error)
+        return _Stop(StopReason.SOURCE_AUTH_FAILED)
+    if isinstance(error, SourceNotSupported):
+        return _not_supported(error)
+    _LOGGER.exception("Unexpected error from the picture source")
+    return _Stop(StopReason.SOURCE_UNAVAILABLE)
 
 
 def _not_supported(error: SourceNotSupported) -> _Stop:
