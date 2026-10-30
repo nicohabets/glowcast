@@ -45,7 +45,15 @@ RECONNECT_TIMEOUT = 8.0
 CAPTURE_TIMEOUT = 5.0
 
 CAPTURE_URI = "tv/executeOneShot"
-CAPTURE_PAYLOAD = {"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "JPG"}
+# The size is what the tested G3 returns anyway (it ignores the size); an older
+# capture service (webOS 4) refuses a full-screen capture without one (#221).
+CAPTURE_PAYLOAD = {
+    "path": "/tmp/capture.jpg",
+    "method": "DISPLAY",
+    "format": "JPG",
+    "width": 960,
+    "height": 540,
+}
 
 
 class WebOsFrameSource:

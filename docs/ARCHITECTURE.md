@@ -24,7 +24,7 @@ Home Assistant lights, other TVs, extra entities, effects and so on are GitHub i
 | Fact | Detail |
 |---|---|
 | Screen capture works | `ssap://tv/executeOneShot` with `{"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "JPG"}` returns `{"imageUri": "https://<tv>:3001/resources/<hash>/capture.jpg"}` |
-| Frame | 960x540 JPEG, about 80 KB. The `width`/`height` parameters are ignored. |
+| Frame | 960x540 JPEG, about 80 KB. The `width`/`height` parameters are ignored. Since #221 Glowcast sends `"width": 960, "height": 540` anyway, because an older capture service (webOS 4) refuses a full-screen capture without a size (reported, `docs/research/webos-devices.md`); on the G3 that should change nothing (not yet checked on the TV). |
 | Rate | about 4.1 captures per second with `WebOsFrameSource`, sequential (request, download, decode to 64x36); see the `WebOsFrameSource` row below. An earlier test without decoding measured about 3.4. |
 | TLS | The image URL uses the TV's self-signed certificate: download without verification, LAN only. |
 | Pairing | Reusing `host` + `client_secret` from HA's `webostv` config entry works with `aiowebostv.WebOsClient(host, client_key=...)`. No pairing prompt, and it coexists with HA's own connection. |
@@ -170,7 +170,7 @@ The regions of all channels are made in one step (`channel_regions()`), so a map
 - Resolves the `webostv` config entry **by its unique id** at runtime and reads `host` and `client_secret` from it. Never copies them.
 - `aiowebostv.WebOsClient(host, client_key=..., client_session=async_get_clientsession(hass))`.
 - `is_on()` uses the client's own `tv_state.is_on` and `is_screen_on` (power-state subscription), so the pipeline never needs to know which `media_player` belongs to the TV.
-- `capture()`: `tv/executeOneShot`, then download `imageUri` with HA's session and `ssl=False`; wrapped in `asyncio.timeout(5)` (aiowebostv's own timeout is 20 s).
+- `capture()`: `tv/executeOneShot` with `{"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "JPG", "width": 960, "height": 540}` (the size for older TVs, #221), then download `imageUri` with HA's session and `ssl=False`; wrapped in `asyncio.timeout(5)` (aiowebostv's own timeout is 20 s).
 - Decodes with Pillow in the executor; use `Image.draft()` for a fast JPEG downscale to about 64x36.
 - **The source owns reconnecting.** aiowebostv clears its state on every websocket drop, so a raw `is_on` would read "off" during a hiccup. The source reconnects once; `is_on()` reports off only when that reconnect fails or the TV's power state says off.
 
