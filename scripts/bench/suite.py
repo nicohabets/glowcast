@@ -26,6 +26,7 @@ import aiohttp
 import clients
 import local_ha
 import report as rp
+import scenes
 import winproc
 from report import FAIL, PASS, SKIP, Step
 
@@ -46,21 +47,25 @@ PATTERN_COLOURS = {
     "letterbox": "green",
 }
 NEAR_BLACK = "#101010"  # black to Glowcast (under its black level 32), not all zero
+# Screen mode (#168): vivid scenes with a colour per half (bench/scenes.py),
+# each light judged against the colour of its own channels' region. Ordered
+# so that every light changes colour at every scene (for the delays).
 SCREEN_SEQUENCE: list[tuple[str, float, str]] = [
-    # (picture, seconds, what it checks)
-    ("#ff0000", 5, "red"),
-    ("#00ff00", 5, "green"),
-    ("#0000ff", 5, "blue"),
-    ("#ffffff", 5, "white"),
-    (NEAR_BLACK, TIMING.short_black, "short-black"),
-    ("#ff0000", 5, "red"),
-    (NEAR_BLACK, TIMING.long_black, "long-black"),
-    ("split #ff0000 #0000ff", 6, "left-red-right-blue"),
-    ("#00ff00", 5, "green"),
-    ("#ff0000", 5, "red"),
-    ("#0000ff", 5, "blue"),
-    ("#ffffff", 5, "white"),
+    # (scene, seconds, what it checks)
+    ("spectrum", 5, "scene"),
+    ("aurora", 5, "scene"),
+    ("neon", 5, "scene"),
+    ("moonlight", 5, "scene"),
+    (scenes.GLOW, TIMING.short_black, "short-black"),
+    ("sunset", 5, "scene"),
+    (scenes.GLOW, TIMING.long_black, "long-black"),
+    ("ocean", 6, "scene"),
+    ("golden-hour", 5, "scene"),
+    ("spectrum", 5, "scene"),
 ]
+# The helper's frame of a scene may differ this much (0-255, per channel of a
+# light's expected colour) from the frame computed from the image.
+SCENE_TOLERANCE = 8.0
 SETTLE = 2.0  # seconds after a change before a colour counts as settled
 SAME_X = 0.2  # channels closer than this in x cannot show left and right
 # The exposures the calibration tries (log2 seconds, DirectShow).
@@ -136,6 +141,10 @@ class Bench:
         self.ha_start: asyncio.Future[Any] | None = None
         # Screen-mode changes timed by the window instead of the camera.
         self.window_timed = 0
+        # Each scene as the helper should see it (64x36), from the rendered image.
+        self.scene_frames: dict[str, bytes] = {}
+        # Each light's channel positions (x, z) in the bench area, from the bridge.
+        self.positions: dict[str, list[tuple[float, float]]] = {}
         # The bench area and the bridge's entertainment services (left/right).
         self.bench_area: dict[str, Any] = {}
         # Each light's side from the bridge ("left"/"right"), or None, and why.
@@ -418,6 +427,38 @@ class Bench:
         )
         await self.screen.start()
         await self.screen.wait_event(lambda e: e["event"] == "started", 120)
+        await self.load_scenes()
+        await self.show_rest()
+
+    async def load_scenes(self) -> None:
+        """Render the rest screen and the scenes at the monitor's physical
+        resolution into Windows' temp folder, and have the window load them,
+        so that showing one is instant."""
+        assert self.screen is not None
+        width, height = self.cfg["monitor"][2:4]
+        folder = f"{self.win_temp}\\glowcast-bench\\scenes"
+        names = [scenes.REST, scenes.GLOW, *scenes.SCENES]
+
+        def render() -> None:
+            local = Path(winproc.to_wsl(folder))
+            local.mkdir(parents=True, exist_ok=True)
+            for name in names:
+                if name in self.scene_frames:  # rendered earlier in this run
+                    continue
+                image = scenes.render(name, width, height)
+                self.scene_frames[name] = scenes.downscale(image)
+                image.save(local / f"{name}.png", compress_level=1)
+
+        await asyncio.to_thread(render)
+        for name in names:
+            self.screen.send(f"load {name} {folder}\\{name}.png")
+            await self.screen.wait_event(
+                lambda e, n=name: e["event"] == "loaded" and e["name"] == n, 60
+            )
+
+    async def show_rest(self) -> None:
+        """Glowcast's rest screen, whenever no test picture is measured."""
+        await self.show(f"image {scenes.REST}")
 
     async def stop_screen(self) -> None:
         if self.screen is not None:
@@ -445,8 +486,8 @@ class Bench:
                 "not located: no monitor in the config"
             )
         if monitor:
+            # start_screen shows the rest screen: the baseline for the flash.
             await self.start_screen()
-            await self.show("#000000")
         await self.set_lights(None)
         await asyncio.sleep(2.5)
         await self.grab("off")
@@ -476,7 +517,7 @@ class Bench:
             await self.show("#ffffff")
             await asyncio.sleep(1.0)
             await self.grab("on-monitor")
-            await self.show("#000000")
+            await self.show_rest()
             await asyncio.sleep(1.0)
             await self.grab("after-monitor")
             targets["monitor"] = {
@@ -551,6 +592,11 @@ class Bench:
             return
         xs = {
             name: rp.channel_x(self.bench_area, services, rid)
+            for name, rid in rid_of.items()
+            if rid is not None
+        }
+        self.positions = {
+            name: rp.channel_positions(self.bench_area, services, rid)
             for name, rid in rid_of.items()
             if rid is not None
         }
@@ -1402,22 +1448,121 @@ class Bench:
         )
         return ok
 
+    def probe_positions(self) -> dict[str, list[tuple[float, float]]]:
+        """Where to compare the scenes' colours: each light's channels, or a
+        point left and right when the lights are not matched to the bridge."""
+        if self.positions and all(self.positions.get(n) for n in self.lights):
+            return {self.label[n]: self.positions[n] for n in self.lights}
+        return {"left": [(-0.7, 0.0)], "right": [(0.7, 0.0)]}
+
+    async def scene_check(self, mode: str) -> bool:
+        """Before switching on: the helper's frame of every scene gives each
+        light the colour computed from the rendered image (the expected
+        colours of the scene steps), and the glow scene is black to Glowcast
+        but not all zero."""
+        assert self.helper is not None
+        probes = self.probe_positions()
+        worst = 0.0
+        ok = True
+        for name in scenes.SCENES:
+            await self.show(f"image {name}")
+            await asyncio.sleep(0.5)
+            status, frame = await self.helper.frame()
+            if status != 200 or len(frame) != len(self.scene_frames[name]):
+                ok = False
+                continue
+            for positions in probes.values():
+                worst = max(
+                    worst,
+                    scenes.largest_difference(
+                        scenes.expected(frame, positions),
+                        scenes.expected(self.scene_frames[name], positions),
+                    ),
+                )
+        await self.show(f"image {scenes.GLOW}")
+        await asyncio.sleep(0.5)
+        status, glow = await self.helper.frame()
+        glow_ok = status == 200 and any(glow) and max(glow) <= scenes.GLOW_MAX + 4
+        ok &= worst <= SCENE_TOLERANCE and glow_ok
+        await self.show_rest()
+        self.report.add(
+            Step(
+                "scenes: the helper sees each side's colour as rendered; "
+                "the glow scene is near-black",
+                mode,
+                PASS if ok else FAIL,
+                numbers={
+                    "scenes": len(scenes.SCENES),
+                    "largest difference (0-255)": round(worst, 1),
+                    "limit (0-255)": SCENE_TOLERANCE,
+                    "glow scene max": max(glow) if glow else None,
+                },
+                note="" if ok else "the helper's frames differ from the scenes",
+            )
+        )
+        return ok
+
+    def scene_step(
+        self, mode: str, scene: str, start: float, end: float
+    ) -> dict[str, rp.RGB]:
+        """A two-sided scene: each light the colour Glowcast makes of its own
+        channels' region (bench/scenes.py), judged by the camera."""
+        label = f"{scene}: each light the colour of its side"
+        samples = self.samples()
+        means = {
+            name: mean
+            for name in self.lights
+            if (mean := rp.settled(samples, name, start + SETTLE, end - 0.3))
+        }
+        if not self.positions_differ():
+            self.report.add(Step(label, mode, SKIP, note=self.sides_note))
+            return means
+        assert self.sides is not None
+        ok = len(means) == len(self.lights)
+        numbers: dict[str, Any] = {}
+        for name in self.lights:
+            want = scenes.expected(self.scene_frames[scene], self.positions[name])
+            colour = scenes.bucket(want)
+            tag = f"{self.label[name]} {self.sides[name]}"
+            numbers[f"{tag} expected rgb"] = list(want)
+            numbers[f"{tag} expected"] = colour or "unclear"
+            mean = means.get(name)
+            if mean is None or colour is None:
+                ok = False
+                continue
+            cal = self.cal[name]
+            ok &= rp.matches_colour(colour, mean, cal, self.th)
+            numbers[f"{tag} seen"] = rp.classify(mean, cal, self.th)
+            numbers[f"{tag} level"] = round(cal.level(mean), 2)
+            numbers[f"{tag} n"] = [round(v, 2) for v in cal.normalised(mean)]
+        self.report.add(
+            Step(
+                label,
+                mode,
+                PASS if ok else FAIL,
+                numbers=numbers,
+                note="" if ok else "a light shows another colour than its side",
+            )
+        )
+        return means
+
     async def screen_mode(self) -> None:
         mode = "screen"
         await self.start_screen()
         await self.start_helper(mode)
         if not await self.screen_self_check(mode):
             return
-        await self.show("#ff0000")
+        await self.scene_check(mode)
+        await self.show(f"image {SCREEN_SEQUENCE[0][0]}")
         if not await self.switch_on(mode):
             return
         await asyncio.sleep(4)
         shown: list[
             tuple[str, str, float, float]
         ] = []  # picture, kind, Windows time, seconds
-        for picture, seconds, kind in SCREEN_SEQUENCE:
-            t = await self.show(picture)
-            shown.append((picture, kind, t, seconds))
+        for scene, seconds, kind in SCREEN_SEQUENCE:
+            t = await self.show(f"image {scene}")
+            shown.append((scene, kind, t, seconds))
             await self.sleep_until_win(t + seconds)
         end = self.win_now()
         await asyncio.sleep(0.5)
@@ -1425,7 +1570,7 @@ class Bench:
         prev: dict[str, rp.RGB] | None = None
         prev_monitor: rp.RGB | None = None
         samples = self.samples()
-        for i, (_picture, kind, t, _seconds) in enumerate(shown):
+        for i, (scene, kind, t, _seconds) in enumerate(shown):
             stop = shown[i + 1][2] if i + 1 < len(shown) else end
             # The change as the camera saw it on the monitor; else the window's time.
             monitor_now = (
@@ -1443,8 +1588,8 @@ class Bench:
                 else:
                     self.window_timed += 1
             prev_monitor = monitor_now
-            if kind in ("red", "green", "blue", "white"):
-                means = self.colour_step(mode, kind, kind, t, stop)
+            if kind == "scene":
+                means = self.scene_step(mode, scene, t, stop)
                 if prev is not None:
                     self.delays_between(prev, means, change, stop, delays)
                 prev = means
@@ -1459,13 +1604,6 @@ class Bench:
             elif kind == "long-black":
                 self.glow_step(mode, prev or {}, t, stop)
                 prev = None
-            elif kind == "left-red-right-blue":
-                self.left_right_step(mode, t, stop)
-                prev = {
-                    k: v
-                    for k in self.lights
-                    if (v := rp.settled(samples, k, t + SETTLE, stop - 0.3))
-                }
         for name, values in delays.items():
             self.add_delays(f"{mode} / {self.label[name]}", values)
         self.delay_step(mode, [d for values in delays.values() for d in values])
@@ -1473,7 +1611,9 @@ class Bench:
         await self.check_stop(
             mode, "switch off: area stops, lights back (camera)", "switch"
         )
-        await self.show("#ff0000")
+        await self.show_rest()
+        await asyncio.sleep(2)
+        await self.show(f"image {SCREEN_SEQUENCE[0][0]}")
         if await self.switch_on(mode, name="switch on again"):
             await asyncio.sleep(3)
             await self.check_stop(
@@ -1481,6 +1621,8 @@ class Bench:
                 "helper stopped: tv_off, area stops, lights back (camera)",
                 "helper",
             )
+        await self.show_rest()
+        await asyncio.sleep(3)
         await self.screen.stop()
         self.screen = None
 

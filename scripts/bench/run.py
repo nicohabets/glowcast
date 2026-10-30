@@ -66,19 +66,19 @@ PLAN = {
         "switch on, stop the helper: tv_off, area stops, lights back",
     ],
     "screen": [
-        "show a full-screen window on the monitor, start the helper on that monitor",
+        "show a full-screen window on the monitor with Glowcast's rest screen,\n"
+        "    start the helper on that monitor",
         "self-check: the helper's frame is the window's red; near-black is not\n"
-        "    all zero",
+        "    all zero; each scene's sides as rendered; the glow scene near-black",
         "switch on: the bench area streams",
-        "red, green, blue, white: the colours, and the delay from the monitor to\n"
-        "    the light",
-        "short near-black: the colours hold",
-        "long near-black: the colours hold on black, then the warm glow; the\n"
+        "vivid two-sided scenes (spectrum, aurora, neon, moonlight, sunset, ocean,\n"
+        "    golden hour): each light the colour of its side, and the delay from\n"
+        "    the monitor to the light (skipped when the channels share x)",
+        "short glow scene (near-black, dimmed logo): the colours hold",
+        "long glow scene: the colours hold on black, then the warm glow; the\n"
         "    area keeps streaming",
-        "left-red-right-blue (skipped when the channels share x)",
-        "more colour changes for the delay",
-        "switch off: area stops, lights back; switch on, stop the helper: tv_off,\n"
-        "    lights back",
+        "switch off: area stops, lights back (monitor black); the rest screen;\n"
+        "    switch on, stop the helper: tv_off, lights back; the rest screen",
     ],
     "extended": [
         "diagnostics contain no keys, addresses, ids or names",

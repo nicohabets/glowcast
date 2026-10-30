@@ -553,18 +553,29 @@ def channel_x(
     """The x position of this light in the area (bridge data: a channel's
     members are entertainment services, each renders a light). A gradient
     strip has several channels; their mean x is where the light is."""
+    xs = [x for x, _ in channel_positions(area, services, light_rid)]
+    return sum(xs) / len(xs) if xs else None
+
+
+def channel_positions(
+    area: dict[str, Any], services: list[dict[str, Any]], light_rid: str
+) -> list[tuple[float, float]]:
+    """The (x, z) of each of this light's channels in the area, as Glowcast's
+    Hue output gives them to the colour engine."""
     renders = {
         s["id"]: (s.get("renderer_reference") or {}).get("rid") for s in services
     }
-    xs = [
-        channel.get("position", {}).get("x", 0.0)
+    return [
+        (
+            channel.get("position", {}).get("x", 0.0),
+            channel.get("position", {}).get("z", 0.0),
+        )
         for channel in area.get("channels", [])
         if any(
             renders.get(member.get("service", {}).get("rid")) == light_rid
             for member in channel.get("members", [])
         )
     ]
-    return sum(xs) / len(xs) if xs else None
 
 
 def channel_spread(area: dict[str, Any]) -> float:
