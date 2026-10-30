@@ -107,7 +107,8 @@ def test_a_new_width_follows_after_it_was_stable() -> None:
     box = Letterbox()
     feed(box, letterbox(5, 3), 0.0, 3.0)
     assert feed(box, letterbox(1, 2), 4.0, STABLE - 0.4) == Bars(5, 3, 0, 0)
-    # 1 and 2 rows differ from no bar by at most the tolerance: they stay.
+    # The top bar follows (5 to 1); the bottom one (3 to 2) is within the
+    # tolerance, so it stays.
     assert feed(box, letterbox(1, 2), 4.0 + STABLE, 1.0) == Bars(1, 3, 0, 0)
 
 

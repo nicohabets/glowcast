@@ -626,12 +626,10 @@ def _compute(
     The capture loop awaits it before the next capture, so the letterbox
     memory is only updated by one frame at a time.
     """
-    picture = letterbox.update(frame, now).picture(frame.width, frame.height)
-    return (
-        compute(frame, channels, intensity, picture),
-        is_black(frame),
-        is_all_zero(frame),
-    )
+    black = is_black(frame)
+    bars = letterbox.update(frame, now, black)
+    picture = bars.picture(frame.width, frame.height)
+    return compute(frame, channels, intensity, picture), black, is_all_zero(frame)
 
 
 def _raise_check_result(check: asyncio.Task[None]) -> None:

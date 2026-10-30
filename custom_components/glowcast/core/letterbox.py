@@ -111,12 +111,13 @@ class Letterbox:
         """The bars the lights' regions use now."""
         return Bars(*self._bars)
 
-    def update(self, frame: Frame, now: float) -> Bars:
+    def update(self, frame: Frame, now: float, black: bool | None = None) -> Bars:
         """Measure a frame and return the bars to use for it.
 
-        An (almost) black frame keeps the bars as they are.
+        An (almost) black frame keeps the bars as they are; `black` is
+        `is_black(frame)` when the caller has it already.
         """
-        if not is_black(frame):
+        if not (is_black(frame) if black is None else black):
             for side, width in enumerate(measure(frame)):
                 self._update_side(side, width, now)
         return self.bars
