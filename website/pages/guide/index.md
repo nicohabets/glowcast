@@ -4,7 +4,7 @@ From installing Glowcast to the first evening with the lights following your TV,
 
 ## What you need
 
-- **Home Assistant** 2025.7.2 or newer, with [HACS](https://hacs.xyz/).
+- **Home Assistant** 2026.8.3 or newer, with [HACS](https://hacs.xyz/). A TV with webOS 26 only pairs from that version (the minimum that can work, not a guarantee); on an older Home Assistant, [update it first](../docs/installation.md#home-assistant-older-than-202683).
 - An **LG TV running webOS**, already set up in Home Assistant with the **LG webOS Smart TV** integration.
 - **Colour lights**, one of:
     - **Hue lights in an entertainment area**: a Philips Hue Bridge v2 or Hue Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area made in the Hue app. This is the smoothest.

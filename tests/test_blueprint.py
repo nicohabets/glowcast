@@ -42,7 +42,7 @@ def test_blueprint_is_valid() -> None:
         "https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/"
         "glowcast/start_with_tv.yaml"
     )
-    assert blueprint.metadata["homeassistant"] == {"min_version": "2025.7.2"}
+    assert blueprint.metadata["homeassistant"] == {"min_version": "2026.8.3"}
 
 
 def test_inputs_offer_webos_tvs_and_glowcast_switches() -> None:

@@ -22,10 +22,9 @@ class SourceType:
     # Whether the integration entry the source uses is removed or not loaded,
     # from the entry's data and options.
     is_missing: Callable[[HomeAssistant, Mapping[str, Any], Mapping[str, Any]], bool]
-    # The TV's device in Home Assistant, to link Glowcast's device to: its
-    # identifier (older HA) and its device registry id (newer HA, and
-    # diagnostics). None when the source has no device.
-    device_identifier: Callable[[Mapping[str, Any]], tuple[str, str] | None]
+    # The TV's device in Home Assistant's device registry, to link Glowcast's
+    # device to (via_device_id) and for diagnostics. None when the source has
+    # no device.
     device_id: Callable[[HomeAssistant, Mapping[str, Any]], str | None]
     # The type's steps in the setup flow (flow.py): a mixin of async_step_
     # methods, and the step that starts them.
@@ -43,7 +42,6 @@ SOURCES = {
     webos.SOURCE_WEBOS: SourceType(
         webos.create,
         webos.is_missing,
-        webos.device_identifier,
         webos.device_id,
         steps=webos_flow.WebOsSteps,
         setup_step="tv",
@@ -54,7 +52,6 @@ SOURCES = {
     screen.SOURCE_SCREEN: SourceType(
         screen.create,
         screen.is_missing,
-        screen.device_identifier,
         screen.device_id,
         steps=screen_flow.ScreenSteps,
         setup_step="screen",
