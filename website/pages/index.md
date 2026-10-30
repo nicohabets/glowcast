@@ -68,7 +68,7 @@ LG TV (webOS)  --local-->  Glowcast (in Home Assistant)  --local-->  Hue Bridge 
 
 Glowcast reuses Home Assistant's pairing with the TV, asks the TV for a small screen capture about 3 times per second, works out the colour of each part of the picture and streams it to an entertainment area on your Hue bridge, fading smoothly between frames. Everything stays on your local network.
 
-Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards and costs money, once or every month; the Hue Play HDMI Sync Box costs around €300. Glowcast is free, and it is tested on a TV from before 2024 (a 2023 LG G3).
+At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. Glowcast is free, and it is tested on a TV from before 2024 (a 2023 LG G3).
 
 ## Honest limits
 

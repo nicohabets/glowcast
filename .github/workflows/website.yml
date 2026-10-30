@@ -12,6 +12,9 @@ on:
       - docs/brand/**
       - README.md
       - screen_helper/README.md
+      - blueprints/**
+      - LICENSE
+      - docs/releases/**
       - scripts/check_links.py
       - .github/workflows/website.yml
   push:
@@ -22,6 +25,9 @@ on:
       - docs/brand/**
       - README.md
       - screen_helper/README.md
+      - blueprints/**
+      - LICENSE
+      - docs/releases/**
       - scripts/check_links.py
       - .github/workflows/website.yml
   workflow_dispatch:
@@ -29,10 +35,11 @@ on:
 permissions:
   contents: read
 
-# One publish at a time; a newer push to main waits for the running one.
+# A pull request's newer run cancels its older one; publishes from main run
+# one at a time (a newer push waits for the running one).
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: false
+  group: website-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

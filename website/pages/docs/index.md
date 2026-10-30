@@ -33,3 +33,5 @@ LG TV (webOS)  --local, port 3001-->  Glowcast (inside Home Assistant)  --local-
 4. The colours go to the Hue Bridge: Glowcast streams to an entertainment area you set up in the Hue app, up to 25 times per second, fading smoothly between frames. Lights use the positions you gave them in the Hue app, left/right and floor/ceiling. A gradient lightstrip shows several colours along its length.
 
 Everything stays on your local network.
+
+On a black picture the lights keep a faint warm glow instead of going dark. Dark colours blend into that glow; brighter colours are shown pure, without the glow mixed in.

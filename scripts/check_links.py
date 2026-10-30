@@ -123,6 +123,12 @@ def _check_web(url: str) -> tuple[str | None, bool]:
 
 def check(url: str, site: Path, offline: bool) -> tuple[str | None, bool]:
     """Check one link; return (error, warning)."""
+    # The blueprint import button carries the blueprint's own URL.
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+    if "blueprint_url" in query:
+        error, warning = check(query["blueprint_url"][0], site, offline)
+        if error:
+            return f"blueprint_url: {error}", warning
     if url.startswith(SITE_URL):
         return _check_site(url, site), False
     for prefix in REPO_PREFIXES:
