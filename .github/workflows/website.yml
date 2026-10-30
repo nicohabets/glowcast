@@ -52,7 +52,10 @@ jobs:
           python-version: "3.13"
       - run: pip install -r website/requirements.txt
       # --strict: a broken link, a missing image or a missing anchor fails.
+      # Visitor numbers (#190) only in the site published from main.
       - run: mkdocs build --strict -f website/mkdocs.yml
+        env:
+          GLOWCAST_ANALYTICS: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
       # The README's and the site's links to the site, to this repository's
       # files and to other sites. On main, other sites are not fetched: one
       # that is down must not hold back the publish (pull requests check them).
