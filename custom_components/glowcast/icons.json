@@ -3,6 +3,9 @@
     "button": {
       "test_lights": {
         "default": "mdi:palette"
+      },
+      "hardware_check": {
+        "default": "mdi:clipboard-pulse-outline"
       }
     },
     "sensor": {

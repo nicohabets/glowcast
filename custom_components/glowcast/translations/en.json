@@ -317,6 +317,9 @@
     "button": {
       "test_lights": {
         "name": "Test lights"
+      },
+      "hardware_check": {
+        "name": "Run hardware check"
       }
     },
     "number": {
@@ -395,11 +398,11 @@
     },
     "webos_not_supported": {
       "title": "Glowcast {name}: the TV does not allow screenshots",
-      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"no such service or method\": this TV model, or its software version, does not offer the call Glowcast uses to see the picture. The TV is on and reachable; switching Glowcast on again will not help.\n\nPlease [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at supporting it. More in [troubleshooting]({help_url})."
+      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"no such service or method\": this TV model, or its software version, does not offer the call Glowcast uses to see the picture. The TV is on and reachable; switching Glowcast on again will not help.\n\nPlease press **Run hardware check** on Glowcast's device page and, when it is done, [open a hardware report]({report_url}) with your TV model and webOS version and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at supporting it. More in [troubleshooting]({help_url})."
     },
     "webos_not_permitted": {
       "title": "Glowcast {name}: the TV does not permit screenshots",
-      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"insufficient permissions\": the pairing the LG webOS TV integration made with the TV does not allow screenshots.\n\nPlease [open a hardware report]({report_url}) with your TV model and webOS version, and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at it.\n\nPairing the TV again may help: delete the TV in the LG webOS TV integration (Settings > Devices & services), add it again and accept the request on the TV, then switch Glowcast on again. The integration's Reconfigure keeps the existing pairing. More in [troubleshooting]({help_url})."
+      "description": "Glowcast cannot sync because the TV answers its screenshot call with \"insufficient permissions\": the pairing the LG webOS TV integration made with the TV does not allow screenshots.\n\nPlease press **Run hardware check** on Glowcast's device page and, when it is done, [open a hardware report]({report_url}) with your TV model and webOS version and attach Glowcast's diagnostics (Settings > Devices & services > Glowcast > ⋮ > Download diagnostics), so that we can look at it.\n\nPairing the TV again may help: delete the TV in the LG webOS TV integration (Settings > Devices & services), add it again and accept the request on the TV, then switch Glowcast on again. The integration's Reconfigure keeps the existing pairing. More in [troubleshooting]({help_url})."
     },
     "hue_entertainment_missing": {
       "title": "Glowcast {name}: the Hue bridge is not set up",
@@ -428,6 +431,10 @@
     "ha_lights_streamed_elsewhere": {
       "title": "Glowcast {name}: Home Assistant lights in an area another app syncs",
       "description": "Some of Glowcast's Home Assistant lights are in an entertainment area that another app syncs right now, for example a Hue Sync Box or the Hue Sync app: {lights} (area: {areas}). While it syncs, the Hue bridge ignores other commands to these lights, so they do not follow Glowcast; the other lights work as usual, and these follow again when the other app stops. To make them follow Glowcast, choose Home Assistant lights outside that area in Glowcast's settings (Configure), or remove them from the area in the Hue app. The message is checked again the next time Glowcast takes over the lights."
+    },
+    "hardware_check_done": {
+      "title": "Glowcast {name}: hardware check done",
+      "description": "The hardware check is done. Its result is in Glowcast's diagnostics: Settings > Devices & services > Glowcast > ⋮ > Download diagnostics. To tell us how Glowcast works with your TV, attach that file to a [hardware report]({report_url}). It contains no names, addresses, keys or picture."
     }
   },
   "exceptions": {

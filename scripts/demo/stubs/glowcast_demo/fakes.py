@@ -139,3 +139,75 @@ class FakeLightOutput:
 
     async def close(self) -> None:
         """Nothing to close."""
+
+
+async def tv_probe(
+    hass: Any, data: Any, options: Any, *, measure: bool
+) -> dict[str, Any]:
+    """The hardware check of the fake TV (#115): generic values, in the shape
+    of the webOS probe."""
+    await asyncio.sleep(2 if measure else 0.2)
+    result: dict[str, Any] = {
+        "connected": True,
+        "tv": {
+            "model": "OLED55C3",
+            "product": "webOSTV 23",
+            "firmware": "33.31",
+            "webos_version": "10.2.0",
+            "os_version": "8.2.0",
+            "is_on": True,
+            "is_screen_on": True,
+            "app": "com.webos.app.hdmi1",
+        },
+    }
+    if measure:
+        result["capture"] = {
+            "answered": True,
+            "refused": None,
+            "failures": {},
+            "image": {"format": "JPEG", "width": 960, "height": 540, "bytes": 81234},
+            "captures": 10,
+            "seconds_per_capture": {"min": 0.21, "median": 0.24, "max": 0.31},
+            "captures_per_second": 4.1,
+            "black_captures": 0,
+            "all_black": False,
+        }
+    return result
+
+
+async def lights_probe(
+    hass: Any, data: Any, options: Any, *, measure: bool
+) -> dict[str, Any]:
+    """The hardware check of the fake bridge (#115): generic values, in the
+    shape of the Hue probe, for the chosen area's channels."""
+    count = AREA_CHANNELS.get(str(options[CONF_OUTPUT].get(CONF_AREA_ID, "")), 5)
+    return {
+        "api_version": 2,
+        "bridge": {
+            "modelid": "BSB002",
+            "swversion": "1972004020",
+            "apiversion": "1.72.0",
+            "datastoreversion": "172",
+        },
+        "areas": len(AREA_CHANNELS),
+        "streaming": "none",
+        "area": {
+            "configuration_type": "screen",
+            "channel_count": count,
+            "channels": [
+                {
+                    "channel": c,
+                    "position": {"x": c / 2 - 1, "y": 0.8, "z": 0.0},
+                    "members": [
+                        {
+                            "segment": c,
+                            "model_id": "LCX004",
+                            "archetype": "hue_lightstrip_tv",
+                        }
+                    ],
+                }
+                for c in range(count)
+            ],
+            "stream": "none",
+        },
+    }

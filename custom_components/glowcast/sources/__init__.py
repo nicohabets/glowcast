@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from ..core.pipeline import StopReason
 from ..core.ports import FrameSource
 from ..issues import Issue
+from ..probes import Probe
 from . import screen, screen_flow, webos, webos_flow
 
 
@@ -36,6 +37,9 @@ class SourceType:
     # ones for stop reasons the source causes (as for an output type).
     missing: Issue | None = None
     stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
+    # The hardware check (#115): what the source tells about itself and how
+    # it captures, without pixels or personal details; None: no probe.
+    probe: Probe | None = None
 
 
 SOURCES = {
@@ -47,6 +51,7 @@ SOURCES = {
         setup_step="tv",
         missing=webos.MISSING,
         stop_issues=webos.STOP_ISSUES,
+        probe=webos.probe,
     ),
     # Also set up through Home Assistant's zeroconf discovery (manifest.json).
     screen.SOURCE_SCREEN: SourceType(
