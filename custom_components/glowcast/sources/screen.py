@@ -7,7 +7,8 @@ keeps the token in its own entry's data.
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Mapping
+import time
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -43,6 +44,10 @@ CAPTURE_TIMEOUT = 5.0
 RETRY_DELAY = 0.1
 # A wrong pairing code costs 1 s at the helper, one attempt at a time.
 PAIR_TIMEOUT = 10.0
+# No picture for this long after a frame turns the source off (product owner's
+# decision, #110), like the 3 s wait for an all-zero picture (#68), so a few
+# slow grabs on a busy computer do not stop syncing.
+NO_PICTURE_WAIT = 3.0
 
 
 class _NoPicture(Exception):
@@ -55,11 +60,18 @@ class ScreenFrameSource:
     max_rate_hz = MAX_RATE_HZ
 
     def __init__(
-        self, hass: HomeAssistant, helper_id: str, host: str, port: int, token: str
+        self,
+        hass: HomeAssistant,
+        helper_id: str,
+        host: str,
+        port: int,
+        token: str,
+        now: Callable[[], float] = time.monotonic,
     ) -> None:
         """Initialize for the helper with this id at this address, with
-        Glowcast's token."""
+        Glowcast's token; `now` is the clock (a fake one in tests)."""
         self._hass = hass
+        self._now = now
         self._helper_id = helper_id
         self._host = host
         self._port = port
@@ -69,6 +81,8 @@ class ScreenFrameSource:
         # so the pipeline's startup grace keeps asking while the computer
         # wakes up or unlocks.
         self._delivered = False
+        # When the no picture after the last frame began; None with a picture.
+        self._no_picture_since: float | None = None
 
     async def start(self) -> None:
         """Check that Glowcast's helper answers and accepts the token.
@@ -78,6 +92,7 @@ class ScreenFrameSource:
         """
         self._on = False
         self._delivered = False
+        self._no_picture_since = None
         # Raises SourceAuthFailed (401) or SourceUnavailable itself.
         info = await async_info(self._hass, self._host, self._port, self._token)
         if info.get("id") != self._helper_id:
@@ -91,8 +106,8 @@ class ScreenFrameSource:
     def is_on(self) -> bool:
         """Return whether the helper answers with a picture.
 
-        False after start() failed, or once two requests in a row got no
-        picture after a frame came.
+        False after start() failed, or once there has been no picture for
+        NO_PICTURE_WAIT after a frame came.
         """
         return self._on
 
@@ -118,7 +133,11 @@ class ScreenFrameSource:
         except TimeoutError:
             reason = "The screen helper did not respond in time"
         if self._delivered:
-            self._on = False
+            now = self._now()
+            if self._no_picture_since is None:
+                self._no_picture_since = now
+            elif now - self._no_picture_since >= NO_PICTURE_WAIT:
+                self._on = False
         raise SourceUnavailable(reason)
 
     async def close(self) -> None:
@@ -151,6 +170,7 @@ class ScreenFrameSource:
             _LOGGER.debug("The screen helper sent %d bytes, not a frame", len(pixels))
             raise _NoPicture
         self._on = self._delivered = True
+        self._no_picture_since = None
         return Frame(width=WIDTH, height=HEIGHT, pixels=pixels)
 
     @asynccontextmanager
