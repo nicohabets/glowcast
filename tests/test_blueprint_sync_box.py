@@ -152,6 +152,33 @@ async def test_switch_turns_off_when_the_box_stops_syncing(
     assert turn_on == []
 
 
+async def test_a_box_that_stopped_during_a_drop_stops_glowcast(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    turn_on, turn_off = await _setup_automation(hass, tmp_path, STATE_ON)
+
+    hass.states.async_set(LIGHT_SYNC, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert turn_off == []
+    hass.states.async_set(LIGHT_SYNC, STATE_OFF)
+    await hass.async_block_till_done()
+
+    assert _targets(turn_off) == [[SWITCH]]
+    assert turn_on == []
+
+
+async def test_home_assistant_starting_while_the_box_is_off_does_nothing(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    turn_on, turn_off = await _setup_automation(hass, tmp_path, STATE_UNKNOWN)
+
+    hass.states.async_set(LIGHT_SYNC, STATE_OFF)
+    await hass.async_block_till_done()
+
+    assert turn_on == []
+    assert turn_off == []
+
+
 @pytest.mark.parametrize("to_state", [STATE_UNAVAILABLE, STATE_UNKNOWN])
 async def test_a_drop_of_the_box_does_not_stop_glowcast(
     hass: HomeAssistant, tmp_path: Path, to_state: str

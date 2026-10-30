@@ -61,11 +61,13 @@ triggers:
       - "unavailable"
     to: "on"
     id: sync_on
-  # Only from "on" to "off": a short drop to "unavailable" does not stop
-  # Glowcast.
+  # Only to "off": a short drop to "unavailable" does not stop Glowcast, but
+  # a box that stopped during such a drop (on -> unavailable -> off) does.
   - trigger: state
     entity_id: !input syncing
-    from: "on"
+    from:
+      - "on"
+      - "unavailable"
     to: "off"
     id: sync_off
 
