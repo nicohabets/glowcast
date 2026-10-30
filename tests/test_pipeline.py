@@ -769,7 +769,7 @@ async def test_the_hold_on_black_runs_during_the_wait() -> None:
     assert h.output.rgb_at(-1) == approx_rgb(RED_SENT)
     await h.clock.advance(2)  # the fade to the glow has finished at about 6.6 s
     assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)  # glow, still claimed
-    await h.clock.advance(3.5)  # just under 7 s after the first all-zero frame
+    await h.clock.advance(3.5)  # about 6.2 s after the first all-zero frame
     assert h.log == ["source.start", "output.start"]
     await h.clock.advance(1)  # 7 s after the first all-zero frame (about 4.6 s)
     assert h.log[-2:] == ["output.stop", "output.close"]
