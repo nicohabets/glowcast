@@ -114,6 +114,23 @@ def test_cycle_steps_at_the_interval_and_reports_since() -> None:
     assert source.showing().since == start + 35
 
 
+def test_cycle_starts_with_the_first_pattern_when_the_clock_is_set_back() -> None:
+    # The wall clock can step back (a time sync); before its start the cycle
+    # still shows the first pattern instead of the last ones (#216).
+    clock = FakeClock()
+    start = clock.now
+    source = PatternSource("cycle", clock, interval=0.1)
+    clock.now = start - 0.15
+
+    assert source.showing().name == "red"
+    assert source.showing().since == start
+    assert source.next_change() == start + 0.1
+    assert source.frame() == FRAMES["red"]
+
+    clock.now = start + 0.15
+    assert source.showing().name == "green"
+
+
 def test_unknown_pattern_and_bad_interval() -> None:
     with pytest.raises(ValueError):
         PatternSource("purple", FakeClock())
