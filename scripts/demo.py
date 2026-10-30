@@ -19,7 +19,9 @@ Usage:
     python scripts/demo.py clean
     python scripts/demo.py clean --all [--yes]
     python scripts/demo.py status
-    python scripts/demo.py room [--compare] [--out DIR]
+    python scripts/demo.py room [--compare] [--lights area|loose|combined]
+                                [--place LIGHT=PLACE ...] [--versus LIGHT=PLACE ...]
+                                [--names] [--out DIR]
 
 `e2e` runs the end-to-end check (scripts/demo/e2e.py) on an instance of its
 own: the screen helper's test patterns through Glowcast's real screen source,
@@ -268,6 +270,33 @@ def main() -> None:
         help="the merge base with main and this working copy side by side",
     )
     room.add_argument(
+        "--lights",
+        choices=("area", "loose", "combined"),
+        default="area",
+        help="the room's lights as an entertainment area (default), loose "
+        "lights, or the area with the room's other lights as loose lights",
+    )
+    room.add_argument(
+        "--place",
+        action="append",
+        default=[],
+        metavar="LIGHT=PLACE",
+        help="a loose light's place, for example floor_lamp=left or "
+        "light_bar=0.5,-0.2 (can be repeated)",
+    )
+    room.add_argument(
+        "--versus",
+        action="append",
+        default=[],
+        metavar="LIGHT=PLACE",
+        help="a second room beside the first, with these places instead",
+    )
+    room.add_argument(
+        "--names",
+        action="store_true",
+        help="each loose light's name and place next to it (for reviews)",
+    )
+    room.add_argument(
         "--out", type=Path, default=ROOM_OUT, help=f"where to save them ({ROOM_OUT})"
     )
     args = parser.parse_args()
@@ -490,6 +519,11 @@ def draw_room(args: argparse.Namespace) -> None:
             "--out",
             str(args.out),
             *(["--compare"] if args.compare else []),
+            "--lights",
+            args.lights,
+            *(f"--place={value}" for value in args.place),
+            *(f"--versus={value}" for value in args.versus),
+            *(["--names"] if args.names else []),
         ]
     )
     try:
