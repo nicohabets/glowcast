@@ -510,6 +510,8 @@ async def test_five_failed_captures_in_a_row() -> None:
         (UpdateRate.MAXIMUM, 20.0, 3.0),
         # The TV at High: 5 failures take about 1.3 s, the 3 s decide.
         (UpdateRate.HIGH, 20.0, 3.0),
+        # The TV at Medium: 5 failures take about 2 s, the 3 s decide.
+        (UpdateRate.MEDIUM, 20.0, 3.0),
         # 1 per second: the 5 failures take longer than 3 s and decide.
         (UpdateRate.LOW, 4.0, 4.0),
     ],
