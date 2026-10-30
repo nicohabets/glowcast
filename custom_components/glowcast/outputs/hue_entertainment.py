@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.util import color as color_util
 from hue_entertainment import EntertainmentSession, HueEntertainmentAPI
 from hue_entertainment.models import LightColorCommand
 
@@ -80,6 +81,9 @@ STATUS_INTERVAL = 5.0
 STATUS_TIMEOUT = 4.0
 REACHABLE_TIMEOUT = 10.0
 AREAS_TIMEOUT = 15.0
+# Reading what the lights show before the stream (for the fade-in, #153) may
+# not hold up the start for long; without it the fade-in starts from dark.
+STATES_TIMEOUT = 5.0
 # The bridge allows 20 characters before the # of a devicetype and 19 after.
 DEVICE_NAME_LENGTH = 19
 
@@ -217,6 +221,7 @@ class HueEntertainmentOutput:
             _LOGGER.info("Stopping a stale Glowcast stream on the Hue bridge")
             await self._api.stop_entertainment(other["id"])
 
+        starts = await self._async_start_colors(host, channels)
         self._session = EntertainmentSession(
             host, self._app_key, self._client_key, idle_timeout=0
         )
@@ -238,9 +243,31 @@ class HueEntertainmentOutput:
                 name=f"Channel {c['channel_id']}",
                 x=c.get("position", {}).get("x", 0.0),
                 z=c.get("position", {}).get("z", 0.0),
+                start_rgb=starts.get(c["channel_id"]),
             )
             for c in channels
         ]
+
+    async def _async_start_colors(
+        self, host: str, channels: list[dict[str, Any]]
+    ) -> dict[int, tuple[float, float, float]]:
+        """What each channel's light shows now, read before the stream starts.
+
+        Read-only, from the bridge's light resources. Empty when the bridge
+        does not answer in time or at all: the fade-in then starts from dark.
+        """
+        try:
+            async with asyncio.timeout(STATES_TIMEOUT):
+                renderers = await _async_clip_data(
+                    self._hass, host, self._app_key, ENTERTAINMENT_PATH
+                )
+                lights = await _async_clip_data(
+                    self._hass, host, self._app_key, LIGHTS_PATH
+                )
+        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+            _LOGGER.debug("Could not read the lights' state; they fade in from dark")
+            return {}
+        return _channel_start_colors(channels, renderers, lights)
 
     async def _async_application_id(self, host: str) -> str:
         """Glowcast's own application id: the bridge names it as the streamer."""
@@ -588,6 +615,70 @@ async def _async_clip_data(
     _, result = await _async_clip_get(hass, host, key, path)
     data = result.get("data", []) if isinstance(result, dict) else []
     return [item for item in data if isinstance(item, dict)]
+
+
+def _channel_start_colors(
+    channels: list[dict[str, Any]],
+    renderers: list[dict[str, Any]],
+    lights: list[dict[str, Any]],
+) -> dict[int, tuple[float, float, float]]:
+    """{channel id: what its light shows} for the fade-in (#153).
+
+    A channel streams to the entertainment services of its members; each one
+    belongs to a device with a light. Every segment of a gradient light gets
+    the light's own colour (its main colour, not the gradient's points); a
+    channel of several lights gets their average. Channels whose light is not
+    found are left out.
+    """
+    device_of = {
+        item.get("id"): (item.get("owner") or {}).get("rid") for item in renderers
+    }
+    light_of = {(light.get("owner") or {}).get("rid"): light for light in lights}
+    starts: dict[int, tuple[float, float, float]] = {}
+    for channel in channels:
+        colors = [
+            rgb
+            for member in channel.get("members") or []
+            if isinstance(member, dict)
+            and (light := light_of.get(device_of.get(_service(member)))) is not None
+            and (rgb := _light_rgb(light)) is not None
+        ]
+        if colors:
+            r, g, b = (
+                sum(values) / len(colors) for values in zip(*colors, strict=True)
+            )
+            starts[channel["channel_id"]] = (r, g, b)
+    return starts
+
+
+def _service(member: dict[str, Any]) -> str | None:
+    return (member.get("service") or {}).get("rid")
+
+
+def _light_rgb(light: dict[str, Any]) -> tuple[float, float, float] | None:
+    """A light resource's state as a colour in 0-1 as streamed, its brightness
+    included: off is black, on without a colour is white. The bridge's own
+    conversion of a streamed colour may differ a little."""
+    on = (light.get("on") or {}).get("on")
+    if on is None:
+        return None
+    if not on:
+        return 0.0, 0.0, 0.0
+    temperature = light.get("color_temperature") or {}
+    xy = (light.get("color") or {}).get("xy") or {}
+    rgb: tuple[float, ...] = (255.0, 255.0, 255.0)
+    if temperature.get("mirek_valid") and temperature.get("mirek"):
+        rgb = color_util.color_temperature_to_rgb(
+            color_util.color_temperature_mired_to_kelvin(temperature["mirek"])
+        )
+    elif "x" in xy and "y" in xy:
+        rgb = color_util.color_xy_to_RGB(xy["x"], xy["y"])
+    peak = max(rgb)
+    level = float((light.get("dimming") or {}).get("brightness", 100.0)) / 100
+    if peak <= 0:
+        return 0.0, 0.0, 0.0
+    r, g, b = (min(1.0, max(0.0, value / peak * level)) for value in rgb)
+    return r, g, b
 
 
 def _device_type(name: str) -> str:
