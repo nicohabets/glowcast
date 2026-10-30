@@ -1443,6 +1443,84 @@ class Bench:
                 "helper stopped: tv_off, area stops, lights back (camera)",
                 "helper",
             )
+        await self.test_lights_step(mode)
+
+    async def test_lights_step(self, mode: str) -> None:
+        """The Test lights button while Glowcast is off and the helper is
+        stopped (#182): the area streams without a picture source, each light
+        the colour of its side (left red, right blue), then green or white;
+        then the area is released and the lights come back (camera), and the
+        switch stays off."""
+        assert self.ha is not None and self.bridge is not None
+        title = "test lights (off, no picture source): each light its side, back"
+        if "test_lights" not in self.ha.entities:
+            self.report.add(
+                Step(title, mode, SKIP, note="this Glowcast has no Test lights")
+            )
+            return
+        start = time.time()
+        await self.ha.call(
+            "button", "press", {"entity_id": self.ha.entities["test_lights"]}
+        )
+        area = self.cfg["bench_area_id"]
+        active = await self.bridge.wait_status(area, "active", self.th.stream_within_s)
+        if active is None:
+            self.report.add(Step(title, mode, FAIL, note="the area did not stream"))
+            return
+        # Each pattern shows for 3 s (core/light_test.py STEP) from the claim.
+        await self.sleep_until_win(self.win(active) + 6.2)
+        samples = self.samples()
+        ok = True
+        numbers: dict[str, Any] = {"area active after s": round(active - start, 2)}
+        for name in self.lights:
+            first = rp.settled(
+                samples, name, self.win(active) + 1.0, self.win(active) + 2.7
+            )
+            second = rp.settled(
+                samples, name, self.win(active) + 4.0, self.win(active) + 5.7
+            )
+            seen = [
+                None if mean is None else rp.classify(mean, self.cal[name], self.th)
+                for mean in (first, second)
+            ]
+            side = None if self.sides is None else self.sides[name]
+            if side is not None:
+                ok &= seen[0] == ("red" if side == "left" else "blue")
+            else:
+                ok &= seen[0] in ("red", "blue")
+            ok &= seen[1] in ("green", "white")
+            numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
+                str(s) for s in seen
+            )
+        inactive = await self.bridge.wait_status(area, "inactive", 15)
+        released = 0.0 if inactive is None else inactive - start
+        back = await self.wait_restored(
+            self.win(start), released + self.th.restore_within_s
+        )
+        switch = (await self.ha.state("switch"))["state"]
+        numbers["switch"] = switch
+        if inactive is not None:
+            numbers["area inactive after s"] = round(inactive - start, 2)
+        for light, seconds in back.items():
+            numbers[f"{self.label[light]} back after s"] = seconds
+        problems = []
+        if not ok:
+            problems.append("a light showed another colour")
+        if inactive is None:
+            problems.append("area kept streaming")
+        if any(v is None for v in back.values()):
+            problems.append("a light did not come back (camera)")
+        if switch != "off":
+            problems.append("the switch changed")
+        self.report.add(
+            Step(
+                title,
+                mode,
+                FAIL if problems else PASS,
+                numbers=numbers,
+                note="; ".join(problems),
+            )
+        )
 
     async def wait_for_red(self, interval: float) -> None:
         """Until the cycle starts red: three colours before its black (all zero)."""
