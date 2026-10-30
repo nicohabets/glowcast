@@ -144,21 +144,25 @@ What every output must allow (#66):
 
 ### 3.3 ColorEngine (`core/color_engine.py`)
 
-Pure and synchronous. `compute(frame, channels, intensity) -> list[ChannelColor]`
+Pure and synchronous. `compute(frame, channels, intensity, picture=None) -> list[ChannelColor]`
 
-For each channel:
-1. **Region:** map `x` to a horizontal band and `z` to a vertical band of the frame, linearly from -1..1 to the frame edges (band size: a constant, start with 30 %).
-2. **Average** the pixels in the region, skipping near-black pixels (letterbox bars).
+The regions of all channels are made in one step (`channel_regions()`), so a mapping that depends on the other channels has them. For each channel:
+1. **Region:** map `x` to a horizontal band and `z` to a vertical band of the picture, linearly from -1..1 to the picture's edges (band size: 30 % of the picture's width and height, a constant). The picture is the whole frame, or the part inside letterbox bars (`picture`, below).
+2. **Average** the pixels in the region, skipping near-black pixels (what is left of letterbox bars, and dark noise).
 3. **Black picture:** if almost the whole region is black, return black; the pipeline turns that into the minimal glow (3.5).
 4. **Intensity:** scale saturation (0 = nearly white, 1 = as on screen, up to 2 = boosted).
 
 **Known limitation (decision D12):** a TV gradient strip's channels sit close to the centre (test area: x and z between -0.4 and 0.4), so with the linear mapping they sample about 30 % in from the edges, not the edges themselves. v0.1 accepts this; stretching channels near the TV to the full screen width is issue #23.
 
+**Letterbox bars (#34, `core/letterbox.py`):** films often have black bars above and below the picture (letterbox) or beside it (pillarbox), and their width changes between films and sometimes between scenes. Without help, the regions of the top and bottom lights cover a bar plus a thin strip of picture; when that strip is dim, the light turns grey or shows the glow. So the pipeline keeps a `Letterbox` (pure, with the time as an argument; one per pipeline, so it is kept across a release for no picture) and passes the picture inside the bars to `compute()`, in the same executor job (the capture loop awaits it, so the memory sees one frame at a time):
+- **Measuring one frame** (`measure()`, on the 64x36 frame): from each edge inwards, a column is bar when at most 5 % of its pixels are lit (above the black level), over the whole height; then a row is bar when at most 5 % of the outer 15 % of the picture's width at each side is lit, whatever the middle shows, so subtitles in the middle of the bottom bar do not count as picture. Each side is measured on its own. A black run longer than 25 % of the frame on a side is a dark scene, not a bar: that side is left as it is.
+- **Over frames:** a side takes a new width only after it has been measured for 2 s (`STABLE`); widths 1 pixel apart count as the same (a bar edge halfway through a row), and the narrowest seen is taken, so no row of the picture is cut off. An (almost) black frame (`is_black()`) changes nothing, so a fade to black keeps the bars. Starting with no bars, the first 2 s of a letterboxed film use the whole frame. Constants, not options.
+
 `is_black(frame)` applies the same black level and 5 % share to the whole frame; the pipeline uses it for the hold on sudden black and to decide when the picture is back after no picture (3.5).
 
 `is_all_zero(frame)` is true when every pixel is 0: no picture at all, as a protected app in the TV's own apps delivers (see "Verified facts"). The pixels are the only signal, so any source can deliver such frames and the pipeline needs no knowledge of the TV (#68).
 
-**Performance:** 16 channels on a 64x36 frame in under 20 ms on a GitHub Actions runner (asserted in a test). Target hardware is a Raspberry Pi 4 class CPU.
+**Performance:** 16 channels on a 64x36 frame in under 20 ms on a GitHub Actions runner (asserted in a test); measuring the bars of a frame in under 5 ms (asserted too). On the bench laptop `compute()` takes about 0.2 ms for 16 channels. Target hardware is a Raspberry Pi 4 class CPU.
 
 ### 3.4 Adapters (v0.1)
 
@@ -232,7 +236,7 @@ no picture: frames all zero for 7 s → output.stop() → output.close(); captur
 stop:     cancel both sub-tasks → output.stop() → output.close() → source.close()   (on every exit path)
 ```
 
-**The pipeline only supervises** (start order, startup grace, the two loops, the `OutputLost` retry, stop handling and cleanup). What the lights show between frames is kept by **`LightState`** (`core/light_state.py`): pure and synchronous, with the time as an argument, so it is tested without the pipeline. It fades from the current colours to each new target over the measured capture interval (in engine colour space), holds the last colours on sudden black, and applies brightness and the minimal glow when the send loop asks for the colours. When the lights have just been claimed it fades the first colours in from what each light showed before (below). After a retry the pipeline tells it which channels still exist; the gap is not used as a capture interval. Rule for later: memory about colours or the picture (for example letterbox bars, #34) lives in small helpers like this next to the colour engine, not in the supervisor.
+**The pipeline only supervises** (start order, startup grace, the two loops, the `OutputLost` retry, stop handling and cleanup). What the lights show between frames is kept by **`LightState`** (`core/light_state.py`): pure and synchronous, with the time as an argument, so it is tested without the pipeline. It fades from the current colours to each new target over the measured capture interval (in engine colour space), holds the last colours on sudden black, and applies brightness and the minimal glow when the send loop asks for the colours. When the lights have just been claimed it fades the first colours in from what each light showed before (below). After a retry the pipeline tells it which channels still exist; the gap is not used as a capture interval. Rule: memory about colours or the picture lives in small helpers like this next to the colour engine, not in the supervisor; the letterbox bars (#34, `core/letterbox.py`, 3.3) are the second.
 
 - **Brightness:** `c = c_engine * brightness` per channel, in 0-1 RGB.
 - **Minimal glow:** then `out = c + max(0, 1 - m / g) × g × warm` per channel, with `m` the brightest component of `c`, `g = min(0.10, brightness)` and `warm = (1.0, 0.78, 0.50)`. On black this is the whole glow, `g × warm`: a dim warm white of about 2700K on the lights at 10 %. The glow is for dark channels: it gets smaller as the channel gets brighter and is gone once the brightest component reaches `g`, so bright, saturated colours stay pure, and the colour changes continuously during a fade (#43). While the glow is added, no component goes above `g`, so the result is never brighter than the brightness setting. Constants, not options. Examples: a black picture at 80 % gives (0.10, 0.078, 0.050); brightness 40 % and a red picture give (0.40, 0, 0); brightness 20 % and a blue picture give (0, 0, 0.20); brightness 50 % and an engine colour (0.10, 0, 0), so `c` = (0.05, 0, 0), give (0.10, 0.039, 0.025); brightness 3 % and black give (0.03, 0.0234, 0.015). Until #43 the glow was a floor per RGB component, `max(c, g × warm)`, which mixed warm white into every colour (a blue at 20 % became lilac). The level and the colour were chosen on real hardware (#38): the warm ratio gives less light than a neutral glow at the same level, so the level is 10 % instead of the earlier 5 %; and the bridge renders sRGB 2700K (about 1.00 : 0.65 : 0.35) too red, especially in a dark room, so the ratio is two steps cooler in sRGB.
@@ -474,7 +478,7 @@ custom_components/glowcast/
   translations/en.json  translations/nl.json  icons.json
   brand/                   # icon and logo PNGs (HA 2026.3+), made from docs/brand/
   core/                    # NO homeassistant imports
-    models.py  ports.py  color_engine.py  light_state.py  pipeline.py
+    models.py  ports.py  color_engine.py  letterbox.py  light_state.py  pipeline.py
   sources/webos.py  sources/webos_flow.py        # the webOS source and its setup step
   sources/screen.py  sources/screen_flow.py      # the screen source, its discovery, setup and reauth steps
   outputs/hue_entertainment.py                  # the Hue output, its issues and removal notice
@@ -489,6 +493,7 @@ tests/
   fakes.py                 # fake clock, source, output and pipeline, shared by the tests (no HA imports)
   conftest.py              # the fixtures that put the fakes into HA
   test_color_engine.py
+  test_letterbox.py        # the bars of a frame and over frames, with the time as an argument
   test_light_state.py      # fading, hold on black, brightness and glow, with the time as an argument
   test_pipeline.py         # the pipeline with the fakes and a fake clock
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
@@ -523,6 +528,7 @@ Translations live in `translations/en.json` and `translations/nl.json` (custom i
 ## 7. Testing
 
 - **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget.
+- **Letterbox:** synthetic frames with bars, subtitles, dark scenes and black frames, with the time as an argument (#34).
 - **Light state:** plain unit tests with the time as an argument: the first target shown at once, the linear fade over the measured interval, the hold on sudden black, brightness and the glow formula, and the channels kept after a retry.
 - **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula (end to end), every stop reason, and that `stop()` and `close()` run on every exit path.
 - **Config flow:** every setup, options and reauth path, including the error cases (built with #6).

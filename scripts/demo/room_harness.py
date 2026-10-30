@@ -177,10 +177,13 @@ def _red(x: float, y: float) -> RGB:
 
 
 def _letterbox(x: float, y: float) -> RGB:
-    """A 2.39:1 film in a 16:9 picture: black bars above and below."""
+    """A 2.39:1 film in a 16:9 picture at dusk: black bars above and below,
+    and a dim band of sky right under the top bar, as in the film of #5."""
     bar = (1 - (16 / 9) / 2.39) / 2
     if y < bar or y > 1 - bar:
         return 0, 0, 0
+    if y < bar + 0.1:
+        return 44, 46, 58  # dusk, just above the colour engine's black level
     if y < 0.55:
         return _across([(64, 170, 210), (120, 200, 230)], x)  # sky
     return _across([(70, 140, 60), (150, 175, 70)], x)  # field
@@ -245,7 +248,8 @@ def scenarios(
         # Holds the last colours for BLACK_HOLD, then fades to the glow.
         Scenario("2 Sudden dark picture", black_hold + 2.0, _still(_night)),
         Scenario("3 Saturated red", 2.0, _still(_red)),
-        Scenario("4 Letterbox", 2.0, _still(_letterbox)),
+        # Long enough for the bars to be taken (letterbox.STABLE, 2 s).
+        Scenario("4 Letterbox", 4.0, _still(_letterbox)),
         Scenario(
             "5 Fade between scenes", 3.0, _crossfade(_ocean, _meadow, 0.5, 2.0), 0.6
         ),
