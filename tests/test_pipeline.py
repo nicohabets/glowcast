@@ -1106,6 +1106,37 @@ async def test_a_dark_scene_is_not_no_picture() -> None:
     assert await h.stop() == StopReason.USER
 
 
+async def test_after_a_claim_back_the_colours_and_the_glow_are_as_before() -> None:
+    """Nothing of the fade-in stays after it: the same picture gives the same
+    colours, and black the same glow, after a claim back (bench check on
+    #188)."""
+    h = Harness(brightness=80)
+    own_state(h)
+
+    async def red_then_glow() -> tuple[Any, Any]:
+        h.source.default = solid(RED)
+        await h.clock.advance(FADE_IN + 1)
+        red = h.output.rgb_at(-1)
+        h.source.default = solid(DARK)
+        await h.clock.advance(BLACK_HOLD + 1.5)
+        return red, h.output.rgb_at(-1)
+
+    await h.start()
+    first = await red_then_glow()
+    h.source.default = solid(NO_PICTURE)
+    await h.clock.advance(NO_PICTURE_WAIT + 1)
+    assert h.log[-2:] == ["output.stop", "output.close"]
+    for _ in range(2):  # a claim back, and one more
+        again = await red_then_glow()
+        glow = tuple(GLOW * c for c in GLOW_COLOR)
+        assert first == (approx_rgb((0.8, 0.0, 0.0)), approx_rgb(glow))
+        assert again == (approx_rgb(first[0]), approx_rgb(first[1]))
+        h.source.default = solid(NO_PICTURE)
+        await h.clock.advance(NO_PICTURE_WAIT + 1)
+    assert h.log.count("output.start") == 3
+    assert await h.stop() == StopReason.USER
+
+
 async def test_the_picture_returns_and_the_lights_are_claimed_again() -> None:
     h = Harness()
     own_state(h)

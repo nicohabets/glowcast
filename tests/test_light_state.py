@@ -222,6 +222,19 @@ def test_the_first_colours_fade_in_from_the_lights_own_state() -> None:
     assert rgb_at(lights, 5.0 + 3 * FADE_IN) == approx_rgb(BLUE)
 
 
+@pytest.mark.parametrize("brightness", [1.0, 0.80, 0.20])
+def test_the_starting_colour_is_sent_as_it_is_whatever_the_brightness(
+    brightness: float,
+) -> None:
+    """The light's own state is already as sent: brightness and the glow apply
+    to the picture's colours only, never to the starting colour (bench check
+    on #188)."""
+    full_white = (1.0, 0.87, 0.77)  # a cool white at full brightness
+    lights = claimed({"1": full_white})
+    lights.set_target(target(RED), False, 0.0)
+    assert rgb_at(lights, 0.0, brightness) == approx_rgb(full_white)
+
+
 def test_a_channel_without_a_starting_colour_fades_in_from_dark() -> None:
     lights = claimed({"1": WARM_WHITE, "2": None})
     lights.set_target(target(RED, "1", "2"), False, 0.0)
