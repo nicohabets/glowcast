@@ -38,7 +38,8 @@ REPO_PREFIXES = (
 )
 # Links that are not pages to fetch.
 SKIP_PREFIXES = ("mailto:",)
-MARKDOWN_LINK = re.compile(r"\]\((https?://[^)\s]+)\)")
+# A URL may contain balanced parentheses (Wikipedia links do).
+MARKDOWN_LINK = re.compile(r"\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)")
 HTML_LINK = re.compile(r"""(?:href|src|srcset)="(https?://[^"\s]+)\"""")
 
 

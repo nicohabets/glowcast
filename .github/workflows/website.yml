@@ -54,8 +54,12 @@ jobs:
       # --strict: a broken link, a missing image or a missing anchor fails.
       - run: mkdocs build --strict -f website/mkdocs.yml
       # The README's and the site's links to the site, to this repository's
-      # files and to other sites.
+      # files and to other sites. On main, other sites are not fetched: one
+      # that is down must not hold back the publish (pull requests check them).
       - run: python3 scripts/check_links.py README.md screen_helper/README.md
+        if: github.event_name == 'pull_request'
+      - run: python3 scripts/check_links.py --offline README.md screen_helper/README.md
+        if: github.event_name != 'pull_request'
       - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v5
         with:
