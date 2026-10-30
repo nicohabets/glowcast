@@ -161,10 +161,10 @@ class GlowcastData:
         if self._pipeline is not None:
             return
         self._resume_wanted = False
-        if self._check_measures:
-            await self._async_end_check()
         self._ending_test = True
         try:
+            if self._check_measures:
+                await self._async_end_check()
             await self._async_end_test()
         finally:
             self._ending_test = False
@@ -363,7 +363,8 @@ class GlowcastData:
         if self._check is not None and not self._check.done():
             _LOGGER.debug("Glowcast %s is running the hardware check already", title)
             return
-        syncing = self._pipeline is not None
+        # A start that waits for a test or check to end counts as syncing.
+        syncing = self._pipeline is not None or self._ending_test
         self._check_measures = not syncing
         _LOGGER.info("Glowcast %s runs the hardware check", title)
         self._check = self._entry.async_create_background_task(

@@ -181,6 +181,29 @@ async def test_a_switch_on_ends_a_check_that_captures(
     assert notification_id(entry.entry_id) not in notices(hass)
 
 
+async def test_a_press_while_switching_on_does_not_capture(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,
+    output_probe: FakeProbe,
+) -> None:
+    """A check pressed while a switch-on waits for the last one to end does
+    not capture next to the pipeline that is about to start (review of #115)."""
+    entry = await setup(hass)
+    source_probe.release = asyncio.Event()
+    await press(hass)
+    assert source_probe.calls[-1]["measure"] is True
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the check to end
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: len(source_probe.calls) == 2)
+    assert source_probe.calls[-1]["measure"] is False
+    source_probe.release.set()
+    await start
+    await settle(hass)
+    assert state(hass) == STATE_ON
+
+
 async def test_a_failing_probe_is_recorded_and_the_check_finishes(
     hass: HomeAssistant,
     fakes: FakeAdapters,
