@@ -128,7 +128,7 @@ def test_a_wrong_in_area_light_is_a_config_error(
 
 
 def test_the_old_key_name_still_works() -> None:
-    """`loose_lights:`, the name until v0.4 (#228): an older config.local.yaml
+    """`loose_lights:`, the name up to v0.3 (#228): an older config.local.yaml
     keeps working."""
     old = bench_lights.parse({"lights": CAMERA, "loose_lights": HA_LIGHTS})
     assert old == bench_lights.parse({"lights": CAMERA, "ha_lights": HA_LIGHTS})
