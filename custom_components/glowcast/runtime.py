@@ -241,7 +241,9 @@ class GlowcastData:
 
     async def _async_source_on(self) -> bool:
         """Whether the picture source can be reached, is on and gives a
-        picture (a locked screen answers, but without one), by connecting."""
+        picture (a locked screen answers, but without one), by connecting.
+
+        A source that refuses its picture counts as on (#253)."""
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         if source_type.is_missing(self._hass, data, options):
@@ -254,7 +256,12 @@ class GlowcastData:
                     return False
                 await source.capture()
             return True
-        except (TimeoutError, SourceUnavailable, SourceAuthFailed, SourceNotSupported):
+        except SourceNotSupported:
+            # On, but refusing its picture: the normal start ends on the
+            # refusal after the startup grace, with the source type's repair
+            # issue, instead of looking again for minutes (#253).
+            return True
+        except (TimeoutError, SourceUnavailable, SourceAuthFailed):
             return False
         except Exception:
             # Not on, as far as the restart goes; the next look tries again.

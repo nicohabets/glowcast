@@ -804,6 +804,7 @@ def bridge(add_bridge: AddBridge, aioclient_mock: AiohttpClientMocker) -> None:
     """The hue entry; aioclient_mock first, so HA's session is the mocked one."""
     add_bridge()
 
+
 PROBE_DATA = {
     "bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY, "client_key": CLIENT_KEY}
 }

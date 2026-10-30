@@ -16,7 +16,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.glowcast import probes
-from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.hardware_check import notification_id
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
