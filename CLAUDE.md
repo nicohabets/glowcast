@@ -103,7 +103,7 @@ Several sessions may work at the same time, each on its own issue.
     - **The Definition of Done of such stories is split.** "Checked on the test bench (report attached)" is yours; "checked on the TV" stays with the product owner, only for what is specific to webOS.
 
 ### Dependency updates
-Dependabot (`.github/dependabot.yml`) opens weekly pull requests for the GitHub Actions, the screen helper and the website's build packages, grouped per ecosystem and labelled `dependencies`. They are the exception to rules 1-4: they need no issue and no milestone, and the `milestone` check passes them because they close none. The PO assistant reviews them (changelog, CI) and merges them on the product owner's word. A major update that breaks something becomes a Backlog task under #178. The Home Assistant-bound pins (`manifest.json` and the test pins in `ci.yml`) stay manual; see the comment at the top of `dependabot.yml`.
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests for the GitHub Actions, the screen helper and the website's build packages, grouped per ecosystem (a screen helper major comes on its own) and labelled `dependencies`; security updates come as separate pull requests. They are the exception to rules 1-5: they need no issue and no milestone, the `milestone` check passes them because they close none, and the PO assistant reviews them (changelog, CI) and merges them on the product owner's word. A major update that breaks something becomes a Backlog task under #178. The Home Assistant-bound pins (`manifest.json` and the test pins in `ci.yml`) stay manual; see the comment at the top of `dependabot.yml`.
 
 ### Writing new issues
 New issues follow the same format as the existing ones:
