@@ -13,6 +13,8 @@ These scripts are tools for developing Glowcast; they are not part of the integr
 - `demo.py`: a local Home Assistant with Glowcast from the working copy, to record GIFs of its flows and check the UI, and `demo.py room`, the illustrated room that shows what Glowcast sends to the lights; see below.
 - `bench/run.py`: the test bench, Glowcast from the working copy against a real Hue light and a webcam; see the end of this page.
 
+Dependency updates for the GitHub Actions, the screen helper (`screen_helper/uv.lock`) and the website (`website/requirements.txt`) come from Dependabot as weekly pull requests (`.github/dependabot.yml`); the test pins in `ci.yml`, which follow Home Assistant, and the demo's Home Assistant version are bumped by hand.
+
 See the docstring at the top of each script for usage. Credentials come from environment variables; never put them in files in the repository.
 
 ## The local demo

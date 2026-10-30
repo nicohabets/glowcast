@@ -1,0 +1,54 @@
+# Dependabot version updates (#191): GitHub Actions, the screen helper and the
+# website, weekly. Its pull requests close no issue and need no milestone; see
+# CLAUDE.md, "How we work", "Dependency updates".
+#
+# Left alone on purpose, because Dependabot does not read them:
+# - the integration's requirement in custom_components/glowcast/manifest.json
+#   (hue-entertainment==0.1.2 waits for a fixed release, #32);
+# - the inline `pip install` pins in .github/workflows/ci.yml
+#   (pytest-homeassistant-custom-component and aiowebostv follow Home
+#   Assistant: the minimum version and the latest tested one, architecture
+#   section 2 and D17; ruff is bumped by hand);
+# - the branch refs home-assistant/actions/hassfest@master and
+#   hacs/action@main, which always run the latest.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, quality]
+    commit-message:
+      prefix: deps
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # The screen helper (pyproject.toml with uv.lock). Majors come one per pull
+  # request, so a breaking one does not hold back the others.
+  - package-ecosystem: uv
+    directory: /screen_helper
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, source]
+    commit-message:
+      prefix: deps
+    groups:
+      screen-helper:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The website build: a build tool, not shipped, so everything in one group.
+  - package-ecosystem: pip
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, quality]
+    commit-message:
+      prefix: deps
+    groups:
+      website:
+        patterns: ["*"]
