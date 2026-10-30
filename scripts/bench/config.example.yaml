@@ -5,7 +5,8 @@
 
 # The Hue bridge, with the bench's OWN key (pair it once with the bridge's
 # button; not the key of the Glowcast that runs the TV). A JSON file with
-# {"host", "app_key", "client_key"}, mode 600.
+# {"host", "app_key", "client_key"}, mode 600, written by
+# `python3 scripts/bench/run.py pair-bridge --host <the bridge's address>`.
 bridge_keys: ~/.config/glowcast-bench/bridge.json
 # The bench's entertainment area (its own, on the same bridge).
 bench_area_id: 00000000-0000-0000-0000-000000000000

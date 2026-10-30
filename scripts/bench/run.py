@@ -12,6 +12,7 @@ Usage (from the repository root, in WSL on the bench's Windows computer):
                                  [--dry-run] [--keep-images] [--wait SECONDS]
                                  [--config FILE]
     python3 scripts/bench/run.py snapshot [--config FILE]
+    python3 scripts/bench/run.py pair-bridge --host ADDRESS [--force] [--config FILE]
 
 Exit codes: 0 passed, 1 a step failed, 2 usage or configuration error,
 3 skipped: the bridge streams another area, 4 skipped: another bench run
@@ -122,7 +123,10 @@ def ensure_environment() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "command", nargs="?", default="run", choices=["run", "snapshot"]
+        "command",
+        nargs="?",
+        default="run",
+        choices=["run", "snapshot", "pair-bridge"],
     )
     parser.add_argument("--suite", choices=["basic", "extended"], default="basic")
     parser.add_argument("--mode", choices=["pattern", "screen", "both"], default="both")
@@ -136,7 +140,14 @@ def main() -> None:
         "--wait", type=float, default=0, help="wait this long for another run's lock"
     )
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--host", help="pair-bridge: the bridge's address")
+    parser.add_argument(
+        "--force", action="store_true", help="pair-bridge: replace an existing key file"
+    )
     args = parser.parse_args()
+    if args.command == "pair-bridge":
+        ensure_environment()
+        sys.exit(pair_bridge(args))
     modes = ["pattern", "screen"] if args.mode == "both" else [args.mode]
     if args.dry_run:
         print(f"Dry run: suite {args.suite}, modes {', '.join(modes)}.")
@@ -225,6 +236,48 @@ def _box(value: Any) -> bool:
     )
 
 
+def pair_bridge(args: argparse.Namespace) -> int:
+    """Pair the bench's own Hue key (link button) and write the key file.
+
+    Writes {"host", "app_key", "client_key"} with mode 600 to the config's
+    `bridge_keys` file; prints nothing secret. Never replaces an existing
+    file without --force.
+    """
+    try:
+        cfg, _path = load_config(args.config)
+        target = Path(cfg["bridge_keys"]).expanduser()
+    except (SystemExit, KeyError, TypeError) as err:
+        print(f"Configuration error: {err}", file=sys.stderr)
+        return rp.EXIT_USAGE
+    if not args.host:
+        print("Configuration error: --host is needed", file=sys.stderr)
+        return rp.EXIT_USAGE
+    if target.exists() and not args.force:
+        print(
+            f"{target} exists; --force replaces it (the old key stays on the bridge "
+            "until you remove it in the Hue app).",
+            file=sys.stderr,
+        )
+        return rp.EXIT_USAGE
+    sys.path.insert(0, str(HERE.parent.parent))
+    from custom_components.glowcast.outputs.hue_entertainment import async_pair
+
+    print("Press the link button on the bridge now (30 s)...", flush=True)
+    try:
+        app_key, client_key = asyncio.run(async_pair(args.host, "Glowcast bench"))
+    except Exception as err:  # noqa: BLE001
+        print("Pairing failed: " + rp.describe_error(err), file=sys.stderr)
+        return rp.EXIT_ERROR
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = json.dumps({"host": args.host, "app_key": app_key, "client_key": client_key})
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as file:
+        file.write(data)
+    os.chmod(target, 0o600)
+    print(f"Paired; the bench's key is in {target} (mode 600).")
+    return 0
+
+
 def take_lock(lock: Any, wait: float) -> bool:
     deadline = time.monotonic() + wait
     while True:
@@ -308,6 +361,7 @@ async def run(
         suite=suite_name, modes=modes, started=f"{started:%Y-%m-%d %H:%M} UTC"
     )
     bench = suite.Bench(cfg, suite_name, report, images, keys)
+    bench.tokens.append(token)
     ha_cfg = cfg["home_assistant"]
     loop = asyncio.get_running_loop()
     aborted = False
@@ -431,7 +485,10 @@ async def cleanup(bench: Any, cfg: dict[str, Any], local_ha: Any) -> None:
                 "switch", "turn_off", {"entity_id": bench.ha.entities["switch"]}
             )
         except Exception as err:  # noqa: BLE001
-            print(f"Switching the bench Glowcast off failed: {err!r}", file=sys.stderr)
+            print(
+                "Switching the bench Glowcast off failed: " + rp.describe_error(err),
+                file=sys.stderr,
+            )
     if bench.ha_start is not None:
         inactive = await _area_inactive(bench, cfg)
         if not inactive:
@@ -489,7 +546,10 @@ async def _restore(bench: Any) -> None:
         start = bench.win_now()
         await bench.restore_lights()
     except Exception as err:  # noqa: BLE001
-        print(f"Setting the lights back failed: {err!r}", file=sys.stderr)
+        print(
+            "Setting the lights back failed: " + rp.describe_error(err),
+            file=sys.stderr,
+        )
         report.add(rp.Step(name, "-", rp.FAIL, note="setting the lights back failed"))
         return
     if not bench.calibrated:
@@ -536,7 +596,10 @@ async def _tv_back_on(bench: Any, cfg: dict[str, Any]) -> None:
                 break
             await asyncio.sleep(0.5)
     except Exception as err:  # noqa: BLE001
-        print(f"Switching the TV's Glowcast back on failed: {err!r}", file=sys.stderr)
+        print(
+            "Switching the TV's Glowcast back on failed: " + rp.describe_error(err),
+            file=sys.stderr,
+        )
     ok = state == "on"
     bench.report.facts["TV stream interrupted for s"] = round(
         time.time() - bench.tv_off_at, 1

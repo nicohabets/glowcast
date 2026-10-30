@@ -123,6 +123,8 @@ class Bench:
         self.ha_start: asyncio.Future[Any] | None = None
         # Screen-mode changes timed by the window instead of the camera.
         self.window_timed = 0
+        # Both Home Assistant tokens (the product owner's and the local one).
+        self.tokens: list[str] = []
         # Picture changes on the Windows clock: [mode, picture, time].
         self.changes: list[list[Any]] = []
 
@@ -162,6 +164,7 @@ class Bench:
             *self.light_rids,
             str(Path.home()),
             getpass.getuser(),
+            *self.tokens,
         ]
         if self.helper is not None:
             values += [self.helper.token or "", self.helper.helper_id or ""]
@@ -556,6 +559,7 @@ class Bench:
         except SystemExit as err:
             print(f"The local Home Assistant did not start: {err}", file=sys.stderr)
             raise BenchError("the local Home Assistant did not start") from None
+        self.tokens.append(token)
         self.ha = clients.LocalHA(self.session, inst.url, token)
         for _ in range(60):
             found = await self.ha.find_entities(local_ha.ENTRY_ID)

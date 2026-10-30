@@ -227,3 +227,22 @@ def test_purity_against_the_cool_reference() -> None:
         for b, w, d in zip(WALL_SEEN["blue"], WALL.white, WALL.dark, strict=True)
     )
     assert rp.impurity(lilac, WALL, "blue") > TH.max_impurity
+
+
+def test_an_http_error_is_printed_without_its_headers() -> None:
+    """repr() of an HTTP error carries the request's headers, and the token."""
+    from aiohttp import ClientResponseError, RequestInfo
+    from multidict import CIMultiDict, CIMultiDictProxy
+    from yarl import URL
+
+    token = "secret-long-lived-token"
+    url = URL("http://192.0.2.10:8123/api/services/light/turn_on")
+    headers = CIMultiDictProxy(CIMultiDict({"Authorization": f"Bearer {token}"}))
+    err = ClientResponseError(
+        RequestInfo(url, "POST", headers, url), (), status=401, message="Unauthorized"
+    )
+    assert token in repr(err)  # why describe_error exists
+    text = rp.describe_error(err)
+    assert token not in text
+    assert text == "ClientResponseError (status 401)"
+    assert rp.describe_error(ValueError("x")) == "ValueError"

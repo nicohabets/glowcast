@@ -403,6 +403,17 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
+def describe_error(err: BaseException) -> str:
+    """An error for the terminal: its type and HTTP status only.
+
+    Never its repr: an HTTP error's repr carries the request's headers, and
+    with them a token or a Hue key.
+    """
+    status = getattr(err, "status", None)
+    name = type(err).__name__
+    return f"{name} (status {status})" if isinstance(status, int) else name
+
+
 def scrub(text: str, forbidden: Iterable[str]) -> str:
     """Replace any configured name, id, address or key that slipped into the text."""
     for value in sorted(
