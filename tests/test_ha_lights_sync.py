@@ -254,7 +254,9 @@ async def syncing(hass: HomeAssistant, lamp: er.RegistryEntry) -> None:
         lambda: (
             tuple(hass.states.get(lamp.entity_id).attributes["hs_color"])
             == (0.0, 100.0)
-        )
+        ),
+        # Past the fade-in from the light's own state (#153), about 2 s.
+        limit=5.0,
     )
     assert not own_state(hass, lamp.entity_id)
 
