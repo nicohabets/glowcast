@@ -6,6 +6,8 @@ on. A restart is the restore cache of HA's test framework; the stop is what
 HA really does (cancel the background tasks while stopping).
 """
 
+import asyncio
+
 import pytest
 from homeassistant.const import (
     EVENT_STATE_CHANGED,
@@ -28,6 +30,7 @@ from custom_components.glowcast.core.ports import (
 )
 
 from .fakes import FakeAdapters, FakePipeline, wait_for
+from .test_hardware_check import FakeProbe, output_probe, source_probe  # noqa: F401
 from .test_init import (  # noqa: F401
     ENTITY,
     issues,
@@ -293,3 +296,97 @@ async def test_a_refusing_tv_is_started_and_stops_with_its_repair_issue(
     assert status is not None
     assert status.stop_reason is StopReason.SOURCE_NOT_PERMITTED
     assert stored_resume(hass) is False  # a stop by itself is not resumed
+
+
+# Captures at once (#269)
+
+
+async def test_a_switch_on_ends_a_look_first(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A look in progress is closed before the pipeline connects, and no
+    look follows."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    await switch(hass, SERVICE_TURN_ON)
+    assert fakes.log == [
+        "source.start",
+        "source.close",
+        "source.start",
+        "output.start",
+    ]
+    fakes.source_gate.set()
+    await settle(hass)
+    assert fakes.log.count("source.start") == 2
+    assert len(FakePipeline.instances) == 1
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_switch_off_ends_a_look(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])
+    await switch(hass, SERVICE_TURN_OFF)
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    await settle(hass)
+    assert FakePipeline.instances == []
+    assert state(hass) == STATE_OFF
+
+
+@pytest.mark.usefixtures("quick")
+async def test_no_look_while_a_check_measures(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,  # noqa: F811
+    output_probe: FakeProbe,  # noqa: F811
+) -> None:
+    """The check captures from the source; a look waits until it is done."""
+    restored(hass, True)
+    hass.set_state(CoreState.starting)
+    entry = await setup(hass)
+    source_probe.release = asyncio.Event()
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: len(source_probe.calls) == 1)
+    assert source_probe.calls[0]["measure"] is True
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire("homeassistant_started")
+    await asyncio.sleep(0.05)  # several intervals
+    assert fakes.log == []
+    source_probe.release.set()
+    await wait_for(lambda: state(hass) == STATE_ON)
+    assert len(FakePipeline.instances) == 1
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+@pytest.mark.usefixtures("quick")
+async def test_a_check_that_measures_ends_a_look_first(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,  # noqa: F811
+    output_probe: FakeProbe,  # noqa: F811
+) -> None:
+    """The look is closed before the check captures; the next one follows
+    after the check."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    source_probe.release = asyncio.Event()
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: len(source_probe.calls) == 1)
+    assert source_probe.calls[0]["measure"] is True
+    assert fakes.log == ["source.start", "source.close"]
+    await asyncio.sleep(0.05)  # several intervals
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    source_probe.release.set()
+    await wait_for(lambda: state(hass) == STATE_ON)
+    assert len(FakePipeline.instances) == 1
+    await switch(hass, SERVICE_TURN_OFF)

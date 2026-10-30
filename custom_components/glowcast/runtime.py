@@ -89,7 +89,11 @@ class GlowcastData:
         self._status: PipelineStatus | None = None
         self._task: asyncio.Task[None] | None = None
         self._restarting = False
-        self._stopped_during_restart = False
+        # Starts and stops one at a time, in the order they came (#269): at
+        # most one thing claims the lights or captures. Every stop counts, so
+        # a start that waited sees that a later stop wins.
+        self._transition = asyncio.Lock()
+        self._stops = 0
         self._listeners: list[Callable[[], None]] = []
         self._status_listeners: list[Callable[[], None]] = []
         # What follows the TV as the pipeline started with it (or as stored,
@@ -100,12 +104,12 @@ class GlowcastData:
         self._dropped: dict[str, StopReason] = {}
         # Whether it synced when Home Assistant began to stop (#183).
         self._stopped_by_ha = False
-        # Set by async_resume(); every start and stop clears it.
+        # Set by async_resume(); every start and stop clears it. The resume's
+        # look for the picture source in progress, which they end.
         self._resume_wanted = False
-        # The light test while Glowcast does not sync (#182), and whether a
-        # start waits for its release (no new test may claim the lights then).
+        self._look: asyncio.Task[bool] | None = None
+        # The light test while Glowcast does not sync (#182).
         self._test: asyncio.Task[None] | None = None
-        self._ending_test = False
         # The hardware check (#115): the one running, whether it captures,
         # and the last result (in memory only, for the diagnostics).
         self._check: asyncio.Task[None] | None = None
@@ -155,21 +159,27 @@ class GlowcastData:
         """Start syncing, unless an integration the TV or lights use is not set up.
 
         A light test that runs meanwhile ends first, and its lights are
-        released before syncing claims them. So does a hardware check that
-        captures: its captures could make the pipeline's fail.
+        released before syncing claims them. So do a hardware check that
+        captures and the resume's look for the picture source: their captures
+        could make the pipeline's fail. Waits for a start or stop in progress;
+        a stop that comes while this one waits wins.
         """
-        if self._pipeline is not None:
-            return
+        stops = self._stops
         self._resume_wanted = False
-        self._ending_test = True
-        try:
+        async with self._transition:
+            if self._pipeline is not None:
+                return
+            await self._async_end_look()
             if self._check_measures:
                 await self._async_end_check()
             await self._async_end_test()
-        finally:
-            self._ending_test = False
-        if self._pipeline is not None:
-            return  # started meanwhile
+            if self._stops != stops:
+                return  # switched off (or unloaded) meanwhile
+            self._start_pipeline()
+
+    def _start_pipeline(self) -> None:
+        """Build and run the pipeline, or raise the repair issue of a missing
+        integration entry."""
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
@@ -219,7 +229,8 @@ class GlowcastData:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + RESUME_WINDOW
         while self._resume_wanted:
-            on = await self._async_source_on()
+            # A hardware check that captures goes first: no look beside it.
+            on = False if self._check_measures else await self._async_look()
             if not self._resume_wanted:
                 return  # started or stopped meanwhile
             if on:
@@ -238,6 +249,28 @@ class GlowcastData:
                 )
                 return
             await asyncio.sleep(RESUME_INTERVAL)
+
+    async def _async_look(self) -> bool:
+        """Look for the picture source in a task of its own, which a start, a
+        stop and a hardware check that captures end (False then)."""
+        self._look = look = self._entry.async_create_background_task(
+            self._hass, self._async_source_on(), f"glowcast {self._entry.title} look"
+        )
+        try:
+            await asyncio.wait({look})
+        finally:
+            look.cancel()  # the resume itself ended (unload, Home Assistant stops)
+            if self._look is look:
+                self._look = None
+        return not look.cancelled() and look.result()
+
+    async def _async_end_look(self) -> None:
+        """End the resume's look in progress and wait until its connection
+        is closed."""
+        look, self._look = self._look, None
+        if look is not None and not look.done():
+            look.cancel()
+            await asyncio.wait({look})
 
     async def _async_source_on(self) -> bool:
         """Whether the picture source can be reached, is on and gives a
@@ -275,12 +308,13 @@ class GlowcastData:
 
     async def async_stop(self) -> None:
         """Stop syncing (or the light test) and wait until the lights are
-        released."""
+        released. Wins over a start that waits (#269) and over a restart."""
+        self._stops += 1
         self._resume_wanted = False
-        # Switching off (or unloading) during a restart wins over the restart.
-        self._stopped_during_restart = self._restarting
-        await self._async_end_test()
-        await self._async_stop()
+        async with self._transition:
+            await self._async_end_look()
+            await self._async_end_test()
+            await self._async_stop()
 
     async def async_test_lights(self) -> None:
         """Show the light test (#182): known colours by position, about 3 s
@@ -305,8 +339,10 @@ class GlowcastData:
         if self._test is not None and not self._test.done():
             _LOGGER.debug("Glowcast %s is testing the lights already", title)
             return
-        if self._ending_test:
-            _LOGGER.debug("Glowcast %s is starting; no light test now", title)
+        if self._transition.locked():
+            _LOGGER.debug(
+                "Glowcast %s is starting or stopping; no light test now", title
+            )
             return
         data, options = self._entry.data, self._entry.options
         output_type = OUTPUTS.get(options[CONF_OUTPUT][CONF_TYPE])
@@ -363,8 +399,8 @@ class GlowcastData:
         if self._check is not None and not self._check.done():
             _LOGGER.debug("Glowcast %s is running the hardware check already", title)
             return
-        # A start that waits for a test or check to end counts as syncing.
-        syncing = self._pipeline is not None or self._ending_test
+        # A start (or stop) in progress counts as syncing.
+        syncing = self._pipeline is not None or self._transition.locked()
         self._check_measures = not syncing
         _LOGGER.info("Glowcast %s runs the hardware check", title)
         self._check = self._entry.async_create_background_task(
@@ -373,6 +409,8 @@ class GlowcastData:
 
     async def _async_check(self, syncing: bool) -> None:
         try:
+            if not syncing:
+                await self._async_end_look()  # no look beside the captures
             result = await async_run_check(
                 self._hass, self._entry.data, self._entry.options, syncing=syncing
             )
@@ -479,13 +517,14 @@ class GlowcastData:
         """Restart a running pipeline with the new settings; the switch stays on."""
         if not self.is_on:
             return
+        stops = self._stops
         self._restarting = True
-        self._stopped_during_restart = False
         try:
             await self._async_stop()
         finally:
             self._restarting = False
-        if self._stopped_during_restart:
+        if self._stops != stops:
+            # Switching off (or unloading) during a restart wins over it.
             self._notify()  # the switch shows off now
             return
         await self.async_start()

@@ -113,6 +113,8 @@ class FakeSource:
         self.default: Any = solid(RED)
         self.capture_time = capture_time
         self.captures = 0
+        # If set, every capture waits for it first (a look that takes long).
+        self.gate: asyncio.Event | None = None
 
     async def start(self) -> None:
         self.log.append("source.start")
@@ -127,6 +129,8 @@ class FakeSource:
 
     async def capture(self) -> Frame:
         self.captures += 1
+        if self.gate is not None:
+            await self.gate.wait()
         item = self.frames.pop(0) if self.frames else self.default
         if item == "hang":
             await self.clock.sleep(5)
@@ -220,6 +224,8 @@ class FakeAdapters:
         # What the sources' captures raise instead of a picture, if set (a TV
         # that refuses the screenshot call, #253).
         self.source_refusal: Exception | None = None
+        # If set, the sources' captures wait for it (a look in progress).
+        self.source_gate: asyncio.Event | None = None
         self.channels = [CHANNEL]
         self.sources: list[FakeSource] = []
         self.outputs: list[FakeOutput] = []
@@ -228,6 +234,7 @@ class FakeAdapters:
         source = FakeSource(MonotonicClock(), self.log, capture_time=0)
         source.on = self.source_on
         source.start_error = self.source_start_error
+        source.gate = self.source_gate
         if not self.source_picture:
             source.default = SourceUnavailable("no picture")
         if self.source_refusal is not None:
