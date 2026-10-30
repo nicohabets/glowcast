@@ -15,6 +15,11 @@ REGION_SIZE = 0.3
 BLACK_LEVEL = 32
 # A region with fewer lit pixels than this share is black.
 MIN_LIT_SHARE = 0.05
+# A lit pixel counts in its region's colour with (WEIGHT_FLOOR + saturation²)
+# x value (#233): the floor gives grey and white a say, so a small coloured
+# object only tints a white scene (spike #40: 0.5 kept the gain on mixed
+# scenes and left snow with a red jacket nearly white).
+WEIGHT_FLOOR = 0.5
 # A light with several channels at or above this depth (y) is around the TV,
 # like a gradient lightstrip behind it: its channels are stretched so its
 # outermost ones reach the edges of the picture (#23).
@@ -147,23 +152,37 @@ def _band(centre: float, start: int, end: int) -> tuple[int, int]:
 def _average(
     frame: Frame, region: tuple[int, int, int, int]
 ) -> tuple[float, float, float]:
-    """Average of the lit pixels in a region, or black."""
+    """The colour of the lit pixels in a region, or black.
+
+    A weighted average (#233, spike #40): each lit pixel counts with
+    (WEIGHT_FLOOR + saturation²) x value. Colourful pixels lead and dark ones
+    give way, so a mixed region shows its colour (spotlights on a dark stage,
+    signs in a city at night); bright white keeps its say, so a small coloured
+    object only tints a white scene; a region of one colour or a smooth
+    gradient gives about its average. With high the largest component and
+    spread = high - lowest, (F + s²) x v is (F + (spread / high)²) x high / 255.
+    """
     col0, col1, row0, row1 = region
     pixels = frame.pixels
     stride = frame.width * 3
-    red = green = blue = lit = 0
+    red = green = blue = weight = 0.0
+    lit = 0
     for row in range(row0, row1):
         start = row * stride
         for i in range(start + col0 * 3, start + col1 * 3, 3):
             r, g, b = pixels[i], pixels[i + 1], pixels[i + 2]
-            if r > BLACK_LEVEL or g > BLACK_LEVEL or b > BLACK_LEVEL:
-                red += r
-                green += g
-                blue += b
+            high = max(r, g, b)
+            if high > BLACK_LEVEL:
+                spread = (high - min(r, g, b)) / high
+                w = (WEIGHT_FLOOR + spread * spread) * high
+                red += w * r
+                green += w * g
+                blue += w * b
+                weight += w
                 lit += 1
     if lit == 0 or lit < MIN_LIT_SHARE * (col1 - col0) * (row1 - row0):
         return BLACK
-    scale = 255 * lit
+    scale = 255 * weight
     return red / scale, green / scale, blue / scale
 
 
