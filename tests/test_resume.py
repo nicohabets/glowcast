@@ -7,8 +7,14 @@ HA really does (cancel the background tasks while stopping).
 """
 
 import pytest
-from homeassistant.const import SERVICE_TURN_OFF, SERVICE_TURN_ON, STATE_OFF, STATE_ON
-from homeassistant.core import CoreState, HomeAssistant, State
+from homeassistant.const import (
+    EVENT_STATE_CHANGED,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_OFF,
+    STATE_ON,
+)
+from homeassistant.core import CoreState, Event, HomeAssistant, State, callback
 from homeassistant.helpers import restore_state as rs
 from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
@@ -16,10 +22,21 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.glowcast import runtime
 from custom_components.glowcast.core.pipeline import StopReason
-from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.core.ports import (
+    SourceNotSupported,
+    SourceUnavailable,
+)
 
 from .fakes import FakeAdapters, FakePipeline, wait_for
-from .test_init import ENTITY, settle, setup, state, switch, tv_device  # noqa: F401
+from .test_init import (  # noqa: F401
+    ENTITY,
+    issues,
+    settle,
+    setup,
+    state,
+    switch,
+    tv_device,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -243,3 +260,36 @@ async def test_an_unexpected_error_counts_as_off(
     await wait_for(lambda: "did not continue" in caplog.text)
     assert fakes.log.count("source.start") > 1  # looked again after the error
     assert state(hass) == STATE_OFF
+
+
+@pytest.mark.usefixtures("quick")
+async def test_a_refusing_tv_is_started_and_stops_with_its_repair_issue(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A TV that refuses the screenshot call (for example after a firmware
+    update while Home Assistant was down) counts as on: the normal start
+    ends on the refusal after the startup grace, with the source type's
+    repair issue, instead of looking again for minutes (#253)."""
+    fakes.source_refusal = SourceNotSupported("refused", not_permitted=True)
+    # Stands in for the real start's grace ending on the refusal.
+    FakePipeline.start_error = StopReason.SOURCE_NOT_PERMITTED
+    states: list[str] = []
+
+    @callback
+    def changed(event: Event) -> None:
+        if event.data["entity_id"] == ENTITY:
+            states.append(event.data["new_state"].state)
+
+    hass.bus.async_listen(EVENT_STATE_CHANGED, changed)
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: issues(hass, entry) == {"webos_not_permitted"})
+    await settle(hass)
+    assert fakes.sources[0].captures == 1  # looked once, not for minutes
+    assert fakes.log[:3] == ["source.start", "source.close", "source.start"]
+    assert len(FakePipeline.instances) == 1
+    assert states[-2:] == [STATE_ON, STATE_OFF]
+    status = entry.runtime_data.status
+    assert status is not None
+    assert status.stop_reason is StopReason.SOURCE_NOT_PERMITTED
+    assert stored_resume(hass) is False  # a stop by itself is not resumed
