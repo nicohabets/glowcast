@@ -459,3 +459,56 @@ def test_a_colour_step_by_state() -> None:
     assert first.result == rp.PASS and first.numbers["light 3 (state) states"] == 3
     assert second.result == rp.FAIL
     assert third.result == rp.SKIP
+
+
+def test_the_bench_checks_its_home_assistant_is_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inst = SimpleNamespace(config=tmp_path / "config")
+    answers = {"config_dir": str(tmp_path / "config")}
+    monkeypatch.setattr(local_ha.demo, "_request", lambda *a, **k: answers)
+    local_ha._check_own(inst, "token")
+    answers["config_dir"] = str(tmp_path / "another")
+    with pytest.raises(SystemExit):
+        local_ha._check_own(inst, "token")
+
+
+class FakeLocalHA:
+    def __init__(self, entries: list[dict[str, Any]]) -> None:
+        self.entries = entries
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def registry(self) -> list[dict[str, Any]]:
+        return self.entries
+
+    async def call(self, domain: str, service: str, data: dict[str, Any]) -> None:
+        self.calls.append((domain, service, data))
+
+
+async def test_the_lights_are_stored_by_registry_id_with_their_positions() -> None:
+    bench = _bench()
+    entries = [
+        {
+            "id": f"registry{i:04}",
+            "entity_id": f"light.bench_proxy_{i}",
+            "unique_id": f"bench-proxy-{i}",
+            "platform": "hue" if i < 3 else "matter",
+            "config_entry_id": "hueentry" if i < 3 else "matterentry",
+        }
+        for i in (3, 1, 2)
+    ] + [{"id": "x", "entity_id": "light.other", "unique_id": "o", "platform": "hue"}]
+    bench.ha = FakeLocalHA(entries)
+    await bench.place_loose_lights()
+    ((domain, service, data),) = bench.ha.calls
+    assert (domain, service) == ("glowcast_bench", "set_output")
+    assert data["entry_id"] == local_ha.ENTRY_ID
+    assert data["output"] == {
+        "type": "ha_lights",
+        "follow": "lights",
+        "lights": [
+            {"entity": "registry0001", "x": -1.0, "z": 0.0},
+            {"entity": "registry0002", "x": 1.0, "z": 0.0},
+            {"entity": "registry0003", "x": -0.8, "z": 0.25},
+        ],
+    }
+    assert bench.proxies[3]["entity_id"] == "light.bench_proxy_3"

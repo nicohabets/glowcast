@@ -111,6 +111,11 @@ def loose_glowcast_entry(
     return entry
 
 
+def stub_entry_id(domain: str) -> str:
+    """The id of a stub entry the bench writes (demo._entry's)."""
+    return demo._entry(domain, "", "", {})["entry_id"]
+
+
 def proxy_block(url: str, token: str, lights: list[dict[str, str]]) -> dict[str, Any]:
     """A stub entry's proxy lights: [{"unique_id", "name", "source"}]."""
     return {"url": url, "token": token, "lights": lights}
@@ -140,7 +145,9 @@ def start(
     stop()
     with demo._lock():
         demo._install(browser=False)  # the bench needs no Chromium
-        port = demo._free_port(HA_PORT, set())
+        # Not a port of another running bench instance (Home Assistant binds
+        # its port only after a while), nor one something listens on.
+        port = demo._free_port(HA_PORT, _taken_ports(inst))
         inst.home.mkdir(parents=True, exist_ok=True)
         state = inst.home / "state.json"
         state.write_text(
@@ -195,10 +202,32 @@ def start(
         demo._wait_for_ha(inst)
         token = demo._onboard(inst)
         demo._wait_until_running(inst, token)
+        _check_own(inst, token)
     except BaseException:
         stop()
         raise
     return inst, token
+
+
+def _taken_ports(inst: demo.Instance) -> set[int | None]:
+    """The Home Assistant ports of the other running bench instances."""
+    taken: set[int | None] = set()
+    if INSTANCES.exists():
+        for home in INSTANCES.iterdir():
+            other = demo.Instance(home.name, home)
+            if home != inst.home and demo._running(other):
+                taken.add(other.state.get("ha_port"))
+    return taken
+
+
+def _check_own(inst: demo.Instance, token: str) -> None:
+    """Exit (start() then stops it) unless the Home Assistant on the port is
+    this instance: another one there would get the bench's calls."""
+    config_dir = demo._request(inst, "GET", "/api/config", token=token).get(
+        "config_dir"
+    )
+    if Path(str(config_dir)).resolve() != inst.config.resolve():
+        sys.exit("Another Home Assistant answers on the bench instance's port")
 
 
 def _private(home: Path) -> None:

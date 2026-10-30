@@ -117,9 +117,27 @@ class Owner:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """With proxy lights in the entry's data: set them up; else only load."""
-    if PROXY in entry.data:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    """With proxy lights in the entry's data: set them up; else only load.
+
+    The owner's lights are read here, before the platform: an owner that
+    cannot be reached yet makes the entry retry (ConfigEntryNotReady).
+    """
+    if PROXY not in entry.data:
+        return True
+    block = entry.data[PROXY]
+    owner = Owner(
+        hass, block["url"], block["token"], [li["source"] for li in block["lights"]]
+    )
+    states = {}
+    for light in block["lights"]:
+        try:
+            states[light["source"]] = await owner.state(light["source"])
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise ConfigEntryNotReady(
+                f"the owner's light could not be read: {describe(err)}"
+            ) from None
+    entry.runtime_data = (owner, states)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
@@ -133,19 +151,11 @@ async def async_setup_lights(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """The proxy lights, each with its owner light's capabilities."""
-    block = entry.data[PROXY]
-    owner = Owner(
-        hass, block["url"], block["token"], [li["source"] for li in block["lights"]]
-    )
-    lights = []
-    for light in block["lights"]:
-        try:
-            state = await owner.state(light["source"])
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise ConfigEntryNotReady(
-                f"the owner's light could not be read: {describe(err)}"
-            ) from None
-        lights.append(ProxyLight(owner, light, state))
+    owner, states = entry.runtime_data
+    lights = [
+        ProxyLight(owner, light, states[light["source"]])
+        for light in entry.data[PROXY]["lights"]
+    ]
     async_add_entities(lights)
 
     async def poll() -> None:

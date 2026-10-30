@@ -78,6 +78,15 @@ class LocalHA:
                         break
             return results
 
+    async def reload_entry(self, entry_id: str) -> None:
+        """Reload a config entry (one that waits to retry its setup)."""
+        async with self.session.post(
+            f"{self.url}/api/config/config_entries/entry/{entry_id}/reload",
+            headers=self._headers,
+            timeout=TIMEOUT,
+        ) as r:
+            r.raise_for_status()
+
     async def registry(self) -> list[dict[str, Any]]:
         """The entity registry's entries (with their registry `id`)."""
         (registry,) = await self._ws([{"type": "config/entity_registry/list"}])

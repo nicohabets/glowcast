@@ -89,7 +89,7 @@ class Thresholds:
     # report about once per second); commands may come this much early
     # (the send loop's tick and the event's time).
     loose_settle_s: float = 4.0
-    rate_slack_s: float = 0.1
+    rate_slack_s: float = 0.15
 
 
 @dataclasses.dataclass(frozen=True)

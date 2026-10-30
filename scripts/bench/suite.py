@@ -194,8 +194,13 @@ class Bench:
             *[light["entity_id"] for light in self.lights.values()],
             *[light.entity_id for light in self.loose],
             *[
-                str(state.get("attributes", {}).get("friendly_name") or "")
-                for state in self.pre_states.values()
+                str(
+                    self.pre_states.get(light.entity_id, {})
+                    .get("attributes", {})
+                    .get("friendly_name")
+                    or ""
+                )
+                for light in self.loose
             ],
             *[str(p.get("id", "")) for p in self.proxies.values()],
             *self.light_rids,
@@ -963,7 +968,18 @@ class Bench:
         them, with their positions, as Glowcast's loose-lights output."""
         assert self.ha is not None
         wanted = {light.unique_id: light for light in self.loose}
-        for _ in range(60):
+        stubs = [
+            local_ha.stub_entry_id(kind)
+            for kind in loose.KINDS
+            if any(light.kind == kind for light in self.loose)
+        ]
+        for attempt in range(90):
+            if attempt and attempt % 15 == 0:
+                # A stub entry that could not read the owner's lights at the
+                # start retries ever later; try it again now.
+                for entry_id in stubs:
+                    with contextlib.suppress(aiohttp.ClientError, TimeoutError):
+                        await self.ha.reload_entry(entry_id)
             found = {
                 entry["unique_id"]: entry
                 for entry in await self.ha.registry()
@@ -974,7 +990,10 @@ class Bench:
                 break
             await asyncio.sleep(1)
         else:
-            raise BenchError("the proxy lights did not appear in the local HA")
+            raise BenchError(
+                "the proxy lights did not appear in the local HA (could it read "
+                "the owner's lights? see its home-assistant.log)"
+            )
         self.proxies = {wanted[u].index: entry for u, entry in found.items()}
         output = {
             "type": "ha_lights",
