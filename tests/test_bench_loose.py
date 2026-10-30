@@ -99,6 +99,7 @@ def test_a_light_in_the_area_too() -> None:
     assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": None}) == "rid-1"
     assert loose.area_unique_id(lights[0], {"wall": None}) is None
     assert loose.area_unique_id(lights[0], {}) is None
+    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": "rid-1"}) is None
 
 
 @pytest.mark.parametrize(

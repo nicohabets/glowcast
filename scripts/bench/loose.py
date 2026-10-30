@@ -146,8 +146,10 @@ def in_area(lights: Sequence[LooseLight]) -> LooseLight | None:
 def area_unique_id(light: LooseLight, rid_of: Mapping[str, str | None]) -> str | None:
     """The in-area light's proxy unique id: its Hue light resource id, the
     bridge light that came on with its camera light in the calibration
-    (`rid_of`); None when that could not be told."""
-    return rid_of.get(light.camera) if light.camera else None
+    (`rid_of`); None when that could not be told (also when it came on with
+    another camera light too)."""
+    rid = rid_of.get(light.camera) if light.camera else None
+    return rid if rid is not None and list(rid_of.values()).count(rid) == 1 else None
 
 
 def labels(lights: Sequence[LooseLight], camera_labels: Mapping[str, str]) -> dict:

@@ -316,6 +316,7 @@ async def in_area(bench: Any) -> None:
         await switch_off(bench)
     reference = await loose_suite.read_states(bench)
     proxy = loose_suite.entity_of(bench, light)
+    before = await issue_raised(bench, tries=1)
     await bench.set_loose_output([*bench.loose, light])
     try:
         on_at = time.time()
@@ -323,7 +324,7 @@ async def in_area(bench: Any) -> None:
             return
         start = time.time()
         await sleep(IN_AREA_WAIT)
-        await in_area_checks(bench, on_at, start, time.time())
+        await in_area_checks(bench, before, on_at, start, time.time())
         await stop_both(bench, reference, f"{IN_AREA}, switch off", "switch")
         sent = combined.calls_to(bench.ha.light_calls, [proxy], on_at, time.time())
         bench.report.add(
@@ -341,24 +342,37 @@ async def in_area(bench: Any) -> None:
         await bench.set_loose_output(bench.loose)
 
 
-async def in_area_checks(bench: Any, on_at: float, start: float, end: float) -> None:
-    """The in-area step's checks while syncing: the repair issue, the area
-    (one stream; its lights by side, camera) and the loose lights beside it
-    (their commands since the switch on)."""
-    raised = False
-    for _ in range(10):  # raised after the claim: a few seconds at most
+async def issue_raised(bench: Any, tries: int = 10) -> bool:
+    """Whether Glowcast's repair issue for loose lights in the area is up in
+    the local HA; `tries` reads half a second apart (it is raised after the
+    claim)."""
+    for attempt in range(tries):
+        if attempt:
+            await sleep(0.5)
         with contextlib.suppress(Exception):
-            raised = combined.has_issue(await bench.ha.issues(), local_ha.ENTRY_ID)
-        if raised:
-            break
-        await sleep(0.5)
+            if combined.has_issue(await bench.ha.issues(), local_ha.ENTRY_ID):
+                return True
+    return False
+
+
+async def in_area_checks(
+    bench: Any, before: bool, on_at: float, start: float, end: float
+) -> None:
+    """The in-area step's checks while syncing: the repair issue (not up
+    before the switch on), the area (one stream; its lights by side, camera)
+    and the loose lights beside it (their commands since the switch on)."""
+    raised = await issue_raised(bench)
+    ok = raised and not before
     bench.report.add(
         Step(
             f"{IN_AREA}: the repair issue is raised",
             MODE,
-            PASS if raised else FAIL,
-            numbers={"repair issue": "yes" if raised else "no"},
-            note="" if raised else "no repair issue",
+            PASS if ok else FAIL,
+            numbers={
+                "repair issue before": "yes" if before else "no",
+                "repair issue": "yes" if raised else "no",
+            },
+            note="" if ok else "no repair issue, or it was up before",
         )
     )
     stream, polls = combined.one_stream(bench.bridge.statuses(start, end))

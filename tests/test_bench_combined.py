@@ -367,12 +367,15 @@ async def test_the_in_area_proxy_carries_its_bridge_lights_id() -> None:
 class InAreaHA:
     """The local HA while Glowcast leaves the in-area proxy out (or not)."""
 
-    def __init__(self, *, glowcast_drives_it: bool = False) -> None:
+    def __init__(
+        self, *, glowcast_drives_it: bool = False, issue_up: bool = False
+    ) -> None:
         self.services: list[tuple[str, str, dict[str, Any]]] = []
         self.calls: list[tuple[float, dict[str, Any]]] = []
         self.light_calls: list[tuple[float, str, dict[str, Any]]] = []
         self.switch = "off"
         self.drives = glowcast_drives_it
+        self.issue_up = issue_up
 
     async def call(self, domain: str, service: str, data: dict[str, Any]) -> None:
         self.services.append((domain, service, data))
@@ -395,7 +398,7 @@ class InAreaHA:
         return {"state": "streaming", "attributes": {"dropped_outputs": {}}}
 
     async def issues(self) -> list[dict[str, Any]]:
-        if self.drives:
+        if self.drives or (self.switch == "off" and not self.issue_up):
             return []
         return [
             {
@@ -463,7 +466,7 @@ async def test_a_loose_light_in_the_area_is_left_out(
     steps = {step.name: step for step in bench.report.steps}
     assert all(step.result == rp.PASS for step in steps.values()), steps
     issue = steps["a loose light in the area too: the repair issue is raised"]
-    assert issue.numbers == {"repair issue": "yes"}
+    assert issue.numbers == {"repair issue before": "no", "repair issue": "yes"}
     beside = steps[
         "a loose light in the area too: the loose lights beside the area follow"
     ]
@@ -495,6 +498,17 @@ async def test_a_driven_in_area_light_fails(monkeypatch: pytest.MonkeyPatch) -> 
         "a loose light in the area too: the repair issue is raised",
         "a loose light in the area too: Glowcast sent it no light command (on to off)",
     }
+
+
+async def test_a_repair_issue_from_before_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ha = InAreaHA(issue_up=True)
+    bench = await _run_in_area(monkeypatch, ha, {"wall": "rid-wall"})
+    failed = [step for step in bench.report.steps if step.result == rp.FAIL]
+    assert [step.numbers for step in failed] == [
+        {"repair issue before": "yes", "repair issue": "yes"}
+    ]
 
 
 async def test_an_unmatched_in_area_light_fails(
