@@ -11,8 +11,10 @@ from typing import Any
 
 import pytest
 
+from custom_components.glowcast.core.light_state import BLACK_HOLD
 from custom_components.glowcast.core.models import Frame
 from custom_components.glowcast.core.pipeline import (
+    NO_PICTURE_WAIT,
     Phase,
     Pipeline,
     PipelineStatus,
@@ -623,7 +625,7 @@ async def test_key_revoked_while_streaming() -> None:
     assert h.log[-3:] == CLEANUP
 
 
-# No picture (#68): all-zero frames for 3 s release the lights
+# No picture (#68): all-zero frames for 7 s release the lights (#139)
 
 
 async def lose_picture(h: Harness) -> None:
@@ -631,20 +633,28 @@ async def lose_picture(h: Harness) -> None:
     await h.start()
     await h.clock.advance(2)
     h.source.default = solid(NO_PICTURE)
-    await h.clock.advance(4)
+    await h.clock.advance(NO_PICTURE_WAIT + 1)
     assert h.log[-2:] == ["output.stop", "output.close"]
 
 
-async def test_no_picture_for_3_s_releases_the_lights() -> None:
+def first_frame_at(h: Harness, frame: Frame, after: float = 0.0) -> float:
+    """When the pipeline got the first such frame at or after `after`."""
+    return next(t for t, f in h.frames if f == frame and t >= after)
+
+
+def first_status_at(h: Harness, phase: Phase) -> float:
+    return next(
+        t for t, s in zip(h.status_times, h.statuses, strict=True) if s.phase is phase
+    )
+
+
+async def test_no_picture_for_7_s_releases_the_lights() -> None:
     h = Harness()
     await h.start()
     await h.clock.advance(2)
     h.source.default = solid(NO_PICTURE)
-    await h.clock.advance(3.0)  # all zero since about 2.25-2.6 s: still waiting
+    await h.clock.advance(7.0)  # all zero since about 2.25-2.6 s: still waiting
     assert h.log == ["source.start", "output.start"]
-    after = [c[0].rgb for t, c in h.output.sent if t >= 2]
-    # The hold on black keeps the last colours (3.5 s, longer than the wait).
-    assert all(rgb == approx_rgb(RED_SENT) for rgb in after)
     await h.clock.advance(1.0)
     assert h.log == ["source.start", "output.start", "output.stop", "output.close"]
     released_at = h.output.sent[-1][0]
@@ -658,16 +668,33 @@ async def test_no_picture_for_3_s_releases_the_lights() -> None:
     assert await h.stop() == StopReason.USER
 
 
-async def test_the_release_comes_3_s_after_the_first_all_zero_frame() -> None:
+async def test_black_picture_at_the_first_all_zero_frame_no_picture_7_s_later() -> None:
     h = Harness()
     await lose_picture(h)
-    first = next(t for t, frame in h.frames if frame == solid(NO_PICTURE))
-    released = next(
-        t
-        for t, s in zip(h.status_times, h.statuses, strict=True)
-        if s.phase is Phase.NO_PICTURE
+    first = first_frame_at(h, solid(NO_PICTURE))
+    black = next(
+        t for t, s in zip(h.status_times, h.statuses, strict=True) if s.black_picture
     )
-    assert 3.0 <= released - first <= 3.0 + 1 / 3 + 0.01
+    assert black == first
+    released = first_status_at(h, Phase.NO_PICTURE)
+    assert NO_PICTURE_WAIT <= released - first <= NO_PICTURE_WAIT + 1 / 3 + 0.01
+    assert await h.stop() == StopReason.USER
+
+
+async def test_a_5_s_all_zero_moment_keeps_the_lights() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(NO_PICTURE)  # a hard cut in a film (#126)
+    await h.clock.advance(5)
+    h.source.default = solid(BLUE)
+    await h.clock.advance(2)
+    first = first_frame_at(h, solid(NO_PICTURE))
+    back = first_frame_at(h, solid(BLUE))
+    assert back - first >= 5 - 0.01
+    assert h.output.rgb_at(-1) == approx_rgb((0.0, 0.0, 1.0))
+    assert h.log == ["source.start", "output.start"]
+    assert Phase.NO_PICTURE not in h.phases
     assert await h.stop() == StopReason.USER
 
 
@@ -686,14 +713,48 @@ async def test_a_short_all_zero_moment_keeps_the_lights() -> None:
     assert await h.stop() == StopReason.USER
 
 
-async def test_the_wait_starts_again_after_a_frame_with_a_picture() -> None:
-    h = Harness(rate=UpdateRate.LOW)
+async def test_a_picture_after_6_9_s_starts_the_wait_again() -> None:
+    h = Harness(rate=UpdateRate.MAXIMUM)
+    h.source.capture_time = 0.1  # a frame every 0.1 s
     await h.start()
     await h.clock.advance(1)
     zero = solid(NO_PICTURE)
-    h.source.frames = [zero, zero, solid(DARK), zero, zero, zero]
-    await h.clock.advance(7)
+    h.source.frames = [zero] * 69 + [solid(DARK)]  # a dark frame, not all zero
+    h.source.default = zero
+    await h.clock.advance(13.5)
+    first = first_frame_at(h, zero)
+    dark = first_frame_at(h, solid(DARK))
+    assert dark - first == pytest.approx(6.9, abs=0.01)
     assert h.log == ["source.start", "output.start"]
+    # A new wait from the next all-zero frame.
+    again = first_frame_at(h, zero, after=dark)
+    await h.clock.advance(1)
+    assert h.log[-2:] == ["output.stop", "output.close"]
+    released = first_status_at(h, Phase.NO_PICTURE)
+    assert NO_PICTURE_WAIT <= released - again <= NO_PICTURE_WAIT + 0.11
+    assert await h.stop() == StopReason.USER
+
+
+async def test_the_glow_shows_before_the_release() -> None:
+    h = Harness()
+    await h.start()
+    await h.clock.advance(2)
+    h.source.default = solid(NO_PICTURE)
+    await h.clock.advance(3.5)  # the hold on black keeps red ...
+    first = first_frame_at(h, solid(NO_PICTURE))
+    assert all(
+        c[0].rgb == approx_rgb(RED_SENT)
+        for t, c in h.output.sent
+        if t < first + BLACK_HOLD
+    )
+    await h.clock.advance(3.0)  # ... then the glow, still claimed
+    assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)
+    assert h.log == ["source.start", "output.start"]
+    await h.clock.advance(1.5)
+    assert h.log[-2:] == ["output.stop", "output.close"]
+    glow = [t for t, c in h.output.sent if c[0].rgb == approx_rgb(GLOW_ONLY)]
+    # The glow for about the last 3 s: the wait minus the hold and the fade.
+    assert glow[-1] - glow[0] >= NO_PICTURE_WAIT - BLACK_HOLD - 1
     assert await h.stop() == StopReason.USER
 
 
@@ -708,8 +769,9 @@ async def test_the_hold_on_black_runs_during_the_wait() -> None:
     assert h.output.rgb_at(-1) == approx_rgb(RED_SENT)
     await h.clock.advance(2)  # the fade to the glow has finished at about 6.6 s
     assert h.output.rgb_at(-1) == approx_rgb(GLOW_ONLY)  # glow, still claimed
+    await h.clock.advance(3.5)  # just under 7 s after the first all-zero frame
     assert h.log == ["source.start", "output.start"]
-    await h.clock.advance(1)  # 3 s after the first all-zero frame (about 4.6 s)
+    await h.clock.advance(1)  # 7 s after the first all-zero frame (about 4.6 s)
     assert h.log[-2:] == ["output.stop", "output.close"]
     assert await h.stop() == StopReason.USER
 
@@ -822,7 +884,8 @@ async def test_switched_off_while_claiming_the_lights_again() -> None:
     await h.clock.advance(0.7)
     assert h.log[-1] == "output.start"
     assert await h.stop() == StopReason.USER
-    assert h.output.sent[-1][1][0].rgb == approx_rgb(RED_SENT)  # from before
+    # From before: the glow, shown before the release.
+    assert h.output.sent[-1][1][0].rgb == approx_rgb(GLOW_ONLY)
     assert h.log[-3:] == CLEANUP
 
 
