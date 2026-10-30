@@ -24,8 +24,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
-      # The script from this workflow's own commit (an older tag, such as
-      # v0.2.0, does not have it), the integration from the release's tag.
+      # The script from the commit the workflow runs from (by hand: the
+      # branch it is started on, so main also works for older tags, such as
+      # v0.2.0, that have no script), the integration from the release's tag.
       - uses: actions/checkout@v7
         with:
           path: tools
