@@ -34,6 +34,9 @@ class LocalHA:
         self.events: list[tuple[float, str, str, dict[str, Any]]] = []
         # light.turn_on calls (loose lights, #9): (time fired, service data).
         self.calls: list[tuple[float, dict[str, Any]]] = []
+        # light.turn_on and light.turn_off calls (#198): (time fired, service,
+        # service data).
+        self.light_calls: list[tuple[float, str, dict[str, Any]]] = []
         self._task: asyncio.Task[None] | None = None
         self._listeners: list[Callable[[str, str], None]] = []
 
@@ -78,6 +81,11 @@ class LocalHA:
                         break
             return results
 
+    async def issues(self) -> list[dict[str, Any]]:
+        """The repair issues (domain, issue_id, ...)."""
+        (result,) = await self._ws([{"type": "repairs/list_issues"}])
+        return (result or {}).get("issues", [])
+
     async def reload_entry(self, entry_id: str) -> None:
         """Reload a config entry (one that waits to retry its setup)."""
         async with self.session.post(
@@ -109,7 +117,8 @@ class LocalHA:
 
     async def follow(self) -> None:
         """Record state changes of the Glowcast entities (WSL time.time()) and
-        the light.turn_on calls (the time they were fired, WSL clock)."""
+        the light.turn_on and turn_off calls (the time they were fired, WSL
+        clock)."""
         ids = {v: k for k, v in self.entities.items()}
 
         async def run() -> None:
@@ -145,13 +154,17 @@ class LocalHA:
 
     def _record_call(self, event: dict[str, Any]) -> None:
         data = event.get("data", {})
-        if data.get("domain") != "light" or data.get("service") != "turn_on":
+        service = data.get("service")
+        if data.get("domain") != "light" or service not in ("turn_on", "turn_off"):
             return
         with contextlib.suppress(KeyError, ValueError, TypeError):
             fired = datetime.fromisoformat(
                 event["time_fired"].replace("Z", "+00:00")
             ).timestamp()
-            self.calls.append((fired, dict(data.get("service_data") or {})))
+            service_data = dict(data.get("service_data") or {})
+            self.light_calls.append((fired, service, service_data))
+            if service == "turn_on":
+                self.calls.append((fired, service_data))
 
     def states_of(self, key: str, start: float, end: float) -> list[str]:
         """The states the entity had between two WSL times (also the one before)."""

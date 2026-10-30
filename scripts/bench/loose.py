@@ -7,6 +7,11 @@ bench's local Home Assistant mirrors as a proxy light (stubs/proxy.py) of a
 Hue network (`kind: hue`) or a Thread network (`kind: matter`). One that the
 camera sees (`light:` names one of the bench's `lights:`) is judged with the
 camera; any other by its state in the owner's Home Assistant.
+
+A camera light of the Hue network may be marked `in_area: true` (#198): one
+that is in the bench's entertainment area too. Only the combined suite uses
+the mark; its proxy then carries the light's Hue light resource id as unique
+id, as Home Assistant's hue integration does, so Glowcast finds it in the area.
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ class LooseLight:
     x: float
     z: float
     camera: str | None
+    in_area: bool = False
 
     @property
     def unique_id(self) -> str:
@@ -73,7 +79,8 @@ def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
 
     Each item: `kind` (hue or matter); `light` (optional, a name in `lights:`
     that the camera sees); `entity_id` (in the owner's HA; default: that
-    light's); the position as `position` (a preset) or `x` and `z` (-1..1).
+    light's); the position as `position` (a preset) or `x` and `z` (-1..1);
+    `in_area: true` (optional, at most one: a camera light of kind hue).
     """
     items = cfg.get("loose_lights")
     camera = cfg.get("lights") or {}
@@ -107,13 +114,20 @@ def parse(cfg: Mapping[str, Any]) -> list[LooseLight]:
                 raise ValueError(f"{where} needs a `position` or `x` and `z`") from None
             if not (-1 <= x <= 1 and -1 <= z <= 1):
                 raise ValueError(f"{where}: `x` and `z` must be within -1..1")
-        out.append(LooseLight(i, str(entity), item["kind"], x, z, name))
+        in_area = item.get("in_area", False)
+        if not isinstance(in_area, bool):
+            raise ValueError(f"{where}: `in_area` must be true or false")
+        if in_area and (item["kind"] != "hue" or name is None):
+            raise ValueError(f"{where}: `in_area` needs kind hue and a camera `light`")
+        out.append(LooseLight(i, str(entity), item["kind"], x, z, name, in_area))
     if len({light.entity_id for light in out}) != len(out):
         raise ValueError("`loose_lights` names a light twice")
     if len({light.camera for light in out if light.camera}) != sum(
         1 for light in out if light.camera
     ):
         raise ValueError("`loose_lights` names a camera light twice")
+    if sum(light.in_area for light in out) > 1:
+        raise ValueError("`loose_lights` marks more than one light `in_area`")
     return out
 
 
@@ -121,6 +135,21 @@ def beside_area(lights: Sequence[LooseLight]) -> list[LooseLight]:
     """The loose lights the combined suite drives beside the bench area: the
     ones the camera does not see (the camera lights are the area's)."""
     return [light for light in lights if light.camera is None]
+
+
+def in_area(lights: Sequence[LooseLight]) -> LooseLight | None:
+    """The loose light the combined suite also puts in the loose lights while
+    the bench area streams to it (#198), or None."""
+    return next((light for light in lights if light.in_area), None)
+
+
+def area_unique_id(light: LooseLight, rid_of: Mapping[str, str | None]) -> str | None:
+    """The in-area light's proxy unique id: its Hue light resource id, the
+    bridge light that came on with its camera light in the calibration
+    (`rid_of`); None when that could not be told (also when it came on with
+    another camera light too)."""
+    rid = rid_of.get(light.camera) if light.camera else None
+    return rid if rid is not None and list(rid_of.values()).count(rid) == 1 else None
 
 
 def labels(lights: Sequence[LooseLight], camera_labels: Mapping[str, str]) -> dict:

@@ -22,7 +22,7 @@ from . import (
     hue_entertainment,
     hue_entertainment_flow,
 )
-from .blocks import OUTPUT_COMBINED, output_blocks, output_types
+from .blocks import OUTPUT_COMBINED, output_blocks, output_types, part_options
 from .composite import CompositeOutput
 
 
@@ -65,6 +65,18 @@ class OutputType:
     stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
     # Run when the Glowcast entry is removed: what the user must clean up.
     async_removed: Callable[[HomeAssistant, ConfigEntry], Awaitable[None]] | None = None
+    # A problem the type works around while the lights follow the picture,
+    # checked each time they are claimed: its repair issue, raised with the
+    # placeholders the check returns from the entry's data and options, and
+    # removed when it returns None.
+    notice: Issue | None = None
+    async_notice: (
+        Callable[
+            [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
+            Awaitable[Mapping[str, str] | None],
+        ]
+        | None
+    ) = None
 
 
 OUTPUTS = {
@@ -98,6 +110,9 @@ OUTPUTS = {
         options_step="ha_lights_options",
         entity_keys=(ha_lights_select.ENTITY_KEY,),
         stop_issues={StopReason.OUTPUT_NOT_FOUND: ha_lights.NO_LIGHTS},
+        # A light that later joined the entertainment area (#198).
+        notice=ha_lights.IN_AREA,
+        async_notice=ha_lights.async_in_area_notice,
     ),
     # An entertainment area and loose lights together (#11): a part per type,
     # each with its own block, issues and entities. Chosen in the settings.
@@ -138,13 +153,6 @@ def output_entities(
         if create is not None:
             entities.extend(create(hass, entry))
     return entities
-
-
-def part_options(
-    options: Mapping[str, Any], block: Mapping[str, Any]
-) -> dict[str, Any]:
-    """The options as one part of a combined output sees them: its own block."""
-    return {**options, CONF_OUTPUT: block}
 
 
 def create_combined(

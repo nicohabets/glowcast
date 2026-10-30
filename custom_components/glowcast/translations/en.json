@@ -398,6 +398,10 @@
     "ha_lights_not_found": {
       "title": "Glowcast {name}: no colour lights to follow",
       "description": "Glowcast cannot sync because the lights it follows are gone: the area or light group was removed, or it has no colour lights left. Choose other lights in Glowcast's settings, then switch Glowcast on again."
+    },
+    "loose_lights_in_area": {
+      "title": "Glowcast {name}: loose lights in the entertainment area",
+      "description": "{lights} were added to the entertainment area in the Hue app, so they follow the picture through the area. Glowcast leaves them out of the loose lights, so that they do not get two colours. To make this message go away, choose the loose lights again without them in Glowcast's settings (Configure, then \"Entertainment area and loose lights\"), or remove them from the entertainment area in the Hue app. The message is checked again the next time Glowcast takes over the lights."
     }
   },
   "exceptions": {

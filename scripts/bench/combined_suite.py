@@ -15,6 +15,12 @@ After the calibration, in pattern mode:
    before the retry: it follows again and the attribute clears; later
    (Glowcast's "lost again" window past), unavailable through the retry: it
    stays dropped with the reason, also once available again;
+   then, with a loose light marked `in_area: true` (#198), still on the
+   steady picture: that camera light's proxy (under its Hue light resource
+   id) stored beside the loose lights and switched on: Glowcast sends it no
+   light command, raises the repair issue, the area streams on with its
+   lights on their sides and the loose lights beside it follow; switch off:
+   everything back;
 3. switched on again: the helper stopped (tv_off), the area released and
    every light back.
 """
@@ -29,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import combined
+import local_ha
 import loose_suite
 import suite
 from report import FAIL, PASS, Step
@@ -41,6 +48,8 @@ from custom_components.glowcast.core.pipeline import (  # noqa: E402
 
 MODE = "combined"
 STEADY = "left-red-right-blue"
+IN_AREA = "a loose light in the area too"
+IN_AREA_WAIT = 8.0  # seconds synced before the checks
 # The waits (a test runs the steps without them).
 sleep = asyncio.sleep
 
@@ -63,6 +72,7 @@ async def run(bench: Any) -> None:
     finally:
         await set_available(bench, True)
     await switch_off(bench)
+    await in_area(bench)
     # 3: both parts again from the start; the helper stopped. The loose
     # lights go back to their state at this start: a light that was
     # unavailable when its part was released kept Glowcast's last colour.
@@ -281,6 +291,124 @@ async def part_fails(bench: Any) -> None:
                 "bridge polls": polls,
             },
             note="" if ok else "not dropped, came back, or the area stopped",
+        )
+    )
+
+
+async def in_area(bench: Any) -> None:
+    """Step 2, a loose light in the bench area too (#198), on the steady
+    picture: left out of the loose lights, the repair issue raised, the area
+    and the loose lights beside it on as before."""
+    light = bench.in_area
+    if light is None:
+        return
+    if light.index not in bench.proxies:
+        bench.report.add(
+            Step(
+                f"{IN_AREA}: left out of the loose lights",
+                MODE,
+                FAIL,
+                note="not matched to a bridge light in the calibration",
+            )
+        )
+        return
+    if (await bench.ha.state("switch"))["state"] == "on":
+        await switch_off(bench)
+    reference = await loose_suite.read_states(bench)
+    proxy = loose_suite.entity_of(bench, light)
+    before = await issue_raised(bench, tries=1)
+    await bench.set_loose_output([*bench.loose, light])
+    try:
+        on_at = time.time()
+        if not await bench.switch_on(MODE, name=f"switch on: {IN_AREA}"):
+            return
+        start = time.time()
+        await sleep(IN_AREA_WAIT)
+        await in_area_checks(bench, before, on_at, start, time.time())
+        await stop_both(bench, reference, f"{IN_AREA}, switch off", "switch")
+        sent = combined.calls_to(bench.ha.light_calls, [proxy], on_at, time.time())
+        bench.report.add(
+            Step(
+                f"{IN_AREA}: Glowcast sent it no light command (on to off)",
+                MODE,
+                PASS if sent == 0 else FAIL,
+                numbers={"light calls": sent},
+                note="" if sent == 0 else "it was driven as a loose light",
+            )
+        )
+    finally:
+        if (await bench.ha.state("switch"))["state"] == "on":
+            await switch_off(bench)
+        await bench.set_loose_output(bench.loose)
+
+
+async def issue_raised(bench: Any, tries: int = 10) -> bool:
+    """Whether Glowcast's repair issue for loose lights in the area is up in
+    the local HA; `tries` reads half a second apart (it is raised after the
+    claim)."""
+    for attempt in range(tries):
+        if attempt:
+            await sleep(0.5)
+        with contextlib.suppress(Exception):
+            if combined.has_issue(await bench.ha.issues(), local_ha.ENTRY_ID):
+                return True
+    return False
+
+
+async def in_area_checks(
+    bench: Any, before: bool, on_at: float, start: float, end: float
+) -> None:
+    """The in-area step's checks while syncing: the repair issue (not up
+    before the switch on), the area (one stream; its lights by side, camera)
+    and the loose lights beside it (their commands since the switch on)."""
+    raised = await issue_raised(bench)
+    ok = raised and not before
+    bench.report.add(
+        Step(
+            f"{IN_AREA}: the repair issue is raised",
+            MODE,
+            PASS if ok else FAIL,
+            numbers={
+                "repair issue before": "yes" if before else "no",
+                "repair issue": "yes" if raised else "no",
+            },
+            note="" if ok else "no repair issue, or it was up before",
+        )
+    )
+    stream, polls = combined.one_stream(bench.bridge.statuses(start, end))
+    bench.report.add(
+        Step(
+            f"{IN_AREA}: the area streams (one stream)",
+            MODE,
+            PASS if stream else FAIL,
+            numbers={"bridge polls": polls},
+            note="" if stream else "the area was released or streamed again",
+        )
+    )
+    bench.left_right_step(
+        MODE,
+        bench.win(start),
+        bench.win(end),
+        f"{IN_AREA}: each area light the colour of its side (camera)",
+    )
+    numbers: dict[str, Any] = {}
+    ok = True
+    for other in bench.loose:
+        sent = combined.commands_after(
+            bench.ha.calls, [loose_suite.entity_of(bench, other)], on_at, end
+        )
+        numbers[f"{bench.loose_label[other.index]} commands"] = sent
+        ok &= sent > 0
+    dropped = combined.PART in await current(bench)
+    numbers["loose lights dropped"] = "yes" if dropped else "no"
+    ok &= not dropped
+    bench.report.add(
+        Step(
+            f"{IN_AREA}: the loose lights beside the area follow",
+            MODE,
+            PASS if ok else FAIL,
+            numbers=numbers,
+            note="" if ok else "a loose light got no command, or the part dropped",
         )
     )
 
