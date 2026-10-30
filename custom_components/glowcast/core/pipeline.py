@@ -39,9 +39,10 @@ LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
 CAPTURE_RATE_WINDOW = 1.0  # seconds; the captures per second are reported this often
 # Release the lights after this long of all-zero frames (no picture, as from a
-# protected app); shorter all-zero moments at a hard cut or an input switch
-# lasted under 2 s (measured, see "Verified facts").
-NO_PICTURE_WAIT = 3.0
+# protected app); shorter all-zero moments in a film or series over HDMI, after
+# a hard cut, lasted up to 5 s at 1 capture per second, so up to about 6 s
+# (measured on #126, see "Verified facts"; #139).
+NO_PICTURE_WAIT = 7.0
 
 Runner = Callable[..., Awaitable[Any]]
 
