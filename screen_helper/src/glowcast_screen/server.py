@@ -98,6 +98,7 @@ class HelperServer:
         pairing_code: str | None,
         pair_delay: float = PAIR_DELAY,
         stats_interval: float = STATS_INTERVAL,
+        pattern_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self.store = store
         self.picture = picture
@@ -107,6 +108,7 @@ class HelperServer:
         self._pair_delay = pair_delay
         self._pair_lock = asyncio.Lock()
         self._stats_interval = stats_interval
+        self._pattern_sleep = pattern_sleep
         self._served = 0
         self._no_picture = False
         self._clients: dict[str, float] = {}
@@ -233,8 +235,8 @@ class HelperServer:
             self.events.emit("frames", text, fps=fps, capture_ms=capture_ms)
 
     async def _report_patterns(self, source: PatternSource) -> None:
-        # The wall clock (time.time) drives the cycle; the loop sleeps on its own
-        # clock, which may run a little faster, so a wake-up just before the change
+        # The source's clock drives the cycle; the loop sleeps on its own clock,
+        # which may run a little faster, so a wake-up just before the change
         # sleeps again instead of reporting the same pattern twice.
         reported: float | None = None
         while True:
@@ -249,4 +251,4 @@ class HelperServer:
                 )
             next_change = source.next_change()
             assert next_change is not None
-            await asyncio.sleep(max(0.0, next_change - time.time()) + 0.001)
+            await self._pattern_sleep(max(0.0, next_change - source.now()) + 0.001)

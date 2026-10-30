@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from aiohttp.test_utils import TestClient
-from fakes import FakeClock, FakeGrabber
+from fakes import FakeClock, FakeGrabber, FakeSleep
 from glowcast_screen.capture import CaptureError, ScreenCapture
 from glowcast_screen.events import Events
 from glowcast_screen.patterns import FRAMES, PatternSource
@@ -267,28 +267,28 @@ async def test_frames_per_second_with_capture_times(make_helper: MakeHelper) -> 
 
 
 async def test_cycle_reports_each_pattern_change(make_helper: MakeHelper) -> None:
-    import time
-
-    source = PatternSource("cycle", time.time, interval=0.1)
-    helper = await make_helper(PatternPicture(source))
+    clock = FakeClock()
+    source = PatternSource("cycle", clock, interval=0.1)
+    sleep = FakeSleep(clock, wakes=3)
+    helper = await make_helper(PatternPicture(source), pattern_sleep=sleep)
     helper.server.start_reporting()
-    await asyncio.sleep(0.35)
+    await sleep.done.wait()
     await helper.server.stop_reporting()
     patterns = [e for e in helper.events() if e["event"] == "pattern"]
-    assert [p["showing"] for p in patterns[:3]] == ["red", "green", "blue"]
+    assert [p["showing"] for p in patterns] == ["red", "green", "blue", "white"]
     assert all(p["since"].endswith("Z") for p in patterns)
 
 
 async def test_cycle_never_reports_a_pattern_twice(make_helper: MakeHelper) -> None:
-    import time
-
-    # The cycle's clock runs 5 ms behind the loop's: the reporter wakes just
-    # before each change and must not report the old pattern again.
-    source = PatternSource("cycle", lambda: time.time() - 0.005, interval=0.1)
-    helper = await make_helper(PatternPicture(source))
+    # The reporter wakes 5 ms before each change and must not report the old
+    # pattern again.
+    clock = FakeClock()
+    source = PatternSource("cycle", clock, interval=0.1)
+    sleep = FakeSleep(clock, wakes=6, early=0.005)
+    helper = await make_helper(PatternPicture(source), pattern_sleep=sleep)
     helper.server.start_reporting()
-    await asyncio.sleep(0.35)
+    await sleep.done.wait()
     await helper.server.stop_reporting()
     shown = [e["showing"] for e in helper.events() if e["event"] == "pattern"]
-    assert shown[:3] == ["red", "green", "blue"]
-    assert len(shown) == len(set(shown))
+    assert sleep.early_wakes == 3
+    assert shown == ["red", "green", "blue", "white"]
