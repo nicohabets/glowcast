@@ -134,3 +134,13 @@ def test_the_stretch_maps_onto_the_picture_inside_letterbox_bars() -> None:
     regions = channel_regions(strip(), WIDTH, HEIGHT, picture)
     assert min(r[2] for r in regions) == 5
     assert max(r[3] for r in regions) == HEIGHT - 5
+
+
+def test_a_light_beyond_the_edge_is_not_pulled_in() -> None:
+    """Positions outside -1..1 stay where they are (clamped as before)."""
+    wide = [
+        Channel(str(i), str(i), x, 0.0, y=0.8, light="wide")
+        for i, x in enumerate((-1.2, 1.2))
+    ]
+    plain = [Channel(c.id, c.name, c.x, c.z) for c in wide]
+    assert channel_regions(wide, WIDTH, HEIGHT) == channel_regions(plain, WIDTH, HEIGHT)

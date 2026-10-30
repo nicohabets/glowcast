@@ -94,7 +94,8 @@ def _stretched(channels: list[Channel]) -> list[Channel]:
     (between -0.4 and 0.4 in a real area, see "Verified facts"), so with the
     linear mapping they would sample about 30 % in from the edges. Each such
     light is scaled from the centre until its outermost channel reaches the
-    edge, per axis. Other lights keep their positions.
+    edge, per axis; a light that reaches the edge already is left as it is,
+    never pulled in. Other lights keep their positions.
     """
     lights: dict[str, list[int]] = {}
     for index, channel in enumerate(channels):
@@ -110,8 +111,8 @@ def _stretched(channels: list[Channel]) -> list[Channel]:
             channel = channels[i]
             stretched[i] = dataclasses.replace(
                 channel,
-                x=channel.x / reach_x if reach_x >= MIN_SPREAD else channel.x,
-                z=channel.z / reach_z if reach_z >= MIN_SPREAD else channel.z,
+                x=channel.x / reach_x if MIN_SPREAD <= reach_x < 1 else channel.x,
+                z=channel.z / reach_z if MIN_SPREAD <= reach_z < 1 else channel.z,
             )
     return stretched
 
