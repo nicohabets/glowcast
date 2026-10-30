@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from .color_engine import compute, is_all_zero, is_black
+from .letterbox import Letterbox
 from .light_state import LightState
 from .models import Channel, ChannelColor, Frame
 from .ports import (
@@ -198,6 +199,8 @@ class Pipeline:
         self._stop_requested = asyncio.Event()
         self._channels: list[Channel] = []
         self._lights = LightState()
+        # Where the picture sits inside letterbox bars, over frames (#34).
+        self._letterbox = Letterbox()
         self._retried_at: float | None = None
         self._captures_per_second: float | None = None
         self._failures = 0  # captures in a row that failed
@@ -533,10 +536,15 @@ class Pipeline:
         """Give the lights the frame's colours; raise _NoPicture after all-zero
         frames for NO_PICTURE_WAIT. Until then an all-zero frame is a black
         frame, with the hold on black and the glow, and the status says so."""
-        colors, frame_black, no_picture = await self._async_run_job(
-            _compute, frame, self._channels, self._settings.intensity / 100
-        )
         now = self._clock.now()
+        colors, frame_black, no_picture = await self._async_run_job(
+            _compute,
+            frame,
+            self._channels,
+            self._settings.intensity / 100,
+            self._letterbox,
+            now,
+        )
         if not no_picture:
             self._no_picture_since = None
         elif self._no_picture_since is None:
@@ -607,10 +615,23 @@ def _starts(channels: list[Channel]) -> dict[str, tuple[float, float, float] | N
 
 
 def _compute(
-    frame: Frame, channels: list[Channel], intensity: float
+    frame: Frame,
+    channels: list[Channel],
+    intensity: float,
+    letterbox: Letterbox,
+    now: float,
 ) -> tuple[list[ChannelColor], bool, bool]:
-    """The colour engine's work for one frame, in one executor job."""
-    return compute(frame, channels, intensity), is_black(frame), is_all_zero(frame)
+    """The colour engine's work for one frame, in one executor job.
+
+    The capture loop awaits it before the next capture, so the letterbox
+    memory is only updated by one frame at a time.
+    """
+    picture = letterbox.update(frame, now).picture(frame.width, frame.height)
+    return (
+        compute(frame, channels, intensity, picture),
+        is_black(frame),
+        is_all_zero(frame),
+    )
 
 
 def _raise_check_result(check: asyncio.Task[None]) -> None:
