@@ -22,7 +22,7 @@ A light that joins the area or group later follows the middle of the picture unt
 
 ## When Glowcast stops
 
-When Glowcast stops (switched off, the TV off, no picture, an error, or Home Assistant restarting), each light goes back to how it was before: on or off, its brightness and its colour or colour temperature. For a light group picked as a single light, each light in it goes back to its own state.
+When Glowcast stops (switched off, the picture source off, no picture, an error, or Home Assistant restarting), each light goes back to how it was before: on or off, its brightness and its colour or colour temperature. For a light group picked as a single light, each light in it goes back to its own state.
 
 ## How fast
 
@@ -39,7 +39,7 @@ A gradient lightstrip gets one colour as a loose light. An automation that chang
 
 ## Hue lights: an entertainment area is smoother
 
-An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one, and a gradient lightstrip shows several colours. During setup, Glowcast tells you when some of the Hue lights you picked can join an entertainment area. Hue lights that cannot (older Hue lights, other brands' lights on a Hue bridge) work fine as loose lights.
+An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one, and a gradient lightstrip shows several colours. During setup, Glowcast tells you when some of the Hue lights you picked can join an entertainment area. Hue lights that cannot (older Hue lights, other brands' lights on a Hue bridge) work fine as loose lights.
 
 While Glowcast streams to an entertainment area, its lights only listen to Glowcast, so automations and the Hue app cannot control them until syncing stops.
 

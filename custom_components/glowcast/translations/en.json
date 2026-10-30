@@ -99,11 +99,11 @@
       },
       "ha_lights_hue_hint": {
         "title": "An entertainment area is smoother",
-        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
+        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
       },
       "ha_lights_hue_no_area": {
         "title": "An entertainment area is smoother",
-        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
+        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
       },
       "ha_lights_position": {
         "title": "Where is {light}?",
@@ -122,7 +122,7 @@
       },
       "ha_lights_rate": {
         "title": "Many lights on one network",
-        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the TV much more smoothly. Click Submit to save anyway."
+        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the picture much more smoothly. Click Submit to save anyway."
       }
     },
     "progress": {
@@ -228,11 +228,11 @@
       },
       "ha_lights_hue_hint": {
         "title": "An entertainment area is smoother",
-        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
+        "description": "Some of these are Hue lights that can join an entertainment area. An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one. To use it, choose Hue entertainment area in Glowcast's settings later. Click Submit to go on with loose lights."
       },
       "ha_lights_hue_no_area": {
         "title": "An entertainment area is smoother",
-        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the TV much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
+        "description": "Some of these are Hue lights that can join an entertainment area, but the bridge has none yet. An entertainment area follows the picture much more smoothly: up to 25 changes per second instead of about one. Make one in the Hue app ([how]({link})), then choose Hue entertainment area in Glowcast's settings. Click Submit to go on with loose lights."
       },
       "ha_lights_position": {
         "title": "Where is {light}?",
@@ -251,7 +251,7 @@
       },
       "ha_lights_rate": {
         "title": "Many lights on one network",
-        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the TV much more smoothly. Click Submit to save anyway."
+        "description": "{count} of these lights share one Hue bridge or Thread network. Glowcast sends at most {limit} commands per second to each, so these lights change about every {seconds} seconds instead of every second. For Hue lights, an entertainment area follows the picture much more smoothly. Click Submit to save anyway."
       },
       "ha_lights_changes": {
         "title": "The lights have changed",
