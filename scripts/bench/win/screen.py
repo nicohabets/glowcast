@@ -84,25 +84,34 @@ def main() -> None:
                 root.destroy()
                 _emit(event="stopped")
                 return
-            if command == "ping":
-                _emit(event="pong", t=time.time())
-            elif command.startswith("split "):
-                _, first, second = command.split()
-                show(first, second, command)
-            elif command.startswith("#"):
-                show(command, command, command)
-            elif command.startswith("load "):
-                _, name, path = command.split(" ", 2)
-                images[name] = tk.PhotoImage(file=path)
-                _emit(event="loaded", name=name)
-            elif command.startswith("image "):
-                canvas.itemconfigure(
-                    scene, image=images[command.split()[1]], state="normal"
+            try:
+                run(command)
+            except (tk.TclError, KeyError, ValueError) as err:
+                # Only the type: a message may hold a path with the user's name.
+                _emit(
+                    event="error", command=command.split()[0], error=type(err).__name__
                 )
-                canvas.tag_raise(scene)
-                root.update()
-                _emit(event="shown", picture=command, t=round(time.time(), 4))
         root.after(2, poll)
+
+    def run(command: str) -> None:
+        if command == "ping":
+            _emit(event="pong", t=time.time())
+        elif command.startswith("split "):
+            _, first, second = command.split()
+            show(first, second, command)
+        elif command.startswith("#"):
+            show(command, command, command)
+        elif command.startswith("load "):
+            _, name, path = command.split(" ", 2)
+            images[name] = tk.PhotoImage(file=path)
+            _emit(event="loaded", name=name)
+        elif command.startswith("image "):
+            canvas.itemconfigure(
+                scene, image=images[command.split()[1]], state="normal"
+            )
+            canvas.tag_raise(scene)
+            root.update()
+            _emit(event="shown", picture=command, t=round(time.time(), 4))
 
     root.update()
     root.lift()
