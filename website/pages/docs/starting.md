@@ -24,6 +24,12 @@ Its other settings are optional; left off or empty, Glowcast starts every time t
 - **Only after dark**: starts Glowcast only while the sun is below the horizon, after sunset and before sunrise. It uses Home Assistant's Sun integration (`sun.sun`, part of the default setup); without it, Glowcast never starts. When the sun sets while the TV is already on, Glowcast does not start by itself.
 - **Only for these inputs or apps**: starts Glowcast only when the TV shows one of them, for example "HDMI 2" or "Netflix". Type each name exactly as Home Assistant shows the TV's source (the TV's `source` attribute under Developer tools > States); the names depend on the TV's language and on the names you gave the inputs. Glowcast also starts when you switch to one of them while the TV is on. With **Also stop when the TV turns off** on, switching to an input or app that is not in the list turns the switch off again, but only when this automation started Glowcast: if you switched it on yourself (or it continued after a restart of Home Assistant), it keeps running.
 
+### Next to a Hue Sync Box
+
+The blueprint "Follow a Hue Sync Box" turns the switch on when a Philips Hue Play HDMI Sync Box starts syncing and off when it stops, for Home Assistant lights that join the box's own Hue lights. It asks for an entity that is on while the box syncs (the box's "Light sync" switch, or the Hue integration's binary sensor of the box's entertainment area), the Glowcast switch, and optionally a TV that must be on. See [Next to a Hue Sync Box](../guide/lights.md#next-to-a-hue-sync-box) for which lights to use.
+
+[Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Ffollow_sync_box.yaml){ .md-button }
+
 ## Your own automation
 
 Or write the automation yourself:

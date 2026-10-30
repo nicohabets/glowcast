@@ -27,6 +27,20 @@ from .composite import CompositeOutput
 
 
 @dataclass(frozen=True)
+class Notice:
+    """A problem an output type works around while the lights follow the
+    picture, so not a stop (architecture 4.4)."""
+
+    # Its repair issue, raised with the placeholders `check` returns from the
+    # entry's data and options, and removed when it returns None.
+    issue: Issue
+    check: Callable[
+        [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
+        Awaitable[Mapping[str, str] | None],
+    ]
+
+
+@dataclass(frozen=True)
 class OutputType:
     """How Glowcast builds and checks one type of output (architecture 5)."""
 
@@ -65,18 +79,9 @@ class OutputType:
     stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
     # Run when the Glowcast entry is removed: what the user must clean up.
     async_removed: Callable[[HomeAssistant, ConfigEntry], Awaitable[None]] | None = None
-    # A problem the type works around while the lights follow the picture,
-    # checked each time they are claimed: its repair issue, raised with the
-    # placeholders the check returns from the entry's data and options, and
-    # removed when it returns None.
-    notice: Issue | None = None
-    async_notice: (
-        Callable[
-            [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
-            Awaitable[Mapping[str, str] | None],
-        ]
-        | None
-    ) = None
+    # The problems the type works around while the lights follow the picture,
+    # checked each time they are claimed (Notice).
+    notices: tuple[Notice, ...] = ()
 
 
 OUTPUTS = {
@@ -110,9 +115,12 @@ OUTPUTS = {
         options_step="ha_lights_options",
         entity_keys=(ha_lights_select.ENTITY_KEY,),
         stop_issues={StopReason.OUTPUT_NOT_FOUND: ha_lights.NO_LIGHTS},
-        # A light that later joined the entertainment area (#198).
-        notice=ha_lights.IN_AREA,
-        async_notice=ha_lights.async_in_area_notice,
+        notices=(
+            # A light that later joined the entertainment area (#198).
+            Notice(ha_lights.IN_AREA, ha_lights.async_in_area_notice),
+            # A light in an area another app streams, a Sync Box (#219).
+            Notice(ha_lights.STREAMED, ha_lights.async_streamed_notice),
+        ),
     ),
     # An entertainment area and Home Assistant lights together (#11): a part per type,
     # each with its own block, issues and entities. Chosen in the settings.
