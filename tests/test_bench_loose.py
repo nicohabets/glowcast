@@ -89,6 +89,37 @@ def test_a_wrong_light_is_a_config_error(item: dict[str, Any], reason: str) -> N
         loose.parse({"lights": CAMERA, "loose_lights": [item]})
 
 
+def test_a_light_in_the_area_too() -> None:
+    marked = [{**LOOSE[0], "in_area": True}, *LOOSE[1:]]
+    lights = loose.parse({"lights": CAMERA, "loose_lights": marked})
+    assert [li.in_area for li in lights] == [True, False, False]
+    assert loose.in_area(lights) == lights[0]
+    assert loose.in_area(lights[1:]) is None
+    assert loose.beside_area(lights) == [lights[2]]
+    assert loose.area_unique_id(lights[0], {"wall": "rid-1", "spot": None}) == "rid-1"
+    assert loose.area_unique_id(lights[0], {"wall": None}) is None
+    assert loose.area_unique_id(lights[0], {}) is None
+
+
+@pytest.mark.parametrize(
+    ("items", "reason"),
+    [
+        ([{**LOOSE[0], "in_area": "yes"}], "true or false"),
+        ([{**LOOSE[0], "kind": "matter", "in_area": True}], "kind hue"),
+        ([{**LOOSE[2], "kind": "hue", "in_area": True}], "camera `light`"),
+        (
+            [{**LOOSE[0], "in_area": True}, {**LOOSE[1], "in_area": True}],
+            "more than one",
+        ),
+    ],
+)
+def test_a_wrong_in_area_light_is_a_config_error(
+    items: list[dict[str, Any]], reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        loose.parse({"lights": CAMERA, "loose_lights": items})
+
+
 def test_a_light_twice_is_a_config_error() -> None:
     twice = [LOOSE[0], {"kind": "matter", "entity_id": "light.desk_up", "x": 0, "z": 0}]
     with pytest.raises(ValueError, match="twice"):
