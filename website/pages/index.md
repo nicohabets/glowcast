@@ -40,7 +40,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     **The lights follow the picture**
 
-    Each light gets the colour of the part of the screen beside it: left, right, top and bottom. A gradient lightstrip shows several colours along its length.
+    Each light gets the colour of the part of the screen beside it: left, right, top and bottom. A gradient lightstrip shows several colours along its length, and its ends follow the very edges of the picture.
 
 -   ![A dark picture on the TV: every light keeps a faint warm glow.](images/illustrations/scene-2-dark-scene.svg){ .gc-feature loading=lazy }
 

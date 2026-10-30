@@ -209,7 +209,8 @@ def test_sixteen_channels_on_a_64x36_frame_within_budget() -> None:
 
 
 def test_tv_strip_channels_sample_the_inner_area() -> None:
-    """TV gradient-strip channels sit between -0.4 and 0.4, so they miss the edges.
+    """TV gradient-strip channels sit between -0.4 and 0.4, so without a depth
+    and a light to stretch them by (#23, `test_strip_edges.py`) they miss the edges.
 
     The four corners of that range are assumed positions; section 2 records
     only the range. Each screen edge has its own colour in the outer 12 %; the

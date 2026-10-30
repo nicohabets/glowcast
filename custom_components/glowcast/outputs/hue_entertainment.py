@@ -252,6 +252,8 @@ class HueEntertainmentOutput:
                 x=c.get("position", {}).get("x", 0.0),
                 z=c.get("position", {}).get("z", 0.0),
                 start_rgb=starts.get(c["channel_id"]),
+                y=c.get("position", {}).get("y"),
+                light=_light_of(c),
             )
             for c in channels
         ]
@@ -730,3 +732,13 @@ def _to_8bit(value: float) -> int:
     Upstream report: https://github.com/music-assistant/hue-entertainment/issues/5
     """
     return min(255, max(0, round(value * 255)))
+
+
+def _light_of(channel: dict[str, Any]) -> str | None:
+    """The light a channel is a segment of: its one member's entertainment
+    service, which every segment of a gradient light shares; None for a
+    channel of several lights."""
+    members = channel.get("members") or []
+    if len(members) != 1:
+        return None
+    return (members[0].get("service") or {}).get("rid")
