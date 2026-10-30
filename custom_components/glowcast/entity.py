@@ -33,12 +33,8 @@ class GlowcastEntity(Entity):
             entry_type=DeviceEntryType.SERVICE,
         )
         source = SOURCES[entry.data[CONF_SOURCE][CONF_TYPE]]
-        if "via_device_id" in DeviceInfo.__annotations__:
-            # Newer HA versions link by device id; via_device is deprecated there.
-            if tv_device_id := source.device_id(hass, entry.data):
-                self._attr_device_info["via_device_id"] = tv_device_id
-        elif tv_identifier := source.device_identifier(entry.data):
-            self._attr_device_info["via_device"] = tv_identifier
+        if tv_device_id := source.device_id(hass, entry.data):
+            self._attr_device_info["via_device_id"] = tv_device_id
 
     async def async_added_to_hass(self) -> None:
         """Follow the runtime's state, including stops it makes by itself.

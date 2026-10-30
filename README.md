@@ -32,7 +32,7 @@ More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustra
 
 ## Requirements
 
-- Home Assistant 2025.7.2 or newer
+- Home Assistant 2026.8.3 or newer (TVs with webOS 26 need it to pair; the minimum that can work there, not a guarantee). On an older Home Assistant, HACS will not install Glowcast 0.5.0 or newer and the version you have keeps working: update Home Assistant first. More: [installation](https://nicohabets.github.io/glowcast/docs/installation/#home-assistant-older-than-202683)
 - An LG TV running webOS, set up in Home Assistant with the **LG webOS Smart TV** integration
 - Colour lights, one of:
   - A Hue bridge with an entertainment area: a Philips Hue Bridge v2 or Hue Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area set up in the Hue app (Hue app → Settings → Entertainment areas). The smoothest. The original round bridge (sold 2012-2015) cannot stream.

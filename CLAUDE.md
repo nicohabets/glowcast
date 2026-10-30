@@ -56,7 +56,7 @@ uv run --project screen_helper glowcast-screen --pattern cycle --name "Test PC" 
 
 - Hardware: an LG OLED65G36LA (2023, G3) on webOS, a Hue Pro bridge, and a Hue entertainment area with a gradient lightstrip. Hardware details that are specific to the owner's home (names, addresses, credentials) are given in the session handover, never in this repository.
 - Measured: about 4.1 captures per second with `WebOsFrameSource` (download and decode to 64x36 included), from a 960x540 JPEG (see architecture section 2).
-- Minimum Home Assistant version: 2025.7.2 (architecture section 2).
+- Minimum Home Assistant version: 2026.8.3 (architecture section 2 and D17; webOS 26 pairing needs `aiowebostv` 0.9.2).
 
 ## How we work
 

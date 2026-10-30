@@ -169,7 +169,6 @@ async def test_the_registry(hass: HomeAssistant) -> None:
     screen_type = SOURCES["screen"]
     data = {"source": {"type": "screen", "helper_id": HELPER_ID}}
     assert screen_type.is_missing(hass, data, {}) is False
-    assert screen_type.device_identifier(data) is None
     assert screen_type.device_id(hass, data) is None
     assert screen_type.missing is None
     # Its setup and reauth steps (#109).
