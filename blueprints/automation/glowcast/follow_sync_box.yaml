@@ -2,13 +2,9 @@ blueprint:
   name: Follow a Hue Sync Box
   description: >-
     Turns the Glowcast switch on when a Philips Hue Play HDMI Sync Box starts
-    syncing, and off when it stops, so Glowcast's Home Assistant lights follow
-    the picture together with the box's own Hue lights. Choose an entity that
-    is on while the box syncs: the "Light sync" switch of the Hue Sync Box
-    integration (HACS), or the binary sensor of the box's entertainment area
-    from the Hue integration. Use Glowcast with Home Assistant lights only,
-    none of them in the box's entertainment area. A restart of Home Assistant
-    normally does not start Glowcast.
+    syncing and off when it stops, so Glowcast's Home Assistant lights join
+    the box's own Hue lights. Use Glowcast with Home Assistant lights only,
+    none of them in the box's entertainment area.
   domain: automation
   source_url: https://github.com/nicohabets/glowcast/blob/main/blueprints/automation/glowcast/follow_sync_box.yaml
   homeassistant:

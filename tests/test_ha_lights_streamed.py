@@ -84,7 +84,8 @@ async def test_a_light_in_an_area_another_app_streams_gets_the_notice(
     )
 
     assert placeholders == {"lights": "Gradient Strip", "areas": "Sync Box area"}
-    assert "Gradient Strip are in an entertainment area" in caplog.text
+    assert "another app streams (Sync Box area)" in caplog.text
+    assert "while it does: Gradient Strip" in caplog.text
     # Read only: never a start or stop of anyone's stream.
     assert {method for method, *_ in aioclient_mock.mock_calls} == {"GET"}
 

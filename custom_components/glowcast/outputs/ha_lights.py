@@ -574,10 +574,10 @@ async def async_streamed_notice(
         )
     )
     _LOGGER.warning(
-        "%s are in an entertainment area that another app streams (%s), so "
-        "they do not follow Glowcast while it does",
-        names,
+        "Some Home Assistant lights are in an entertainment area that another "
+        "app streams (%s), so they do not follow Glowcast while it does: %s",
         areas,
+        names,
     )
     return {"lights": names, "areas": areas}
 
