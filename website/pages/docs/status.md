@@ -11,12 +11,12 @@ The **Status** sensor on Glowcast's device (for example `sensor.glowcast_living_
 | Streaming | The lights follow the picture. |
 | Black picture | Syncing, but the picture is black (a dark scene): the lights keep the last colours for a moment, then show the faint glow. |
 | No picture | The TV gives no picture (for example a streaming app with DRM, see [Known limits](limits.md)): the lights are released; Glowcast stays on and follows again when the picture returns. Before this, the status shows Black picture for about 7 seconds. |
-| TV off | Stopped because the TV turned off or could not be reached. For a computer screen, TV off means the screen helper stopped or cannot be reached, or the screen is locked, asleep or gone, for 3 seconds in a row. |
+| Picture source off | Stopped because the picture source turned off or could not be reached. For a TV: the TV turned off or does not answer. For a computer screen: the screen helper stopped or cannot be reached, or the screen is locked, asleep or gone, for 3 seconds in a row. |
 | Error | Stopped for another reason; Home Assistant shows a repair or asks to pair again where you can fix it, and the log says why. |
 
 ## Why it stopped
 
-For TV off and Error, the attribute **Stop reason** (`stop_reason`) says why, as a fixed key: `tv_off`, `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key), `source_unavailable` (the TV source failed) or `source_auth_failed` (the computer's screen helper rejected Glowcast's key; Home Assistant asks for a new pairing code). Use it in automations, for example to get a notification when Glowcast stops with an error. [Troubleshooting](troubleshooting.md) says what to do for each.
+For Picture source off and Error, the attribute **Stop reason** (`stop_reason`) says why. Home Assistant shows it as a text (for example "Picture source off or not reachable"); in automations and templates it is a fixed key that stays the same in every language, also when a text changes: `tv_off` (the picture source is off or not reachable; the key kept its name when computer screens came), `output_lost` (the light stream was lost), `output_busy` (another app is streaming), `output_not_found` (the entertainment area no longer exists), `output_too_many_channels`, `output_unavailable` (the bridge could not be reached), `auth_failed` (the bridge rejected Glowcast's key), `source_unavailable` (the picture source failed) or `source_auth_failed` (the computer's screen helper rejected Glowcast's key; Home Assistant asks for a new pairing code). Use it in automations, for example to get a notification when Glowcast stops with an error. [Troubleshooting](troubleshooting.md) says what to do for each.
 
 ## The capture rate
 
