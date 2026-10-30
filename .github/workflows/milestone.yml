@@ -1,0 +1,56 @@
+name: Milestone
+
+# Fails a pull request when an issue it closes has no milestone (#149): issues
+# without a milestone are not planned yet (CLAUDE.md, "How we work", rule 1).
+#
+# pull_request_target, not pull_request: the workflow comes from the base
+# branch, so it also runs on pull requests branched before this file existed,
+# and `edited` also fires when a pull request's base changes. This trigger runs
+# with the base repository's token, so the job never checks out or runs the
+# pull request's code, and reads the description only from the event payload,
+# through an environment variable (never inlined into the script).
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  issues: read
+  pull-requests: read
+
+jobs:
+  milestone:
+    name: milestone
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if [ "$BASE" != "main" ]; then
+            echo "::notice::The base is not main; the milestone is checked once the pull request targets main."
+            exit 0
+          fi
+          # GitHub's closing keywords followed by a same-repository #<n>,
+          # case-insensitive; owner/repo#<n> and #<n>abc do not count.
+          issues=$(printf '%s\n' "$BODY" \
+            | grep -oiP '(?<![\w/])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[ \t]+#\K[0-9]+\b' \
+            | sort -un || true)
+          if [ -z "$issues" ]; then
+            echo "::notice::This pull request closes no issue; nothing to check."
+            exit 0
+          fi
+          failed=0
+          for n in $issues; do
+            if ! milestone=$(gh api "repos/$REPO/issues/$n" --jq '.milestone.title // ""'); then
+              echo "::error::#$n could not be read."
+              failed=1
+            elif [ -z "$milestone" ]; then
+              echo "::error::#$n has no milestone; the product owner sets one before work starts."
+              failed=1
+            else
+              echo "#$n has a milestone."
+            fi
+          done
+          exit "$failed"

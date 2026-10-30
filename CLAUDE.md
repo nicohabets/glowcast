@@ -74,7 +74,8 @@ Work is tracked as GitHub issues on the project board **Glowcast** (https://gith
 | Done | Accepted and merged; the issue is closed by the pull request. | automatic, when the product owner merges |
 
 ### Rules
-1. **Only pick up issues from Todo**, top to bottom. Never move anything into Todo, and never start on an issue that is still in Backlog, even if it looks easy or related.
+1. **Only pick up issues from Todo**, top to bottom. Never move anything into Todo, and never start on an issue that is still in Backlog, even if it looks easy or related. **Only issues with a milestone:** if an issue in Todo has no milestone, it is not planned yet; comment on the issue that it needs a milestone, and do not start on it.
+    - CI checks this too: the `milestone` job fails a PR whose closing issue has no milestone.
 2. Move the issue to **In Progress** when you start (if your tools allow it; otherwise say so in the issue).
 3. One issue per branch (`<number>-<short-name>`, for example `3-colour-engine`) and one pull request per issue, with `Closes #<number>` in the description. **Create the branch from the issue**, so GitHub links it under the issue's "Development": `gh issue develop <number> --repo nicohabets/glowcast --base main --name <number>-<short-name> --checkout`. Do not create it with `git checkout -b`; that branch is not linked. (A branch that already exists cannot be linked afterwards; the pull request with `Closes #<number>` still links the work.)
 4. Work through the issue's **acceptance criteria** and **Definition of Done**; tick the checkboxes in the PR description. Then move the issue to **In Review** and describe in the PR how to test it on real hardware.

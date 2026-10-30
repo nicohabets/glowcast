@@ -35,10 +35,10 @@ STARTUP_GRACE = 10.0  # seconds for the TV to start and deliver a frame
 START_RETRY_INTERVAL = 1.0
 # Failed captures stop with TV_OFF once there are this many in a row, after
 # the startup grace, and this long has passed since the first of them began:
-# as long as the wait for no picture (#68) and a screen's own wait before it
-# counts as off (#110), so a fast source (4 per second) is not stopped after
-# about 1 s (4 intervals of 0.25 s plus the capture time). It applies to the
-# TV too (product owner's decision, #110).
+# as long as a screen's own wait before it counts as off (#110), so a fast
+# source (4 per second) is not stopped after about 1 s (4 intervals of 0.25 s
+# plus the capture time). It applies to the TV too (product owner's decision,
+# #110).
 MAX_CAPTURE_FAILURES = 5
 CAPTURE_FAILURE_WAIT = 3.0
 LOST_RETRY_DELAY = 5.0
@@ -47,9 +47,10 @@ LOST_AGAIN_WINDOW = 60.0
 MIN_CAPTURE_INTERVAL = 0.05  # floor for Maximum, so a failing source never spins
 CAPTURE_RATE_WINDOW = 1.0  # seconds; the captures per second are reported this often
 # Release the lights after this long of all-zero frames (no picture, as from a
-# protected app); shorter all-zero moments at a hard cut or an input switch
-# lasted under 2 s (measured, see "Verified facts").
-NO_PICTURE_WAIT = 3.0
+# protected app); shorter all-zero moments in a film or series over HDMI, after
+# a hard cut, lasted up to 5 s at 1 capture per second, so up to about 6 s
+# (measured on #126, see "Verified facts"; #139).
+NO_PICTURE_WAIT = 7.0
 
 Runner = Callable[..., Awaitable[Any]]
 
