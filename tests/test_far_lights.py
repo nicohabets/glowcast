@@ -112,7 +112,8 @@ def test_the_whole_picture_is_weighted_as_the_regions() -> None:
 def test_a_far_light_on_a_black_region_takes_part_of_the_picture() -> None:
     frame = make_frame(lambda col, row: BLACK if col < LEFT_COLUMNS else BLUE)
     assert colour(left(1.0), frame) == (0.0, 0.0, 0.0)
-    whole = (0.0, 0.0, 1.0)  # the black pixels are skipped
+    # The whole picture's colour, scaled by its lit share (#262).
+    whole = (0.0, 0.0, 1.0 - LEFT_COLUMNS / WIDTH)
     assert colour(left(-1.0), frame) == pytest.approx(
         mix((0.0, 0.0, 0.0), whole, FAR_BLEND)
     )
@@ -153,3 +154,23 @@ def test_sixteen_channels_with_far_ones_within_budget() -> None:
         timings.append(time.perf_counter() - start)
     median_ms = statistics.median(timings) * 1000
     assert median_ms < 20, f"compute() took {median_ms:.1f} ms (median of 20)"
+
+
+def test_far_lights_never_outshine_the_tv_in_a_dark_scene() -> None:
+    """A dark picture with a small bright object: the far lights get a dim
+    colour, not the object's colour at full brightness (#262)."""
+    frame = make_frame(
+        lambda col, row: (
+            (250, 200, 120) if 24 <= col < 40 and 13 <= row < 23 else (10, 10, 12)
+        )
+    )
+    near = [
+        colour(Channel(f"n{x}", "n", x, z, y=0.8), frame)
+        for x, z in ((-1.0, 0.0), (1.0, 0.0), (0.0, 1.0), (0.0, -1.0))
+    ]
+    far = [
+        colour(Channel(f"f{x}", "f", x, z, y=-0.9), frame)
+        for x, z in ((-1.0, -0.5), (1.0, -0.5))
+    ]
+    assert max(max(c) for c in far) <= max(max(c) for c in near) + 0.1
+    assert max(max(c) for c in far) < 0.15

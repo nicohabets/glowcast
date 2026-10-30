@@ -156,10 +156,21 @@ def compute(
         blend = _far_blend(channel.y)
         if blend > 0:
             if whole is None:  # the whole picture, once per frame
-                whole = _average(frame, picture or (0, frame.width, 0, frame.height))
+                whole = _whole(frame, picture or (0, frame.width, 0, frame.height))
             rgb = _mix(rgb, whole, blend)
         colors.append(ChannelColor(channel.id, _saturate(rgb, intensity)))
     return colors
+
+
+def _whole(
+    frame: Frame, picture: tuple[int, int, int, int]
+) -> tuple[float, float, float]:
+    """The whole picture's colour for the far lights (#15), scaled by the
+    share of its pixels that are lit (#262): a mostly dark picture with a
+    small bright object adds only a dim colour, so lights at the back never
+    outshine the lights at the TV in a dark scene."""
+    rgb, lit_share = _weighted(frame, picture)
+    return rgb[0] * lit_share, rgb[1] * lit_share, rgb[2] * lit_share
 
 
 def _far_blend(y: float | None) -> float:
@@ -193,7 +204,15 @@ def _band(centre: float, start: int, end: int) -> tuple[int, int]:
 def _average(
     frame: Frame, region: tuple[int, int, int, int]
 ) -> tuple[float, float, float]:
-    """The colour of the lit pixels in a region, or black.
+    """The colour of the lit pixels in a region, or black (`_weighted`)."""
+    return _weighted(frame, region)[0]
+
+
+def _weighted(
+    frame: Frame, region: tuple[int, int, int, int]
+) -> tuple[tuple[float, float, float], float]:
+    """The colour of the lit pixels in a region, or black, and the share of
+    the region's pixels that are lit.
 
     A weighted average (#233, spike #40): each lit pixel counts with
     (WEIGHT_FLOOR + saturation²) x value. Colourful pixels lead and dark ones
@@ -221,10 +240,11 @@ def _average(
                 blue += w * b
                 weight += w
                 lit += 1
-    if lit == 0 or lit < MIN_LIT_SHARE * (col1 - col0) * (row1 - row0):
-        return BLACK
+    total = (col1 - col0) * (row1 - row0)
+    if lit == 0 or lit < MIN_LIT_SHARE * total:
+        return BLACK, lit / total if total else 0.0
     scale = 255 * weight
-    return red / scale, green / scale, blue / scale
+    return (red / scale, green / scale, blue / scale), lit / total
 
 
 def _saturate(
