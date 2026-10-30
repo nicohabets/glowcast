@@ -53,6 +53,7 @@
     "step": {
       "init": {
         "title": "Glowcast settings",
+        "description": "These settings are also on Glowcast's device page, under Configuration, where you can change them while syncing and use them in automations.",
         "data": {
           "area": "Entertainment area",
           "brightness": "Brightness",
