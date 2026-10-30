@@ -1,4 +1,4 @@
-"""Demo lights for loose lights (#9): three colour lights that only exist here.
+"""Demo lights for Home Assistant lights (#9): three colour lights that only exist here.
 
 Only for the local demo in scripts/. They keep the state they are given and
 reach no device. Two of them are in the area "Living room", so the demo can

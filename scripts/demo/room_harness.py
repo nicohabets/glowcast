@@ -11,11 +11,11 @@ without the Home Assistant package around it, so the same harness runs against
 another commit's `core/` for `demo.py room --compare`; then it needs only the
 standard library (the drawing is in room.py).
 
-With `--lights loose` or `--lights combined` (#196) the lights are Glowcast's
-own outputs too: the real loose-lights output (`outputs/ha_lights.py`, with its
+With `--lights ha` or `--lights combined` (#196) the lights are Glowcast's
+own outputs too: the real Home Assistant lights output (`outputs/ha_lights.py`, with its
 places, its schedule and its `transition`) and, combined, the real
 `CompositeOutput` with the entertainment area beside it. Only Home
-Assistant around the loose lights is a fake (FakeHass: the lights' states, an
+Assistant around the Home Assistant lights is a fake (FakeHass: the lights' states, an
 entity registry, and `light.turn_on` and `turn_off`, recorded); no Home
 Assistant is started. These modes import the Glowcast package of the tree that
 holds `--core`, so they need Home Assistant installed (the demo's environment,
@@ -23,12 +23,13 @@ or the test requirements).
 
 Usage (room.py runs it; the result is JSON):
     python room_harness.py --core DIR [--timing-from DIR]
-        [--lights area|loose|combined] [--place LIGHT=PLACE ...] --out FILE
+        [--lights area|ha|combined] [--place LIGHT=PLACE ...] --out FILE
 """
 
 import argparse
 import asyncio
 import colorsys
+import dataclasses
 import heapq
 import importlib
 import importlib.util
@@ -60,20 +61,35 @@ UPDATE_RATE = "high"
 #
 # The entertainment area (--lights area, and combined), with each channel's
 # position (x: -1 left of the screen, +1 right; z: -1 floor, +1 ceiling).
+# The strip sits where a real area puts a gradient TV strip: close to the
+# centre, between -0.4 and 0.4 (architecture 2, "TV strip positions").
 CHANNELS = [
-    ("left", -1.0, 0.0),  # the strip's left side
-    ("top_left", -0.5, 1.0),  # the strip's top, left third
-    ("top", 0.0, 1.0),  # the strip's top, middle
-    ("top_right", 0.5, 1.0),  # the strip's top, right third
-    ("right", 1.0, 0.0),  # the strip's right side
+    ("left", -0.4, 0.0),  # the strip's left side
+    ("top_left", -0.2, 0.4),  # the strip's top, left third
+    ("top", 0.0, 0.4),  # the strip's top, middle
+    ("top_right", 0.2, 0.4),  # the strip's top, right third
+    ("right", 0.4, 0.0),  # the strip's right side
     ("floor_lamp", -1.0, -0.5),  # the floor lamp, left of the TV
     ("light_bar", 1.0, -0.5),  # the light bar on the console, right
 ]
-# The loose lights (#9) of "Room v2" (#196), one at every place, each with its
+# Each area channel's depth (y: +1 the TV side, -1 the far side) and the light
+# it is a part of: the strip's five segments are one gradient light (#23).
+# Given only to a core/ whose Channel has these fields, so --compare still
+# runs an older main.
+DEPTH = {
+    "left": (0.8, "strip"),
+    "top_left": (0.8, "strip"),
+    "top": (0.8, "strip"),
+    "top_right": (0.8, "strip"),
+    "right": (0.8, "strip"),
+    "floor_lamp": (0.6, "floor_lamp"),
+    "light_bar": (0.9, "light_bar"),
+}
+# The Home Assistant lights (#9) of "Room v2" (#196), one at every place, each with its
 # name and place: a preset of outputs/ha_lights.py or "x,z" as the sliders
-# fine-tune it (--place). --lights loose: all of them. Combined: those that
+# fine-tune it (--place). --lights ha: all of them. Combined: those that
 # are not in the area. --lights area: the ones not in the area stay off.
-LOOSE = {
+HA_LIGHTS = {
     "floor_lamp": ("Floor lamp", "left"),
     "light_bar": ("Light bar", "right"),
     "wall_light": ("Wall light", "top"),  # above the TV
@@ -83,17 +99,17 @@ LOOSE = {
 }
 
 
-def loose_ids(lights: str) -> list[str]:
-    """The room's loose lights with this output (see LOOSE)."""
+def ha_light_ids(lights: str) -> list[str]:
+    """The room's Home Assistant lights with this output (see HA_LIGHTS)."""
     area = {id_ for id_, _, _ in CHANNELS} if lights == "combined" else set()
-    return [id_ for id_ in LOOSE if id_ not in area]
+    return [id_ for id_ in HA_LIGHTS if id_ not in area]
 
 
-LIGHTS = ("area", "loose", "combined")
+LIGHTS = ("area", "ha", "combined")
 # The parts of a combined output, named by their type as outputs/__init__.py
 # names them.
-AREA_PART, LOOSE_PART = "hue_entertainment", "ha_lights"
-# The exit code when the tree has no loose lights or no combined output (main
+AREA_PART, HA_LIGHTS_PART = "hue_entertainment", "ha_lights"
+# The exit code when the tree has no Home Assistant lights or no combined output (main
 # before #9 or #11): room.py then draws this side only.
 EXIT_NO_OUTPUT = 3
 
@@ -109,7 +125,7 @@ class NoOutput(Exception):
 class Scenario:
     """A named run of pictures; `still` is the moment (0-1) that shows it best.
 
-    `unavailable`: (loose light, seconds into the scenario) when that light
+    `unavailable`: (Home Assistant light, seconds into the scenario) when that light
     becomes unavailable in Home Assistant, for good.
     """
 
@@ -237,9 +253,9 @@ def scenarios(
 ) -> list[Scenario]:
     """The fixed scenarios, in order; the timings follow `core/`.
 
-    The combined output gets a seventh: its loose lights become unavailable,
+    The combined output gets a seventh: its Home Assistant lights become unavailable,
     the first (the wall light) 1 s in and the others 3 s in, until that part
-    is dropped (the loose lights are checked every 5 s, then released and
+    is dropped (the Home Assistant lights are checked every 5 s, then released and
     started again once after `lost_retry_delay`) while the entertainment area
     keeps following the picture.
     """
@@ -260,14 +276,14 @@ def scenarios(
         run.append(
             Scenario(
                 "7 Home Assistant lights unavailable",
-                # One loose light 1 s in, the others 3 s in, the check up to
+                # One Home Assistant light 1 s in, the others 3 s in, the check up to
                 # 5 s later, the retry, and a moment to see that part dropped.
                 3.0 + 5.0 + lost_retry_delay + 2.0,
                 _drifting,
                 0.97,
                 tuple(
                     (id_, 3.0 if n else 1.0)
-                    for n, id_ in enumerate(loose_ids("combined"))
+                    for n, id_ in enumerate(ha_light_ids("combined"))
                 ),
             )
         )
@@ -305,7 +321,7 @@ def load_glowcast(core_folder: Path, lights: str) -> SimpleNamespace:
     if missing := [
         name for name in needed if not (package / "outputs" / name).is_file()
     ]:
-        what = "loose lights" if lights == "loose" else "combined output"
+        what = "Home Assistant lights" if lights == "ha" else "combined output"
         files = ", ".join(f"outputs/{name}" for name in missing)
         raise NoOutput(f"has no {what} ({files})")
     root = package.parents[1]
@@ -415,7 +431,13 @@ class RecordingOutput:
         self.colors: dict[str, list[float]] = {}
 
     async def start(self, *, retry: bool = False) -> list[Any]:
-        return [self._models.Channel(id, id, x, z) for id, x, z in CHANNELS]
+        fields = {f.name for f in dataclasses.fields(self._models.Channel)}
+        channels = []
+        for id, x, z in CHANNELS:
+            y, light = DEPTH[id]
+            extra = {"y": y, "light": light} if {"y", "light"} <= fields else {}
+            channels.append(self._models.Channel(id, id, x, z, **extra))
+        return channels
 
     def send(self, colors: list[Any]) -> None:
         self.colors = {color.channel_id: list(color.rgb) for color in colors}
@@ -430,16 +452,16 @@ class RecordingOutput:
         pass
 
 
-# --- Home Assistant around the loose lights (a fake) -------------------------
+# --- Home Assistant around the Home Assistant lights (a fake) -------------------------
 
 
 @dataclass
 class FakeLight:
-    """A loose light as Home Assistant shows it; it fades as a real light does:
+    """A Home Assistant light as Home Assistant shows it; it fades as a real light does:
     from what it shows now to the new colour, over the command's `transition`.
     """
 
-    room_id: str  # the light in the room (LOOSE)
+    room_id: str  # the light in the room (HA_LIGHTS)
     name: str
     available: bool = True
     on: bool = False
@@ -485,7 +507,7 @@ class FakeLight:
 
 
 class FakeRegistry:
-    """The entity registry, for the loose lights only."""
+    """The entity registry, for the Home Assistant lights only."""
 
     def __init__(self, lights: list[FakeLight]) -> None:
         entries = [
@@ -517,7 +539,7 @@ class FakeRegistry:
 
 
 class FakeHass:
-    """What the loose-lights output uses of Home Assistant: the lights' states,
+    """What the Home Assistant lights output uses of Home Assistant: the lights' states,
     the entity registry, `light.turn_on` and `turn_off` (recorded in `calls`)
     and its tasks. Nothing else of Home Assistant runs."""
 
@@ -592,13 +614,14 @@ class FakeHass:
 
 
 class BadPlace(ValueError):
-    """A --place for a light that is not loose, or a place that does not exist."""
+    """A --place for a light that is not a Home Assistant light, or a place that
+    does not exist."""
 
 
 def place(
     value: str, presets: Mapping[str, tuple[float, float]]
 ) -> tuple[float, float]:
-    """A place as the loose lights' settings store it: a preset, or "x,z"."""
+    """A place as the Home Assistant lights' settings store it: a preset, or "x,z"."""
     if value in presets:
         return presets[value]
     try:
@@ -612,17 +635,15 @@ def place(
     return x, z
 
 
-def places_of(
-    places: Mapping[str, str] | None, lights: str = "loose"
-) -> dict[str, str]:
-    """The place of each loose light with this output: LOOSE's, with
+def places_of(places: Mapping[str, str] | None, lights: str = "ha") -> dict[str, str]:
+    """The place of each Home Assistant light with this output: HA_LIGHTS's, with
     `places` instead."""
-    ids = loose_ids(lights)
-    chosen = {room_id: LOOSE[room_id][1] for room_id in ids}
+    ids = ha_light_ids(lights)
+    chosen = {room_id: HA_LIGHTS[room_id][1] for room_id in ids}
     for room_id, value in (places or {}).items():
         if room_id not in ids:
             raise BadPlace(
-                f"No loose light {room_id!r} with --lights {lights}: "
+                f"No Home Assistant light {room_id!r} with --lights {lights}: "
                 f"one of {', '.join(ids)}"
             )
         chosen[room_id] = value
@@ -672,13 +693,13 @@ class WatchedPart:
         await self._output.close()
 
 
-def _loose_lights(
+def _ha_lights(
     glowcast: SimpleNamespace, clock: FakeClock, places: Mapping[str, str]
 ) -> tuple[FakeHass, Any, dict[str, tuple[float, float]]]:
-    """The real loose-lights output on FakeHass, set up as the settings store
+    """The real Home Assistant lights output on FakeHass, set up as the settings store
     it (architecture 5): single lights, each with its place."""
     ha_lights = glowcast.ha_lights
-    lights = [FakeLight(room_id, LOOSE[room_id][0]) for room_id in places]
+    lights = [FakeLight(room_id, HA_LIGHTS[room_id][0]) for room_id in places]
     positions = {
         light.room_id: place(places[light.room_id], ha_lights.PRESETS)
         for light in lights
@@ -725,12 +746,12 @@ async def _record(
     else:
         assert glowcast is not None
         chosen = places_of(places, lights)
-        hass, output, positions = _loose_lights(glowcast, clock, chosen)
+        hass, output, positions = _ha_lights(glowcast, clock, chosen)
         if lights == "combined":
             area = RecordingOutput(core.models)
-            watched[LOOSE_PART] = WatchedPart(output)
+            watched[HA_LIGHTS_PART] = WatchedPart(output)
             output = glowcast.composite.CompositeOutput(
-                [(AREA_PART, area), (LOOSE_PART, watched[LOOSE_PART])], clock
+                [(AREA_PART, area), (HA_LIGHTS_PART, watched[HA_LIGHTS_PART])], clock
             )
 
     def retrying(part: str) -> bool:
@@ -803,14 +824,14 @@ async def _record(
     task.result()
     return {
         "lights": lights,
-        # Each loose light's place: as given (a preset or "x,z"), where, and
-        # whether --place moved it from LOOSE's.
+        # Each Home Assistant light's place: as given (a preset or "x,z"), where, and
+        # whether --place moved it from HA_LIGHTS's.
         "places": {
             room_id: {
                 "name": name,
                 "x": positions[room_id][0],
                 "z": positions[room_id][1],
-                "moved": name != LOOSE[room_id][1],
+                "moved": name != HA_LIGHTS[room_id][1],
             }
             for room_id, name in chosen.items()
         },
@@ -819,7 +840,7 @@ async def _record(
         ],
         "frames": [pixels.hex() for pixels in frames],
         "samples": samples,
-        # What reached Home Assistant for the loose lights, in order.
+        # What reached Home Assistant for the Home Assistant lights, in order.
         "commands": hass.calls if hass is not None else [],
     }
 
@@ -847,10 +868,10 @@ async def record_async(
     `timing_folder`'s `core/` (by default the same), so both sides of a
     comparison have the same frames.
 
-    `lights`: the room's lights as an entertainment area ("area"), as loose
-    lights at `places` ("loose"), or both ("combined": the area as with
-    "area", the other lights of LOOSE as loose lights). Raises NoOutput when
-    the tree of `core_folder` has no such output.
+    `lights`: the room's lights as an entertainment area ("area"), as Home
+    Assistant lights at `places` ("ha"), or both ("combined": the area as with
+    "area", the other lights of HA_LIGHTS as Home Assistant lights). Raises
+    NoOutput when the tree of `core_folder` has no such output.
     """
     if lights not in LIGHTS:
         raise ValueError(f"lights is one of {', '.join(LIGHTS)}")
@@ -905,7 +926,7 @@ def main() -> None:
         print(err, file=sys.stderr)
         sys.exit(EXIT_NO_OUTPUT)
     except BadPlace as err:
-        # The presets are the loose lights' own, known once they are
+        # The presets are the Home Assistant lights' own, known once they are
         # imported; a place is checked before the pipeline runs.
         sys.exit(str(err))
     args.out.write_text(json.dumps(recording))

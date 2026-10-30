@@ -553,8 +553,9 @@ def radio(rec: Recorder, index: int) -> Locator:
     return rec.page.locator(DIALOG).get_by_role("radio").nth(index)
 
 
-def loose_setup(rec: Recorder) -> None:
-    """Set up loose lights (#9): Loose lights, an area, a place per light."""
+def ha_lights_setup(rec: Recorder) -> None:
+    """Set up Home Assistant lights (#9): Home Assistant lights in the output
+    menu, an area, a place per light."""
     page = rec.page
     open_setup(rec)
     rec.click(menu_item(rec, "tv"))
@@ -594,11 +595,11 @@ def loose_setup(rec: Recorder) -> None:
     rec.step("integration")
 
 
-def loose_settings(rec: Recorder) -> None:
-    """From loose lights to an entertainment area in the settings (#9): the
+def ha_lights_settings(rec: Recorder) -> None:
+    """From Home Assistant lights to an entertainment area in the settings (#9): the
     output menu, pairing with the bridge, the area, the common settings."""
     page = rec.page
-    create_loose_entry(rec)
+    create_ha_lights_entry(rec)
     rec.goto("/config/integrations/integration/glowcast")
     rec.begin()
     configure = rec.localize("ui.panel.config.integrations.config_entry.configure")
@@ -625,8 +626,8 @@ def loose_settings(rec: Recorder) -> None:
 
 
 def combined_settings(rec: Recorder) -> None:
-    """Add loose lights to an entry with an entertainment area (#11): the
-    output menu, the area as it is, the loose lights (an area, a place per
+    """Add Home Assistant lights to an entry with an entertainment area (#11): the
+    output menu, the area as it is, the Home Assistant lights (an area, a place per
     light), the common settings, then the device page with both entities."""
     page = rec.page
     rec.goto("/config/integrations/integration/glowcast")
@@ -679,8 +680,8 @@ def combined_settings(rec: Recorder) -> None:
     rec.step("configuration")
 
 
-def create_loose_entry(rec: Recorder) -> None:
-    """A Glowcast entry with loose lights, through the setup flow's API."""
+def create_ha_lights_entry(rec: Recorder) -> None:
+    """A Glowcast entry with Home Assistant lights, through the setup flow's API."""
     flow = rec.page.evaluate(
         f"() => {HASS}.callApi('POST', 'config/config_entries/flow', "
         "{handler: 'glowcast'})"
@@ -702,7 +703,7 @@ def create_loose_entry(rec: Recorder) -> None:
             f"([p, d]) => {HASS}.callApi('POST', p, d)", [path, data]
         )
     if flow.get("type") != "create_entry":
-        raise RuntimeError(f"The loose-lights setup did not finish: {flow}")
+        raise RuntimeError(f"The Home Assistant lights setup did not finish: {flow}")
 
 
 # Flows that need the glowcast_demo stub: switching Glowcast on needs its fake
@@ -710,8 +711,8 @@ def create_loose_entry(rec: Recorder) -> None:
 SYNCING_FLOWS = {
     "entities",
     "screen-discovery",
-    "loose-setup",
-    "loose-settings",
+    "ha-lights-setup",
+    "ha-lights-settings",
     "combined-settings",
 }
 
@@ -758,8 +759,8 @@ FLOWS: dict[str, Callable[[Recorder], None]] = {
     "entities": entities,
     "screen-setup": screen_setup,
     "screen-discovery": screen_discovery,
-    "loose-setup": loose_setup,
-    "loose-settings": loose_settings,
+    "ha-lights-setup": ha_lights_setup,
+    "ha-lights-settings": ha_lights_settings,
     "combined-settings": combined_settings,
     "blueprint": blueprint,
 }
@@ -768,8 +769,8 @@ SETUP_FLOWS = {
     "setup",
     "screen-setup",
     "screen-discovery",
-    "loose-setup",
-    "loose-settings",
+    "ha-lights-setup",
+    "ha-lights-settings",
 }
 
 

@@ -3,10 +3,10 @@ Pure functions on recorded numbers, so `tests/test_bench_combined.py` runs
 them in CI.
 
 Glowcast's status sensor shows the parts of a combined output that do not run
-in its attribute `dropped_outputs` ({part type: reason}); the loose lights'
+in its attribute `dropped_outputs` ({part type: reason}); the Home Assistant lights'
 part is `ha_lights`.
 
-A loose light that is in the entertainment area too (#198) gets no light
+A Home Assistant light that is in the entertainment area too (#198) gets no light
 command from Glowcast, and Glowcast raises the repair issue
 `loose_lights_in_area_<entry id>`.
 """
@@ -80,7 +80,7 @@ def calls_to(
 
 
 def has_issue(issues: Iterable[Mapping[str, Any]], entry_id: str) -> bool:
-    """Whether Glowcast's repair issue for loose lights in the area is up."""
+    """Whether Glowcast's repair issue for Home Assistant lights in the area is up."""
     return any(
         issue.get("domain") == "glowcast"
         and issue.get("issue_id") == f"{IN_AREA_ISSUE}_{entry_id}"

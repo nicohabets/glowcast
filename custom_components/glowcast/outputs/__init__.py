@@ -98,7 +98,7 @@ OUTPUTS = {
         },
         async_removed=hue_entertainment.async_removed,
     ),
-    # Loose lights: any colour light through Home Assistant (#9).
+    # Home Assistant lights: any colour light through Home Assistant (#9).
     ha_lights.OUTPUT_HA_LIGHTS: OutputType(
         ha_lights.create,
         ha_lights.is_missing,
@@ -114,7 +114,7 @@ OUTPUTS = {
         notice=ha_lights.IN_AREA,
         async_notice=ha_lights.async_in_area_notice,
     ),
-    # An entertainment area and loose lights together (#11): a part per type,
+    # An entertainment area and Home Assistant lights together (#11): a part per type,
     # each with its own block, issues and entities. Chosen in the settings.
     OUTPUT_COMBINED: OutputType(
         lambda hass, data, options: create_combined(hass, data, options),

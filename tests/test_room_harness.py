@@ -77,67 +77,67 @@ def test_a_released_light_is_drawn_off() -> None:
     assert 'radialGradient id="gwlu"' not in lit
 
 
-async def test_loose_lights_rate_place_and_drop(
+async def test_ha_lights_rate_place_and_drop(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Loose lights (#196): the real ha_lights output's rate and transition,
+    """Home Assistant lights (#196): the real ha_lights output's rate and transition,
     the place it follows, and a dropped part drawn off beside the strip."""
     harness = _load("room_harness")
 
     # The rate: a moving picture, yet each light gets a command at most once
     # per second, fading over its actual interval.
     moving = [harness.Scenario("moving", 4.0, harness._drifting)]
-    loose = await harness.record_async(CORE, moving, lights="loose")
+    ha_lights = await harness.record_async(CORE, moving, lights="ha")
     lamp = [
         c
-        for c in loose["commands"]
+        for c in ha_lights["commands"]
         if c["light"] == "floor_lamp" and c["service"] == "turn_on"
     ]
     assert len(lamp) >= 3
     times = [c["time"] for c in lamp]
     assert all(b - a >= 0.99 for a, b in zip(times, times[1:], strict=False))
     assert all(0.99 <= c["transition"] <= 1.1 for c in lamp)
-    # The strip is not part of loose lights: it stays off.
-    assert set(loose["samples"][-1]["lights"]) == set(harness.LOOSE)
+    # The strip is not part of Home Assistant lights: it stays off.
+    assert set(ha_lights["samples"][-1]["lights"]) == set(harness.HA_LIGHTS)
 
     # The place: in the sunset (warm left, blue right) the lamp follows the
     # part of the picture its place says.
     sunset = [harness.scenarios(BLACK_HOLD, NO_PICTURE_WAIT)[0]]
     for place, warm in (("left", True), ("right", False)):
         recording = await harness.record_async(
-            CORE, sunset, lights="loose", places={"floor_lamp": place}
+            CORE, sunset, lights="ha", places={"floor_lamp": place}
         )
         r, _, b = recording["samples"][-1]["lights"]["floor_lamp"]
         assert (r > b) is warm, place
 
-    # The drop: every loose light goes unavailable; after the check and the
+    # The drop: every Home Assistant light goes unavailable; after the check and the
     # retry that part is dropped, those lights are off, the area still follows.
-    loose_ids = harness.loose_ids("combined")
+    ha_light_ids = harness.ha_light_ids("combined")
     area_ids = {id_ for id_, _, _ in harness.CHANNELS}
-    assert loose_ids and not area_ids & set(loose_ids)
+    assert ha_light_ids and not area_ids & set(ha_light_ids)
     gone = [
         harness.Scenario(
             "gone",
             1.0 + 5.0 + LOST_RETRY_DELAY + 1.0,
             harness._drifting,
-            unavailable=tuple((id_, 1.0) for id_ in loose_ids),
+            unavailable=tuple((id_, 1.0) for id_ in ha_light_ids),
         )
     ]
     with caplog.at_level(logging.WARNING):
         combined = await harness.record_async(CORE, gone, lights="combined")
     samples = combined["samples"]
     early = samples[20]  # before they went
-    assert set(early["lights"]) == area_ids | set(loose_ids)
+    assert set(early["lights"]) == area_ids | set(ha_light_ids)
     # Lost first and retried after LOST_RETRY_DELAY; dropped once that failed.
-    retrying = [s["time"] for s in samples if s["retrying"] == [harness.LOOSE_PART]]
-    dropped = [s["time"] for s in samples if s["dropped"] == [harness.LOOSE_PART]]
+    retrying = [s["time"] for s in samples if s["retrying"] == [harness.HA_LIGHTS_PART]]
+    dropped = [s["time"] for s in samples if s["dropped"] == [harness.HA_LIGHTS_PART]]
     assert retrying and dropped
     assert dropped[0] - retrying[0] >= LOST_RETRY_DELAY
-    assert f"the retry of {harness.LOOSE_PART} failed" in caplog.text
+    assert f"the retry of {harness.HA_LIGHTS_PART} failed" in caplog.text
     last = samples[-1]
-    assert last["dropped"] == [harness.LOOSE_PART]
+    assert last["dropped"] == [harness.HA_LIGHTS_PART]
     assert last["retrying"] == []
-    assert last["unavailable"] == sorted(loose_ids)
+    assert last["unavailable"] == sorted(ha_light_ids)
     assert set(last["lights"]) == area_ids
     assert last["lights"] != combined["samples"][-30]["lights"]  # still moving
 
@@ -148,7 +148,7 @@ async def test_every_place_shows_in_the_sunset() -> None:
     bottom get the same colour."""
     harness = _load("room_harness")
     sunset = [harness.scenarios(BLACK_HOLD, NO_PICTURE_WAIT)[0]]
-    recording = await harness.record_async(CORE, sunset, lights="loose")
+    recording = await harness.record_async(CORE, sunset, lights="ha")
     lit = recording["samples"][-1]["lights"]
     places = {id_: place["name"] for id_, place in recording["places"].items()}
     assert places == {
