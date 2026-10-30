@@ -550,12 +550,10 @@ async def async_entertainment_hint(
                 areas = await _async_clip_data(hass, host, key, AREAS_PATH)
         except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
             continue
-        rendering = _service_lights(
-            [item for item in renderers if item.get("renderer")], lights
-        )
         if any(
             light.get("id") in light_ids
-            for found in rendering.values()
+            for renderer, found in _renderer_lights(renderers, lights)
+            if renderer.get("renderer")
             for light in found
         ):
             if areas:
@@ -607,8 +605,8 @@ async def async_area_lights(
     }
     light_ids |= {
         light.get("id")
-        for service, found in _service_lights(renderers, lights).items()
-        if service in services
+        for renderer, found in _renderer_lights(renderers, lights)
+        if renderer.get("id") in services
         for light in found
     }
     registry = er.async_get(hass)
@@ -640,7 +638,10 @@ def _channel_start_colors(
     channel of several lights gets their average. Channels whose light is not
     found are left out.
     """
-    lights_of = _service_lights(renderers, lights)
+    lights_of = {
+        renderer.get("id"): found
+        for renderer, found in _renderer_lights(renderers, lights)
+    }
     starts: dict[int, tuple[float, float, float]] = {}
     for channel in channels:
         colors = [
@@ -655,18 +656,19 @@ def _channel_start_colors(
     return starts
 
 
-def _service_lights(
+def _renderer_lights(
     renderers: list[dict[str, Any]], lights: list[dict[str, Any]]
-) -> dict[Any, list[dict[str, Any]]]:
-    """{entertainment service id: the lights of its device}, in the bridge's
-    order: an entertainment service belongs to a device, as its lights do."""
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Each entertainment service with the lights of its device, in the
+    bridge's order: an entertainment service belongs to a device, as its
+    lights do."""
     of_device: dict[Any, list[dict[str, Any]]] = {}
     for light in lights:
         of_device.setdefault((light.get("owner") or {}).get("rid"), []).append(light)
-    return {
-        item.get("id"): of_device.get((item.get("owner") or {}).get("rid"), [])
+    return [
+        (item, of_device.get((item.get("owner") or {}).get("rid"), []))
         for item in renderers
-    }
+    ]
 
 
 def _service(member: dict[str, Any]) -> str | None:
