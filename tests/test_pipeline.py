@@ -642,10 +642,9 @@ def first_frame_at(h: Harness, frame: Frame, after: float = 0.0) -> float:
     return next(t for t, f in h.frames if f == frame and t >= after)
 
 
-def first_status_at(h: Harness, phase: Phase) -> float:
-    return next(
-        t for t, s in zip(h.status_times, h.statuses, strict=True) if s.phase is phase
-    )
+def first_status_at(h: Harness, match: Callable[[PipelineStatus], bool]) -> float:
+    """When the pipeline first reported a status that matches."""
+    return next(t for t, s in zip(h.status_times, h.statuses, strict=True) if match(s))
 
 
 async def test_no_picture_for_7_s_releases_the_lights() -> None:
@@ -672,11 +671,8 @@ async def test_black_picture_at_the_first_all_zero_frame_no_picture_7_s_later() 
     h = Harness()
     await lose_picture(h)
     first = first_frame_at(h, solid(NO_PICTURE))
-    black = next(
-        t for t, s in zip(h.status_times, h.statuses, strict=True) if s.black_picture
-    )
-    assert black == first
-    released = first_status_at(h, Phase.NO_PICTURE)
+    assert first_status_at(h, lambda s: s.black_picture) == first
+    released = first_status_at(h, lambda s: s.phase is Phase.NO_PICTURE)
     assert NO_PICTURE_WAIT <= released - first <= NO_PICTURE_WAIT + 1 / 3 + 0.01
     assert await h.stop() == StopReason.USER
 
@@ -730,7 +726,7 @@ async def test_a_picture_after_6_9_s_starts_the_wait_again() -> None:
     again = first_frame_at(h, zero, after=dark)
     await h.clock.advance(1)
     assert h.log[-2:] == ["output.stop", "output.close"]
-    released = first_status_at(h, Phase.NO_PICTURE)
+    released = first_status_at(h, lambda s: s.phase is Phase.NO_PICTURE)
     assert NO_PICTURE_WAIT <= released - again <= NO_PICTURE_WAIT + 0.11
     assert await h.stop() == StopReason.USER
 
