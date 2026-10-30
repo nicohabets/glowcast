@@ -86,7 +86,7 @@ Each TV can have one Glowcast entry. If the bridge later stops accepting Glowcas
 
 Under **Configure**, or on Glowcast's device page (see [Settings on the device page](#settings-on-the-device-page)), you can change the area, brightness (1-100 %, default 80 %), intensity (how vivid the colours are, 0-200 %, default 100 %) and the update rate: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows). The lights always fade smoothly between updates. The TV and bridge are fixed; to change them, remove Glowcast and add it again.
 
-<img width="400" alt="Glowcast's settings screen in Home Assistant: entertainment area TV area, brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
+<img width="400" alt="Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then entertainment area TV area, brightness 80 %, intensity 100 %, update rate High (3 per second)." src="https://raw.githubusercontent.com/nicohabets/glowcast/main/docs/images/settings.png">
 
 *The settings screen under Configure, with the default settings.*
 
