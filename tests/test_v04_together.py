@@ -287,17 +287,6 @@ def test_far_lights_on_a_black_frame_go_to_the_glow_after_the_hold() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#263 finding: is_black counts lit pixels over the whole frame, the far "
-        "blend's whole picture inside the letterbox bars, with the same 5 % "
-        "share. An element of 100 pixels is a black frame (64x36: under 115.2) "
-        "but lights the whole picture inside 5-row bars (64x26: over 83.2), so "
-        "after the hold a far lamp with a black region shows about half the "
-        "element's colour while the near lamps show the glow (see #262)"
-    ),
-)
 def test_far_lights_on_a_black_frame_in_a_letterboxed_film_go_to_the_glow() -> None:
     """The same with letterbox bars learned from the film before it went black."""
     film = make_frame(lambda u, v: RED if u < 0.5 else BLUE, BAR, BAR)
