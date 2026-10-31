@@ -39,7 +39,7 @@ Numbers come from the project's own measurements. Where something was emulated o
 | [One stream per bridge](lights.md#one-stream-per-bridge) | A Hue bridge streams one entertainment area at a time; a second Glowcast says the bridge is busy. |
 | [Next to a Hue Sync Box](lights.md#next-to-a-sync-box) | Glowcast can drive Home Assistant lights beside a Sync Box; with the box's area sensor as trigger the notice works every time. |
 | [The light test and a late state report](lights.md#light-test-late-report) | Not reproducible: switching on right after the light test keeps each light's own state. |
-| [A whole evening](lights.md#a-whole-evening) | About 95 minutes without a crash or an error, and clean stops and restarts. |
+| [A whole evening](lights.md#a-whole-evening) | Yes: it runs for hours; one measured run of 95 minutes had no crash or error, and clean stops and restarts. |
 
 ## Speed and hardware
 
