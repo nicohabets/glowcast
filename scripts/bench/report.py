@@ -10,8 +10,11 @@ the screen window's `shown` are Windows times too).
 The colour rule is the one of spike #133, calibrated per run: per channel
 n = (mean - dark) / (white - dark), level = sum(mean - dark) / sum(white - dark);
 off below `off_level`; white when max(n) / min(n) < `white_ratio`; else the
-dominant channel. Glowcast's own glow on black is a dim warm white, read as a
-low level above the dark noise, with red the strongest normalised channel.
+dominant channel. Where white is expected, a light counts as white up to
+`expected_white_ratio` (#231): a reading near the edge is the expected white,
+a clearly coloured light still is not. Glowcast's own glow on black is a dim
+warm white, read as a low level above the dark reference's noise
+(`glow_floor`), with red the strongest normalised channel.
 
 The report holds numbers and fixed texts only (no names, ids or addresses),
 so it can be attached to a public pull request; `scrub` is a last check.
@@ -52,9 +55,21 @@ class Thresholds:
     # Glowcast's white (sRGB white at the brightness setting) against the
     # cool-white reference.
     glowcast_white_ratio: float = 1.5
-    # The glow (10 % warm white) on a lit wall reads about 0.012 at exposure
-    # -8, on a spot's rim about 0.35 (the clipped core): lit, not off.
-    glow_min_level: float = 0.005
+    # ... and where white is expected (#231): Glowcast's white reads up to 1.51
+    # there (moonlight's cool white on the right and the light test's white,
+    # 1.40-1.51 in the evening runs of 30/31-10-2026, so they flipped at 1.5;
+    # once 1.61), every colour 2.8 or more (spectrum's red, golden hour's
+    # green), and 1.77 on a spot's clipped core (green, 29-10-2026).
+    expected_white_ratio: float = 1.7
+    # The glow (10 % warm white) on a lit wall reads 0.004-0.07 at exposure
+    # -8 (0.004 in the evening, #231), on a spot's rim about 0.35 (the clipped
+    # core): lit, not off. A light that is off reads 0.000 in the evening,
+    # when the dark reference has no noise at all (the camera's black floor).
+    # The glow must stand above the dark reference by this much, and by
+    # `glow_noise_factor` times its noise (the standard deviation of the
+    # level over its frames, up to 0.0017 in daylight).
+    glow_min_level: float = 0.002
+    glow_noise_factor: float = 4.0
     glow_max_level: float = 0.5
     # Restore and hold: the largest difference of a normalised channel.
     same_picture: float = 0.12
@@ -172,11 +187,13 @@ class Timing:
 @dataclasses.dataclass(frozen=True)
 class Calibration:
     """A region's references: dark (lights off), white (warm white, full) and
-    cool (a cool white at full brightness, for Glowcast's white)."""
+    cool (a cool white at full brightness, for Glowcast's white); dark_noise is
+    the standard deviation of the level over the dark reference's frames."""
 
     dark: RGB
     white: RGB
     cool: RGB | None = None
+    dark_noise: float = 0.0
 
     def cool_normalised(self, mean: Sequence[float]) -> RGB:
         """Normalised against the cool white: sRGB white reads about even."""
@@ -199,17 +216,33 @@ class Calibration:
         )
 
 
-def classify(mean: Sequence[float], cal: Calibration, th: Thresholds) -> str:
+def cool_ratio(mean: Sequence[float], cal: Calibration) -> float:
+    """The strongest channel over the weakest, against the cool reference
+    (about 1 for Glowcast's white)."""
+    c = cal.cool_normalised(mean)
+    return max(c) / max(min(c), 1e-3)
+
+
+def classify(
+    mean: Sequence[float],
+    cal: Calibration,
+    th: Thresholds,
+    expected: str | None = None,
+) -> str:
     """off, white, red, green or blue, by the #133 rule.
 
     White is also a cool white (even against the cool reference), such as
     Glowcast's sRGB white, which the warm reference alone would call blue.
+    Where white is `expected`, up to `expected_white_ratio` (#231); where a
+    colour is, the plain rule.
     """
     if cal.level(mean) < th.off_level:
         return "off"
     if cal.cool is not None:
-        c = cal.cool_normalised(mean)
-        if max(c) / max(min(c), 1e-3) < th.glowcast_white_ratio:
+        limit = (
+            th.expected_white_ratio if expected == "white" else th.glowcast_white_ratio
+        )
+        if cool_ratio(mean, cal) < limit:
             return "white"
     n = cal.normalised(mean)
     low = max(min(n), 1e-3)
@@ -222,7 +255,20 @@ def matches_colour(
     expected: str, mean: Sequence[float], cal: Calibration, th: Thresholds
 ) -> bool:
     """Whether the light shows the colour a pattern asks of Glowcast."""
-    return classify(mean, cal, th) == expected
+    return classify(mean, cal, th, expected) == expected
+
+
+def glow_floor(cal: Calibration, th: Thresholds) -> float:
+    """The lowest level that counts as lit: above the dark reference by
+    `glow_min_level`, and by `glow_noise_factor` times its noise."""
+    return max(th.glow_min_level, th.glow_noise_factor * cal.dark_noise)
+
+
+def level_noise(values: Sequence[Sequence[float]], cal: Calibration) -> float:
+    """The standard deviation of the level over these frames (0 for one)."""
+    if len(values) < 2:
+        return 0.0
+    return statistics.pstdev(cal.level(v) for v in values)
 
 
 def is_glow(
@@ -231,10 +277,11 @@ def is_glow(
     th: Thresholds,
     before: Sequence[float] | None = None,
 ) -> bool:
-    """A dim warm light: above the dark noise, under the glow's ceiling, dimmer
-    than the colour `before` it, and warm (against the cool white, red over blue)."""
+    """A dim warm light: above the dark reference's noise (`glow_floor`), under
+    the glow's ceiling, dimmer than the colour `before` it, and warm (against
+    the cool white, red over blue)."""
     level = cal.level(mean)
-    if not th.glow_min_level <= level <= th.glow_max_level:
+    if not glow_floor(cal, th) <= level <= th.glow_max_level:
         return False
     if before is not None and level >= cal.level(before):
         return False
@@ -341,6 +388,55 @@ def first_match(
         else:
             since = None
     return None
+
+
+def first_change(
+    samples: Sequence[Sample],
+    region: str,
+    reference: Sequence[float],
+    cal: Calibration,
+    th: Thresholds,
+    start: float,
+    end: float,
+) -> float | None:
+    """The first time after `start` that the region differs from `reference`
+    by more than `same_picture`, and still does in the next two frames."""
+    frames = [(t, r[region]) for t, r in samples if start <= t <= end and region in r]
+    for i, (t, _rgb) in enumerate(frames):
+        if all(
+            difference(x, reference, cal) > th.same_picture
+            for _, x in frames[i : i + 3]
+        ):
+            return t
+    return None
+
+
+def light_test_anchor(
+    samples: Sequence[Sample],
+    before: dict[str, RGB],
+    cal: dict[str, Calibration],
+    th: Thresholds,
+    start: float,
+    end: float,
+) -> float | None:
+    """When the light test shows (#182): the first change of any light from
+    its picture `before` the press, between the area turning active and its
+    release; None when no light changed."""
+    changes = [
+        t
+        for region, reference in before.items()
+        if (t := first_change(samples, region, reference, cal[region], th, start, end))
+        is not None
+    ]
+    return min(changes, default=None)
+
+
+def light_test_windows(anchor: float, step: float) -> list[tuple[float, float]]:
+    """When to judge each pattern of the light test (#182): `anchor` is when
+    the lights first left their own state (the test's first pattern, seen by
+    the camera), each pattern shows for `step` seconds (core/light_test.py);
+    the first 0.75 s of each and its last 0.5 s are left out."""
+    return [(anchor + k * step + 0.75, anchor + (k + 1) * step - 0.5) for k in (0, 1)]
 
 
 def stays(
