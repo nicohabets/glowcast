@@ -35,6 +35,7 @@ from report import FAIL, PASS, SKIP, Step
 # Glowcast's own timing from the working copy (core/ imports no Home Assistant).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from custom_components.glowcast.core.light_state import BLACK_HOLD  # noqa: E402
+from custom_components.glowcast.core.light_test import STEP as TEST_STEP  # noqa: E402
 from custom_components.glowcast.core.pipeline import NO_PICTURE_WAIT  # noqa: E402
 
 TIMING = rp.Timing(no_picture_wait=NO_PICTURE_WAIT, black_hold=BLACK_HOLD)
@@ -775,11 +776,17 @@ class Bench:
         cool = await self.measure(1.0)
         await self.set_lights(None)
         await asyncio.sleep(2.5)
+        dark_from = self.win_now()
         dark = await self.measure(1.0)
-        cal = {
-            name: rp.Calibration(dark=dark[name], white=white[name], cool=cool[name])
-            for name in self.lights
-        }
+        samples = self.samples()
+        cal = {}
+        for name in self.lights:
+            ref = rp.Calibration(dark=dark[name], white=white[name], cool=cool[name])
+            frames = rp.window(samples, name, dark_from, dark_from + 1.0)
+            cal[name] = dataclasses.replace(ref, dark_noise=rp.level_noise(frames, ref))
+            self.report.calibration[f"{self.label[name]} dark noise (level)"] = round(
+                cal[name].dark_noise, 4
+            )
         ambient = {
             name: rp.ambient_ratio(dark[name], white[name]) for name in self.lights
         }
@@ -1268,7 +1275,9 @@ class Bench:
             cal = self.cal[name]
             good = rp.matches_colour(expected, mean, cal, self.th)
             ok &= good
-            numbers[f"{self.label[name]} seen"] = rp.classify(mean, cal, self.th)
+            numbers[f"{self.label[name]} seen"] = rp.classify(
+                mean, cal, self.th, expected
+            )
             numbers[f"{self.label[name]} level"] = round(cal.level(mean), 2)
             numbers[f"{self.label[name]} n"] = [
                 round(v, 2) for v in cal.normalised(mean)
@@ -1346,7 +1355,9 @@ class Bench:
             )
             ok &= good
             numbers[f"{self.label[name]} {self.sides[name]} seen"] = (
-                None if mean is None else rp.classify(mean, self.cal[name], self.th)
+                None
+                if mean is None
+                else rp.classify(mean, self.cal[name], self.th, expected)
             )
         self.report.add(Step(title, mode, PASS if ok else FAIL, numbers=numbers))
 
@@ -1509,10 +1520,11 @@ class Bench:
         if active is None:
             self.report.add(Step(title, mode, FAIL, note="the area did not stream"))
             return
-        # The test starts when the stream's handshake is done (seconds after
-        # the area turns active) and the lights are released right after it,
-        # so the patterns are judged back from the release: each shows for
-        # 3 s (core/light_test.py STEP).
+        # The test starts when the stream's handshake is done (about 2.9 s
+        # after the area turns active) and each pattern shows for 3 s
+        # (core/light_test.py STEP); the release comes about 1 s after the
+        # test. So the patterns are judged from when the camera first sees a
+        # light leave its own state, not back from the release (#231).
         inactive = await self.bridge.wait_status(area, "inactive", 25)
         numbers: dict[str, Any] = {"area active after s": round(active - start, 2)}
         if inactive is None:
@@ -1524,19 +1536,40 @@ class Bench:
         end = self.win(inactive)
         await self.sleep_until_win(end + 0.6)
         samples = self.samples()
+        pressed = self.win(start)
+        before = {
+            name: mean
+            for name in self.lights
+            if (mean := rp.settled(samples, name, pressed - 1.0, pressed))
+        }
+        anchor = rp.light_test_anchor(
+            samples, before, self.cal, self.th, self.win(active), end
+        )
+        if anchor is None:
+            self.report.add(
+                Step(
+                    title,
+                    mode,
+                    FAIL,
+                    numbers=numbers,
+                    note="the lights did not change (camera)",
+                )
+            )
+            return
+        numbers["test seen after s"] = round(anchor - pressed, 2)
+        windows = rp.light_test_windows(anchor, TEST_STEP)
         ok = True
         for name in self.lights:
-            first = rp.settled(samples, name, end - 5.0, end - 3.5)
-            second = rp.settled(samples, name, end - 2.0, end - 0.5)
-            seen = [
-                None if mean is None else rp.classify(mean, self.cal[name], self.th)
-                for mean in (first, second)
-            ]
             side = None if self.sides is None else self.sides[name]
-            if side is not None:
-                ok &= seen[0] == ("red" if side == "left" else "blue")
-            else:
-                ok &= seen[0] in ("red", "blue")
+            colour = None if side is None else ("red" if side == "left" else "blue")
+            means = [rp.settled(samples, name, a, b) for a, b in windows]
+            seen = [
+                None
+                if mean is None
+                else rp.classify(mean, self.cal[name], self.th, want)
+                for mean, want in zip(means, (colour, "white"), strict=True)
+            ]
+            ok &= seen[0] == colour if colour else seen[0] in ("red", "blue")
             ok &= seen[1] in ("green", "white")
             numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
                 str(s) for s in seen
@@ -1812,9 +1845,11 @@ class Bench:
                 continue
             cal = self.cal[name]
             ok &= rp.matches_colour(colour, mean, cal, self.th)
-            numbers[f"{tag} seen"] = rp.classify(mean, cal, self.th)
+            numbers[f"{tag} seen"] = rp.classify(mean, cal, self.th, colour)
             numbers[f"{tag} level"] = round(cal.level(mean), 2)
             numbers[f"{tag} n"] = [round(v, 2) for v in cal.normalised(mean)]
+            if colour == "white":
+                numbers[f"{tag} cool ratio"] = round(rp.cool_ratio(mean, cal), 2)
         self.report.add(
             Step(
                 label,
@@ -1923,7 +1958,10 @@ class Bench:
                 continue
             cal = self.cal[name]
             ok &= rp.is_glow(glow, cal, self.th, prev[name])
-            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 3)
+            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 4)
+            numbers[f"{self.label[name]} glow min"] = round(
+                rp.glow_floor(cal, self.th), 4
+            )
         self.report.add(
             Step(
                 "black (all zero), after the hold: the warm glow until the release",
@@ -1960,7 +1998,10 @@ class Bench:
             cal = self.cal[name]
             good = rp.is_glow(glow, cal, self.th, prev[name])
             ok &= good
-            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 3)
+            numbers[f"{self.label[name]} glow level"] = round(cal.level(glow), 4)
+            numbers[f"{self.label[name]} glow min"] = round(
+                rp.glow_floor(cal, self.th), 4
+            )
             numbers[f"{self.label[name]} glow n"] = [
                 round(v, 2) for v in cal.normalised(glow)
             ]

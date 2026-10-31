@@ -246,3 +246,137 @@ def test_an_http_error_is_printed_without_its_headers() -> None:
     assert token not in text
     assert text == "ClientResponseError (status 401)"
     assert rp.describe_error(ValueError("x")) == "ValueError"
+
+
+# Recorded on the bench in the evening (30/31-10-2026, exposure -8, #231): the
+# references of the spot's rim (right) and the wall (left); the dark reference
+# is the camera's black floor, the same in every frame.
+EVENING_SPOT = rp.Calibration(
+    dark=(1.0, 0.0, 1.0), white=(214.1, 140.1, 90.0), cool=(144.8, 209.2, 247.3)
+)
+EVENING_WALL = rp.Calibration(
+    dark=(1.0, 0.0, 1.0), white=(200.5, 123.2, 78.0), cool=(129.4, 194.3, 243.4)
+)
+# Moonlight's cool white (234, 237, 245) on the right: seen blue in one run of
+# three at this mean (cool ratio 1.51), white in the others at 1.40-1.50.
+MOONLIGHT_RIGHT = (67.2, 121.2, 171.9)
+EVENING_BLUE = (0.4, 63.9, 250.1)
+# Glowcast's glow on the wall, 0.0044 above dark, which failed the old fixed
+# minimum of 0.005 in 4 of 5 runs; the white before it.
+EVENING_GLOW = (2.15, 0.85, 0.77)
+EVENING_WHITE = (73.8, 117.0, 156.8)
+
+
+def test_a_white_near_the_edge_is_the_expected_white() -> None:
+    cal = EVENING_SPOT
+    assert 1.5 < rp.cool_ratio(MOONLIGHT_RIGHT, cal) < TH.expected_white_ratio
+    # The plain rule calls it blue; where white is expected it is white.
+    assert rp.classify(MOONLIGHT_RIGHT, cal, TH) == "blue"
+    assert rp.classify(MOONLIGHT_RIGHT, cal, TH, "white") == "white"
+    assert rp.matches_colour("white", MOONLIGHT_RIGHT, cal, TH)
+    # Where blue is expected, the plain rule: the same reading is not blue
+    # enough to pass for white, and stays blue.
+    assert rp.matches_colour("blue", MOONLIGHT_RIGHT, cal, TH)
+
+
+def test_a_clearly_blue_light_fails_where_white_is_expected() -> None:
+    assert not rp.matches_colour("white", EVENING_BLUE, EVENING_SPOT, TH)
+    assert rp.classify(EVENING_BLUE, EVENING_SPOT, TH, "white") == "blue"
+    # A paler blue too: half way from the moonlight white to the blue.
+    pale = tuple(
+        (a + b) / 2 for a, b in zip(MOONLIGHT_RIGHT, EVENING_BLUE, strict=True)
+    )
+    assert rp.cool_ratio(pale, EVENING_SPOT) > TH.expected_white_ratio
+    assert not rp.matches_colour("white", pale, EVENING_SPOT, TH)
+
+
+@pytest.mark.parametrize("colour", ["red", "green", "blue"])
+@pytest.mark.parametrize(("cal", "seen"), LIGHTS)
+def test_a_colour_fails_where_white_is_expected(cal, seen, colour: str) -> None:
+    assert not rp.matches_colour("white", seen[colour], cal, TH)
+    # ... and white where a colour is expected.
+    assert not rp.matches_colour(colour, seen["white"], cal, TH)
+
+
+def test_the_glow_counts_above_the_dark_reference_and_its_noise() -> None:
+    cal = EVENING_WALL
+    level = cal.level(EVENING_GLOW)
+    assert 0.004 < level < 0.005
+    assert rp.glow_floor(cal, TH) == TH.glow_min_level  # no noise in the evening
+    assert rp.is_glow(EVENING_GLOW, cal, TH, before=EVENING_WHITE)
+    # A light that is off, or as dim as the floor, is not the glow.
+    assert not rp.is_glow(cal.dark, cal, TH, before=EVENING_WHITE)
+    barely = (1.4, 0.2, 1.1)
+    assert cal.level(barely) < TH.glow_min_level
+    assert not rp.is_glow(barely, cal, TH, before=EVENING_WHITE)
+
+
+def test_a_noisy_dark_reference_raises_the_glows_floor() -> None:
+    # Daylight: the dark reference's level varies from frame to frame.
+    dark = [(20.0 + d, 26.0 + d, 29.0 + d) for d in (-0.6, 0.0, 0.6) * 20]
+    base = rp.Calibration(dark=(20.0, 26.0, 29.0), white=(200.0, 140.0, 110.0))
+    noise = rp.level_noise(dark, base)
+    assert noise == pytest.approx(math.sqrt(2 / 3) * 1.8 / 375.0)
+    cal = rp.Calibration(base.dark, base.white, dark_noise=noise)
+    floor = rp.glow_floor(cal, TH)
+    assert floor == pytest.approx(TH.glow_noise_factor * noise)
+    assert floor > TH.glow_min_level
+    just_under = tuple(d + 0.9 * floor * 375.0 / 3 for d in base.dark)
+    assert not rp.is_glow(just_under, cal, TH)
+    assert rp.level_noise([base.dark], base) == 0.0
+
+
+def _test_samples(release: float) -> list:
+    """The light test on the bench (#182): the lights in their own state, the
+    area active at 0.5 s, the first pattern at 3.4 s (the handshake), the
+    second 3 s later, then the last colours held until the release."""
+    own = {"wall": (113.9, 65.3, 34.4), "spot": (171.7, 161.4, 150.2)}
+    first = {"wall": WALL_SEEN["red"], "spot": SPOT_SEEN["blue"]}
+    second = {"wall": WALL_SEEN["green"], "spot": SPOT_SEEN["white"]}
+    samples = []
+    for i in range(int((release + 2.0) * 50)):
+        t = i / 50
+        if t < 3.4 or t >= release + 1.0:
+            values = own
+        elif t < 6.4:
+            values = first
+        else:
+            values = second
+        samples.append((t, dict(values)))
+    return samples
+
+
+@pytest.mark.parametrize("release", [7.4, 8.5, 10.0])
+def test_the_light_test_is_judged_from_its_start_not_its_release(
+    release: float,
+) -> None:
+    from custom_components.glowcast.core.light_test import STEP
+
+    samples = _test_samples(release)
+    cal = {"wall": WALL, "spot": SPOT}
+    before = {name: rp.settled(samples, name, 0.0, 0.4) for name in cal}
+    anchor = rp.light_test_anchor(samples, before, cal, TH, 0.5, release)
+    assert anchor == pytest.approx(3.4)
+    windows = rp.light_test_windows(anchor, STEP)
+    assert windows == [
+        pytest.approx((4.15, 5.9)),
+        pytest.approx((7.15, 8.9)),
+    ]
+    seen = {
+        name: [
+            rp.classify(rp.settled(samples, name, a, b), cal[name], TH)
+            for a, b in windows
+        ]
+        for name in cal
+    }
+    assert seen == {"wall": ["red", "green"], "spot": ["blue", "white"]}
+
+
+def test_no_light_test_without_a_change() -> None:
+    own = (113.9, 65.3, 34.4)
+    samples = _frames(0.0, [own] * 400)
+    before = {"wall": own}
+    assert rp.light_test_anchor(samples, before, {"wall": WALL}, TH, 0.5, 8.0) is None
+    # A single odd frame is not the start.
+    odd = _frames(0.0, [own] * 100 + [WALL_SEEN["red"]] + [own] * 100)
+    assert rp.first_change(odd, "wall", own, WALL, TH, 0.0, 4.0) is None
