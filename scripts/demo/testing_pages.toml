@@ -22,8 +22,8 @@ page = "home-assistant-lights.md"
 scenarios = ["ha:Sunset", "ha:Fade between scenes", "ha:No picture", "combined:Home Assistant lights unavailable"]
 
 [scenarios."area:Sunset"]
-picture = "A sunset: a warm orange and pink sky over a dark sea, the start of the run. Before it the lights are as they were."
-lights = "Take the picture's colours: warm at the top and on the sides, each light the colour of its own part of the picture."
+picture = "A sunset: an orange and pink sky with the sun low over a blue-green sea, the start of the run. Before it the lights are as they were."
+lights = "Take the picture's colours, each light the colour of its own part of the picture: warm from the sky, blue-green from the sea."
 
 [scenarios."area:Saturated red"]
 picture = "A cut from the dark picture before it to a deep, saturated red over the whole screen."

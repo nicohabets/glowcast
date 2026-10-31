@@ -13,9 +13,9 @@ How the lights take the colours of the picture: a warm sunset, a pure saturated 
 
 ### 1 Sunset { #area-sunset }
 
-**The picture:** A sunset: a warm orange and pink sky over a dark sea, the start of the run. Before it the lights are as they were.
+**The picture:** A sunset: an orange and pink sky with the sun low over a blue-green sea, the start of the run. Before it the lights are as they were.
 
-**What the lights should do:** Take the picture's colours: warm at the top and on the sides, each light the colour of its own part of the picture.
+**What the lights should do:** Take the picture's colours, each light the colour of its own part of the picture: warm from the sky, blue-green from the sea.
 
 === "v0.4.0 ●"
 
