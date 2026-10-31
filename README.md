@@ -28,7 +28,7 @@ Glowcast reuses the pairing of Home Assistant's **LG webOS Smart TV** integratio
 
 At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. If you already run Home Assistant with the LG webOS and Philips Hue integrations, you have everything you need.
 
-More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustrations of [what the lights do](https://nicohabets.github.io/glowcast/).
+More: [how it works](https://nicohabets.github.io/glowcast/docs/), with illustrations of [what the lights do](https://nicohabets.github.io/glowcast/), and the [light research](https://nicohabets.github.io/glowcast/research/) behind it.
 
 ## Requirements
 
