@@ -15,11 +15,12 @@ from PIL import Image
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts" / "bench"))
 
+import report  # noqa: E402
 import scenes  # noqa: E402
 import suite  # noqa: E402
 
 from custom_components.glowcast.core import color_engine  # noqa: E402
-from custom_components.glowcast.core.models import Frame  # noqa: E402
+from custom_components.glowcast.core.models import Channel, Frame  # noqa: E402
 
 # The bench monitor's physical resolution, and a smaller one.
 SIZES = [(3840, 2160), (1920, 1080)]
@@ -53,6 +54,45 @@ def test_expected_is_the_colour_engine_on_the_lights_channels() -> None:
     assert scenes.expected(frame, [(0.7, 0.0)]) == (0.0, 0.0, 100.0)
     # A gradient strip: the mean of its channels.
     assert scenes.expected(frame, [(-0.7, 0.0), (0.7, 0.0)]) == (100.0, 0.0, 50.0)
+
+
+def test_expected_judges_a_light_far_from_the_tv_with_the_far_blend() -> None:
+    """The depth y goes from the bridge (`report.channel_positions`) to the
+    colour engine, so a light placed further back than NEAR_TV is expected
+    with the far blend, as Glowcast computes it (#263); a channel without a
+    depth gets its region's colour only."""
+    area = {
+        "channels": [
+            {
+                "position": {"x": -0.7, "y": -0.9, "z": 0.0},
+                "members": [{"service": {"rid": "svc-far"}}],
+            },
+            {
+                "position": {"x": -0.7, "z": 0.0},
+                "members": [{"service": {"rid": "svc-flat"}}],
+            },
+        ]
+    }
+    services = [
+        {"id": "svc-far", "renderer_reference": {"rid": "light-far"}},
+        {"id": "svc-flat", "renderer_reference": {"rid": "light-flat"}},
+    ]
+    far = report.channel_positions(area, services, "light-far")
+    flat = report.channel_positions(area, services, "light-flat")
+    assert far == [(-0.7, 0.0, -0.9)]
+    assert flat == [(-0.7, 0.0, None)]
+
+    image = Image.new("RGB", (1920, 1080), (200, 0, 0))
+    image.paste((0, 0, 100), (960, 0, 1920, 1080))
+    frame = scenes.downscale(image)
+    [engine] = color_engine.compute(
+        Frame(64, 36, frame), [Channel("0", "", -0.7, 0.0, y=-0.9)], 1.0
+    )
+    assert scenes.expected(frame, far) == tuple(round(255 * c, 1) for c in engine.rgb)
+    # The far blend brings in the blue of the other half; without y, none.
+    assert scenes.expected(frame, far) != scenes.expected(frame, [(-0.7, 0.0)])
+    assert scenes.expected(frame, far)[2] > 0
+    assert scenes.expected(frame, flat) == scenes.expected(frame, [(-0.7, 0.0)])
 
 
 @pytest.mark.parametrize(
