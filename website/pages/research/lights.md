@@ -23,6 +23,10 @@ Each section is one research question, measured on the product owner's lights, t
 
 **What Glowcast does since:** v0.3.0. Home Assistant lights get 1 update per second with a 1 s fade, and at most 4 commands per second go to each Hue bridge and each Thread network (a Hue room or zone counts as one light), so with more lights each changes less often.
 
+[![The room with Home Assistant lights during a fade between scenes, v0.4.0](../testing/rooms/v0.4.0/ha-fade-between-scenes.gif){ width="400" loading=lazy }](../testing/rooms/v0.4.0/ha-fade-between-scenes.gif)
+
+*The room with six Home Assistant lights (v0.4.0): each gets a colour at most once per second and fades to it over that second, so they follow the picture a moment later and softly. Drawn from Glowcast's own code; more in [How it is tested](../testing/home-assistant-lights.md).*
+
 **More:** [spike #125](https://github.com/nicohabets/glowcast/issues/125) and its pull request [#131](https://github.com/nicohabets/glowcast/pull/131); built in [story #9](https://github.com/nicohabets/glowcast/issues/9), pull request [#173](https://github.com/nicohabets/glowcast/pull/173).
 
 ## One stream per bridge { #one-stream-per-bridge }
@@ -71,6 +75,10 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 
 **What Glowcast does since:** v0.3.1 published the research; v0.5.0 added the "Follow a Hue Sync Box" blueprint and the notice. After #272 the product owner chose to check the notice again a few seconds after the claim and remove it when Glowcast stops (option (a)); that is not built yet.
 
+[![A timeline per try: with the switch as trigger Glowcast claims the lights before the bridge reports the area active, with the binary sensor after it](chart-sync-box-notice.png){ width="400" loading=lazy }](chart-sync-box-notice.png)
+
+*Each row is one try on the emulated box: when the bridge reported the area active, when Home Assistant's binary sensor turned on, and when Glowcast claimed the lights (filled: the notice showed). Drawn from the recorded measurements.*
+
 **More:** [spike #202](https://github.com/nicohabets/glowcast/issues/202) and its pull request [#211](https://github.com/nicohabets/glowcast/pull/211); [#272](https://github.com/nicohabets/glowcast/issues/272) ([the result](https://github.com/nicohabets/glowcast/issues/272#issuecomment-6541587556)); the blueprint and notice in [#219](https://github.com/nicohabets/glowcast/issues/219), pull request [#252](https://github.com/nicohabets/glowcast/pull/252).
 
 ## The light test and a late state report { #light-test-late-report }
@@ -93,17 +101,21 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 
 **What Glowcast does since:** no change needed. Test lights itself came in v0.5.0.
 
+[![Every light-try: the test colour is reported one to three seconds before the release, the own state shortly after it, before any switch-on](chart-light-test-reports.png){ width="400" loading=lazy }](chart-light-test-reports.png)
+
+*Every light-try, from Home Assistant's own push events: the test colour is reported before the release, the light's own state after it, so a switch-on at +1, +2 or +3 s finds the own state. Drawn from the recorded measurements.*
+
 **More:** [spike #271](https://github.com/nicohabets/glowcast/issues/271) ([the result](https://github.com/nicohabets/glowcast/issues/271#issuecomment-6540585244)), recorded in pull request [#305](https://github.com/nicohabets/glowcast/pull/305).
 
 ## A whole evening { #a-whole-evening }
 
 **The question:** does Glowcast keep running for an evening, and does it stop cleanly and start again after the usual interruptions?
 
-**The answer:** yes; about 95 minutes of syncing without a crash or an error, no visible memory growth, and a clean stop and restart after TV standby, a bridge power cut and a Home Assistant restart.
+**The answer:** yes. The measured test ran once for about 95 minutes without a crash or an error, with no visible memory growth, and stopped and started cleanly after TV standby, a bridge power cut and a Home Assistant restart. In daily use Glowcast runs for hours on end; 95 minutes is only how long this one measurement lasted.
 
 | Measurement (v0.1.0 through HACS, update rate Maximum, HDMI sources) | Result |
 |---|---|
-| Syncing | about 95 minutes |
+| Syncing in the measured run | about 95 minutes |
 | Errors / warnings | 0 / 4 (all at the bridge power cut) |
 | Home Assistant memory (the whole core) | 1154 MB at the start, then 1188-1238 MB for the last hour, mostly 1190-1210 MB |
 | TV to standby: Glowcast off | 1.20 s after the TV reported off |
@@ -112,7 +124,7 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 | Next switch-on after the bridge came back | area active 0.9 s later |
 | Home Assistant restart: area inactive | 1.27 s after the restart command |
 
-- No visible memory growth, but 95 minutes is too short to rule out a slow leak.
+- No visible memory growth in the measured run; a slow leak over many hours was not measured, but daily use for hours has shown no problems.
 - After the bridge power cut the lights stayed on the last streamed colour, while the bridge at first reported them as off; the next start and stop of Glowcast restored them.
 - Not covered: two hours at update rate High, live TV through the tuner, and apps on the TV itself.
 

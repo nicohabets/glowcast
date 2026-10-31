@@ -66,6 +66,10 @@ The test bench, 31-10-2026, screen mode, 51 light changes measured per run:
 
 **What Glowcast does since:** no change. A short measurement on the TV is [#300](https://github.com/nicohabets/glowcast/issues/300) (open); it decides whether a story follows.
 
+[![Modelled and measured delay per variant: two captures in flight help only if the TV works in parallel; on the bench it did not help](chart-overlapping-captures.png){ width="400" loading=lazy }](chart-overlapping-captures.png)
+
+*Median and p90 of the delay from a scene cut to the light at update rate Maximum: the model per way the TV might handle two requests (top) and the test bench (bottom). Drawn from the model's output and the recorded measurements.*
+
 **More:** [spike #290](https://github.com/nicohabets/glowcast/issues/290) ([the result](https://github.com/nicohabets/glowcast/issues/290#issuecomment-6542010339)), recorded in pull request [#305](https://github.com/nicohabets/glowcast/pull/305).
 
 ## A Raspberry Pi 4 { #raspberry-pi-4 }
@@ -90,6 +94,10 @@ The emulated Pi is the bench's own local Home Assistant limited to 10 % of one l
 - The main uncertainty is the rest of a real Home Assistant on the same core (recorder, other integrations, add-ons), then the Pi's Python version, clock and cooling.
 
 **What Glowcast does since:** no change; the requirements stay as they are. The estimate is recorded in the architecture, not as a verified fact.
+
+[![Sends and captures per second and the delay of a change in Home Assistant, against how much slower the core is: steady up to about 33 times slower, breaking at 50](chart-pi4-emulated.png){ width="400" loading=lazy }](chart-pi4-emulated.png)
+
+*The bench's Home Assistant under a CPU quota, at update rate Maximum: everything holds up to a core about 33 times slower than the bench laptop's and breaks at 50; a Pi 4 core is estimated at 8-10 times slower (the band). An estimate, drawn from the recorded measurements.*
 
 **More:** [spike #47](https://github.com/nicohabets/glowcast/issues/47) ([the result](https://github.com/nicohabets/glowcast/issues/47#issuecomment-6541308693)), recorded in pull request [#305](https://github.com/nicohabets/glowcast/pull/305).
 
