@@ -323,6 +323,27 @@ async def test_another_source_turns_off_what_this_automation_started(
     assert _switched(turn_off) == ([[SWITCH]] if stops else [])
 
 
+async def test_another_source_stops_after_the_tv_dropped_out_meanwhile(
+    hass: HomeAssistant, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A short drop of the TV while Glowcast syncs runs the automation on a
+    switch that is already on; it must not lose that it started Glowcast
+    (review of #285). A TV without a source logs no template warning."""
+    turn_on, turn_off = await _setup_with_switch(
+        hass, tmp_path, STATE_OFF, sources=SOURCES, also_stop=True
+    )
+    await _set_tv(hass, STATE_ON, {"source": "HDMI 2"})
+    assert _switched(turn_on) == [[SWITCH]]
+    await _set_tv(hass, STATE_UNAVAILABLE)
+    await _set_tv(hass, STATE_ON, {"source": "HDMI 2"})
+    assert _switched(turn_on) == [[SWITCH]]
+
+    await _set_tv(hass, STATE_ON, {"source": "HDMI 1"})
+
+    assert _switched(turn_off) == [[SWITCH]]
+    assert "has no attribute 'source'" not in caplog.text
+
+
 async def test_another_source_leaves_a_switch_turned_on_by_hand(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:

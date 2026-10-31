@@ -43,7 +43,6 @@ from ..issues import Issue
 from .blocks import other_block
 from .colors import at_level, average
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
-from .hue_entertainment import CONF_AREA_ID as CONF_HUE_AREA_ID
 from .hue_entertainment import (
     OUTPUT_HUE_ENTERTAINMENT,
     async_area_lights,
@@ -557,7 +556,7 @@ async def async_streamed_notice(
             for light in lights
             for entity_id in (light.entity_id, *group_lights(hass, light.entity_id))
         },
-        None if own is None else own.get(CONF_HUE_AREA_ID),
+        own,
     )
     found = lights_in(hass, lights, set(streamed))
     if not found:

@@ -72,7 +72,7 @@ variables:
   glowcast_switch: !input glowcast_switch
   dark_ok: "{{ not only_after_dark or is_state('sun.sun', 'below_horizon') }}"
   source: >-
-    {{ trigger.to_state.attributes.source
+    {{ trigger.to_state.attributes.get('source')
        if trigger is defined and trigger.to_state is defined and trigger.to_state
        else none }}
   source_ok: "{{ sources | count == 0 or source in sources }}"
@@ -111,14 +111,16 @@ triggers:
     id: source
 
 conditions:
-  # Without the new inputs only "source" fails, so the automation behaves as
-  # before they existed. A source reported together with "on" is handled by
-  # tv_on; the "source" trigger only counts changes while the TV stays on, so
-  # Glowcast is not started twice.
+  # A run passes only when it changes the switch, so the automation's context
+  # stays the one of the run that turned it on (started_here). Runs that fail
+  # here did nothing before these conditions existed either: switch.turn_on on
+  # a switch that is on, or a TV off without "also stop". A source reported
+  # together with "on" is handled by tv_on; the "source" trigger only counts
+  # changes while the TV stays on, so Glowcast is not started twice.
   - condition: template
     value_template: >-
       {% if trigger.id == 'tv_on' %}
-        {{ dark_ok and source_ok }}
+        {{ dark_ok and source_ok and not is_state(glowcast_switch, 'on') }}
       {% elif trigger.id == 'source' %}
         {{ sources | count > 0
            and trigger.from_state.state == 'on'
@@ -127,7 +129,7 @@ conditions:
                 or (not source_ok and also_stop
                     and is_state(glowcast_switch, 'on') and started_here)) }}
       {% else %}
-        true
+        {{ also_stop }}
       {% endif %}
 
 actions:
