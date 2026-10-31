@@ -3,7 +3,7 @@
 Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integration, installable through [HACS](https://hacs.xyz/). It grabs frames from your LG TV over its local network API, works out the colour of each part of the screen (left, right, top, bottom) and sends those colours to your Philips Hue lights, including gradient lightstrips segment by segment. Other colour lights in Home Assistant can follow too, as [Home Assistant lights](home-assistant-lights.md).
 
 !!! note "An early version"
-    Glowcast is at v0.3. It is tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. Expect breaking changes until v1.0. See the [releases](https://github.com/nicohabets/glowcast/releases) for what changed.
+    Glowcast is at v0.4. It is tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. Expect breaking changes until v1.0. See the [releases](https://github.com/nicohabets/glowcast/releases) for what changed.
 
 ## Getting started
 

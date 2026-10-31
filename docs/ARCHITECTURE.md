@@ -505,6 +505,7 @@ tests/
   test_letterbox.py        # the bars of a frame and over frames, with the time as an argument
   test_strip_edges.py      # a gradient light around the TV stretched to the edges of the picture (#23)
   test_far_lights.py       # lights further back blended with the whole picture by depth (#15)
+  test_v04_together.py     # how the v0.4 changes work together: stretch, far blend, letterbox, cuts (#263)
   test_light_state.py      # fading, hold on black, brightness and glow, with the time as an argument
   test_pipeline.py         # the pipeline with the fakes and a fake clock
   test_init.py             # the switch and the lifecycle in HA; also through the real pipeline
@@ -538,7 +539,7 @@ Translations live in `translations/en.json` and `translations/nl.json` (custom i
 
 ## 7. Testing
 
-- **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget; the weighted average that lets a region's colourful, bright part lead (#233); lights further back blended with the whole picture by depth, and lights without a depth unchanged (#15).
+- **ColorEngine:** synthetic frames (solid colours, left/right split, letterbox bars, all black), plus the performance budget; the weighted average that lets a region's colourful, bright part lead (#233); a gradient light around the TV stretched to the edges of the picture (#23); lights further back blended with the whole picture by depth, scaled by its lit share so a dark scene stays dim (#15, #262), and lights without a depth unchanged; and how these work together with the letterbox bars and the cut fade (#263).
 - **Letterbox:** synthetic frames with bars, subtitles, dark scenes and black frames, with the time as an argument (#34).
 - **Light state:** plain unit tests with the time as an argument: the first target shown at once, the linear fade over the measured interval, the fast fade on a scene cut and none on a fade to black (#258), the hold on sudden black, brightness and the glow formula, and the channels kept after a retry.
 - **Pipeline:** fake source, fake output and a fake clock: start order (TV off → lights never touched), startup grace with retries, sends keep their rhythm while a capture hangs, fading over the measured interval, brightness and glow formula (end to end), every stop reason, and that `stop()` and `close()` run on every exit path.
