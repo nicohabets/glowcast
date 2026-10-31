@@ -1574,6 +1574,10 @@ class Bench:
             numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
                 str(s) for s in seen
             )
+            if means[1] is not None:
+                numbers[f"{self.label[name]} {side or '-'} then cool ratio"] = round(
+                    rp.cool_ratio(means[1], self.cal[name]), 2
+                )
         back = await self.wait_restored(end, self.th.restore_within_s)
         switch = (await self.ha.state("switch"))["state"]
         numbers["switch"] = switch

@@ -274,9 +274,9 @@ def test_a_white_near_the_edge_is_the_expected_white() -> None:
     assert rp.classify(MOONLIGHT_RIGHT, cal, TH) == "blue"
     assert rp.classify(MOONLIGHT_RIGHT, cal, TH, "white") == "white"
     assert rp.matches_colour("white", MOONLIGHT_RIGHT, cal, TH)
-    # Where blue is expected, the plain rule: the same reading is not blue
-    # enough to pass for white, and stays blue.
-    assert rp.matches_colour("blue", MOONLIGHT_RIGHT, cal, TH)
+    # Where a colour is expected, the plain rule (unchanged): a white as
+    # Glowcast sends it (about 1.1) is white there, and fails.
+    assert not rp.matches_colour("blue", WALL_SEEN["white"], WALL, TH)
 
 
 def test_a_clearly_blue_light_fails_where_white_is_expected() -> None:
