@@ -38,6 +38,10 @@ Every pull request that changes what the lights get shows the room before and af
 
 <!-- /rooms -->
 
+### The same room, other changes { #same-room-other-changes }
+
+A release can be "same" in every scenario and still change things the room does not show. **v0.3.1:** syncing continues after a Home Assistant restart (checked on the test bench, with its restart run); a Home Assistant light that is also in the entertainment area is left out of the Home Assistant lights (the bench's run with an area and Home Assistant lights together); the settings work while the Hue bridge cannot be reached (unit tests); and the outputs share their helpers, with an identical room.
+
 ## The test bench
 
 The test bench checks Glowcast on real Hue lights, without the TV: a computer monitor shows the picture, Hue lights in an entertainment area of their own follow it, and a webcam that sees both judges the result. It exists since v0.2.0. Every run starts by calibrating itself (where the lights and the monitor are, the camera's exposure, how much daylight there is), and then checks:

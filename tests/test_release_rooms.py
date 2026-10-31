@@ -203,3 +203,12 @@ def test_the_texts_name_every_scenario_on_the_pages() -> None:
     assert all((rooms.PAGES / group["page"]).is_file() for group in texts["groups"])
     for notes in texts["notes"].values():
         assert set(notes) <= set(keys)
+
+
+def test_a_release_note_for_every_scenario() -> None:
+    """A release that changed nothing the room shows says what it did."""
+    texts = TEXTS | {"releases": {"v0.3.0": "Other changes, see the overview."}}
+    text = "\n".join(rooms.scenario_section(MANIFEST, texts, "ha:Sunset"))
+    assert "    Other changes, see the overview." in text
+    # A scenario's own note comes first.
+    assert "    ● Livelier colours." in text

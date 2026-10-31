@@ -73,6 +73,11 @@ prefix = "Together"
 picture = "An entertainment area (the strip, the floor lamp, the light bar and the table lamp) and three Home Assistant lights together, on a slowly moving picture. The wall light becomes unavailable in Home Assistant after 1 second, the other two after 3 seconds."
 lights = "The entertainment area keeps following the picture. Glowcast notices the Home Assistant lights are gone, tries them once more after a few seconds, and then drops that part; the room names what is unavailable and dropped."
 
+# A release whose room is the same in every scenario: what it did change, in
+# every tab without a note of its own (the overview says more).
+[releases]
+"v0.3.1" = "v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes)."
+
 # What visibly changed, per release and scenario (from docs/releases/).
 # A scenario that is new or changed and has no note gets a plain line.
 

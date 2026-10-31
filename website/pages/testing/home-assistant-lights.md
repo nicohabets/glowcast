@@ -26,7 +26,7 @@
 
 === "v0.3.1"
 
-    Same as v0.3.0.
+    Same as v0.3.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Home Assistant lights: 1 Sunset, in the room with v0.3.1](rooms/v0.3.0/ha-sunset.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-sunset.gif)
 
@@ -62,7 +62,7 @@
 
 === "v0.3.1"
 
-    Same as v0.3.0.
+    Same as v0.3.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Home Assistant lights: 5 Fade between scenes, in the room with v0.3.1](rooms/v0.3.0/ha-fade-between-scenes.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-fade-between-scenes.gif)
 
@@ -98,7 +98,7 @@
 
 === "v0.3.1"
 
-    Same as v0.3.0.
+    Same as v0.3.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Home Assistant lights: 8 No picture, in the room with v0.3.1](rooms/v0.3.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)
 
@@ -134,7 +134,7 @@
 
 === "v0.3.1"
 
-    Same as v0.3.0.
+    Same as v0.3.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Together: 9 Home Assistant lights unavailable, in the room with v0.3.1](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)
 

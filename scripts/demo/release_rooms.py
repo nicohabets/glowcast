@@ -384,7 +384,11 @@ def scenario_section(
         info, found = lookup(manifest, lights, name, release)
         mark = f" {CHANGED}" if found and found["status"] == "changed" else ""
         lines += [f'=== "{release}{mark}"', ""]
-        note = notes.get(release, {}).get(key)
+        # A scenario's own note, else the release's note for every scenario
+        # (for a release that changed nothing the room shows).
+        note = notes.get(release, {}).get(key) or texts.get("releases", {}).get(
+            release
+        )
         if info is None:
             text = "Not made for this release."
         elif not info["available"]:

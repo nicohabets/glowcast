@@ -24,7 +24,7 @@ What the lights do when the picture goes dark, and when there is no picture at a
 
 === "v0.3.1"
 
-    Same as v0.1.1.
+    Same as v0.1.1. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Sudden dark picture, in the room with v0.3.1](rooms/v0.1.1/area-sudden-dark-picture.gif){ width="400" loading=lazy }](rooms/v0.1.1/area-sudden-dark-picture.gif)
 
@@ -66,7 +66,7 @@ What the lights do when the picture goes dark, and when there is no picture at a
 
 === "v0.3.1"
 
-    Same as v0.2.0.
+    Same as v0.2.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![No picture, in the room with v0.3.1](rooms/v0.2.0/area-no-picture.gif){ width="400" loading=lazy }](rooms/v0.2.0/area-no-picture.gif)
 
