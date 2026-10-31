@@ -94,11 +94,18 @@ class GlowcastData:
         # a start that waited sees that a later stop wins.
         self._transition = asyncio.Lock()
         self._stops = 0
+        # Set when the entry unloads or Home Assistant stops: no start, light
+        # test or hardware check that comes after it runs (it could claim the
+        # lights with nothing left to release them).
+        self._closing = False
         self._listeners: list[Callable[[], None]] = []
         self._status_listeners: list[Callable[[], None]] = []
         # What follows the TV as the pipeline started with it (or as stored,
         # before the first start); the update listener gets no old options.
         self._output: Mapping[str, Any] = entry.options[CONF_OUTPUT]
+        # The output block the running pipeline started with: a restart for
+        # a new block is not needed when the start already used it.
+        self._started_output: Mapping[str, Any] | None = None
         # The parts of a combined output the running pipeline dropped, with
         # the reason their follow-up (repair issue, reauth) was for.
         self._dropped: dict[str, StopReason] = {}
@@ -173,9 +180,14 @@ class GlowcastData:
             if self._check_measures:
                 await self._async_end_check()
             await self._async_end_test()
-            if self._stops != stops:
-                return  # switched off (or unloaded) meanwhile
+            if self._stops != stops or self._is_closing:
+                return  # switched off, unloaded or Home Assistant stops
             self._start_pipeline()
+
+    @property
+    def _is_closing(self) -> bool:
+        """Whether the entry unloads or Home Assistant stops."""
+        return self._closing or self._hass.is_stopping
 
     def _start_pipeline(self) -> None:
         """Build and run the pipeline, or raise the repair issue of a missing
@@ -198,7 +210,7 @@ class GlowcastData:
             lambda status: self._async_status(pipeline, status),
         )
         self._pipeline = pipeline
-        self._output = options[CONF_OUTPUT]
+        self._output = self._started_output = options[CONF_OUTPUT]
         self._dropped = {}
         self._task = self._entry.async_create_background_task(
             self._hass, pipeline.run(), f"glowcast {self._entry.title}"
@@ -316,6 +328,12 @@ class GlowcastData:
             await self._async_end_test()
             await self._async_stop()
 
+    async def async_close(self) -> None:
+        """Stop for good: the entry unloads or Home Assistant stops. A start,
+        light test or hardware check that comes later does nothing."""
+        self._closing = True
+        await self.async_stop()
+
     async def async_test_lights(self) -> None:
         """Show the light test (#182): known colours by position, about 3 s
         each, then back to what the lights did before.
@@ -326,6 +344,9 @@ class GlowcastData:
         change. A second press during a test does nothing.
         """
         title = self._entry.title
+        if self._is_closing:
+            _LOGGER.debug("Glowcast %s is unloading; no light test now", title)
+            return
         if self._pipeline is not None:
             if self._pipeline.testing:
                 _LOGGER.debug("Glowcast %s is testing the lights already", title)
@@ -396,6 +417,9 @@ class GlowcastData:
         nothing. When it is done, a notification says where the result is.
         """
         title = self._entry.title
+        if self._is_closing:
+            _LOGGER.debug("Glowcast %s is unloading; no hardware check now", title)
+            return
         if self._check is not None and not self._check.done():
             _LOGGER.debug("Glowcast %s is running the hardware check already", title)
             return
@@ -435,13 +459,14 @@ class GlowcastData:
         await async_notify_done(self._hass, self._entry.entry_id, self._entry.title)
 
     async def _async_end_check(self) -> None:
-        """End a running hardware check that captures, and wait for it."""
+        """End a running hardware check that captures, and wait for it; the
+        caller's own cancellation goes through. A press meanwhile runs a check
+        that does not capture."""
         task, self._check = self._check, None
         if task is None or task.done():
             return
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await asyncio.wait({task})
         _LOGGER.info(
             "Glowcast %s ended the hardware check: it starts syncing",
             self._entry.title,
@@ -449,23 +474,31 @@ class GlowcastData:
         self._check_result = {"interrupted": "started syncing"}
 
     async def _async_end_test(self) -> None:
-        """End a running light test and wait until its lights are released."""
-        task, self._test = self._test, None
+        """End a running light test and wait until its lights are released.
+
+        The caller's own cancellation goes through; the test then stays
+        known, so the next stop waits for its release too."""
+        task = self._test
         if task is None or task.done():
+            self._test = None
             return
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await asyncio.wait({task})
+        if self._test is task:
+            self._test = None
 
     async def _async_stop(self) -> None:
         if self._pipeline is not None:
             self._pipeline.stop()
         task = self._task
         if task is not None:
-            with suppress(asyncio.CancelledError):
-                await task
+            # Not `await task`: the caller's own cancellation (Home Assistant
+            # stopping) goes through instead of being taken for the task's.
+            await asyncio.wait({task})
             if self._task is task:
                 self._task = None
+            if not task.cancelled():
+                task.result()  # the pipeline's own error, as before
 
     async def async_options_updated(self) -> None:
         """New options: a running pipeline takes the settings without a restart.
@@ -514,20 +547,30 @@ class GlowcastData:
             )
 
     async def async_restart(self) -> None:
-        """Restart a running pipeline with the new settings; the switch stays on.
+        """Restart a running pipeline with the new output block; the switch
+        stays on.
 
         Like a start and a stop, one at a time: a stop that came earlier or
-        meanwhile wins (#269)."""
+        meanwhile wins (#269), and so do an unload and Home Assistant
+        stopping. Nothing to do when the running pipeline started with the
+        current block already (a switch-on that waited before it, #282)."""
         stops = self._stops
         async with self._transition:
-            if self._pipeline is None or self._stops != stops:
+            if (
+                self._pipeline is None
+                or self._stops != stops
+                or self._is_closing
+                or self._started_output == self._entry.options[CONF_OUTPUT]
+            ):
+                # Not running, stopped, or a start that waited before this
+                # restart already used the new output block (one handshake).
                 return
             self._restarting = True
             try:
                 await self._async_stop()
             finally:
                 self._restarting = False
-            if self._stops != stops:
+            if self._stops != stops or self._is_closing:
                 # Switching off (or unloading) during a restart wins over it.
                 self._notify()  # the switch shows off now
                 return

@@ -9,6 +9,7 @@ HA really does (cancel the background tasks while stopping).
 import asyncio
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     EVENT_STATE_CHANGED,
     SERVICE_TURN_OFF,
@@ -37,6 +38,7 @@ from .test_init import (  # noqa: F401
     settle,
     setup,
     state,
+    stop_home_assistant,
     switch,
     tv_device,
 )
@@ -338,6 +340,66 @@ async def test_a_switch_off_ends_a_look(
     await settle(hass)
     assert FakePipeline.instances == []
     assert state(hass) == STATE_OFF
+
+
+@pytest.mark.usefixtures("quick")
+async def test_an_unload_ends_a_look(hass: HomeAssistant, fakes: FakeAdapters) -> None:
+    """The look's connection is closed, and no look or start follows (#282)."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    await asyncio.sleep(0.05)  # several intervals
+    await settle(hass)
+    assert fakes.log == ["source.start", "source.close"]
+    assert FakePipeline.instances == []
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_home_assistant_stopping_ends_a_resume_that_waits_for_a_test(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """Home Assistant stops in its real order while the resume's start waits
+    for a light test's release: its cancelling of the resume goes through
+    instead of being taken for the test's end (#282). The test's lights are
+    released, and nothing claims them after."""
+    fakes.source_gate = asyncio.Event()
+    fakes.output_stop_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    try:
+        await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+        await entry.runtime_data.async_test_lights()
+        await wait_for(lambda: fakes.log == ["source.start", "output.start"])
+        [resume] = [
+            task
+            for task in hass._background_tasks
+            if isinstance(task, asyncio.Task) and task.get_name().endswith(" resume")
+        ]
+        fakes.source_gate.set()  # the TV is on: the resume starts
+        await wait_for(lambda: fakes.log[-1] == "source.close")
+        await asyncio.sleep(0.01)  # the start now waits for the test's release
+        assert entry.runtime_data._transition.locked()
+        stop_home_assistant(hass)
+        await asyncio.sleep(0.01)
+        assert resume.cancelled()
+        fakes.output_stop_gate.set()
+        await settle(hass)
+        assert fakes.log == [
+            "source.start",
+            "output.start",
+            "source.close",
+            "output.stop",
+            "output.close",
+        ]
+        assert FakePipeline.instances == []
+    finally:
+        fakes.source_gate.set()
+        fakes.output_stop_gate.set()
+        hass.set_state(CoreState.running)
 
 
 @pytest.mark.usefixtures("quick")

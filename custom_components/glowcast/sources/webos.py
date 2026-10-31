@@ -339,7 +339,8 @@ async def probe(
 
     Its own connection, closed at the end. Not while Glowcast syncs
     (`measure` false): a second capture next to the pipeline's could make
-    the pipeline's fail. No pixels, image URLs, names or ids are kept.
+    the pipeline's fail. No pixels, image URLs, names or ids are kept; the
+    current app only when every capture was all black.
     """
     source = WebOsFrameSource(hass, data[CONF_SOURCE][CONF_UNIQUE_ID])
     try:
@@ -347,9 +348,16 @@ async def probe(
             await source.start()
         except SourceUnavailable as err:
             return {"connected": False, "error": str(err)}
-        result: dict[str, Any] = {"connected": True, "tv": source.tv_facts()}
+        tv = source.tv_facts()
+        result: dict[str, Any] = {"connected": True, "tv": tv}
+        app = tv.pop("app", None)
         if measure:
-            result["capture"] = await _async_measure(source)
+            result["capture"] = capture = await _async_measure(source)
+            if capture["all_black"]:
+                # Only for a picture that stays black, the case it is for
+                # (an app with copy protection); otherwise it would say what
+                # the user watches, in a report posted publicly (#282).
+                tv["app"] = app
         return result
     finally:
         with suppress(Exception):

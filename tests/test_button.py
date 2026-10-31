@@ -15,7 +15,7 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.glowcast.core import light_test
@@ -23,7 +23,14 @@ from custom_components.glowcast.core.models import Channel
 from custom_components.glowcast.core.ports import OutputBusy
 
 from .fakes import FakeAdapters, FakeOutput, FakePipeline, wait_for
-from .test_init import settle, setup, state, switch, tv_device  # noqa: F401
+from .test_init import (  # noqa: F401
+    settle,
+    setup,
+    state,
+    stop_home_assistant,
+    switch,
+    tv_device,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -235,6 +242,25 @@ async def test_home_assistant_stopping_during_the_test_releases_the_lights(
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
     await settle(hass)
     await wait_for(lambda: fakes.log == RELEASED)
+
+
+@pytest.mark.parametrize("ending", ["unload", "home_assistant_stops"])
+async def test_no_light_test_after_unload_or_home_assistant_stopping(
+    hass: HomeAssistant, fakes: FakeAdapters, ending: str
+) -> None:
+    """A press after the lights were released claims nothing: no stop would
+    follow to release them again (#282)."""
+    entry = await setup(hass)
+    data = entry.runtime_data
+    if ending == "unload":
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    else:
+        stop_home_assistant(hass)
+        await settle(hass)
+    await data.async_test_lights()
+    await settle(hass)
+    assert fakes.log == []
+    hass.set_state(CoreState.running)
 
 
 async def test_while_syncing_the_running_pipeline_shows_the_test(
