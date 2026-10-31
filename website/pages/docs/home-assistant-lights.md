@@ -61,7 +61,7 @@ While Glowcast streams to an entertainment area, its lights only listen to Glowc
 
 ## Together with an entertainment area
 
-One Glowcast can drive an entertainment area and Home Assistant lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Entertainment area and Home Assistant lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the Home Assistant lights and their places, then brightness, intensity and the update rate.
+One Glowcast can drive an entertainment area and Home Assistant lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Hue area and Home Assistant lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the Home Assistant lights and their places, then brightness, intensity and the update rate.
 
 - The area keeps its own pace (the update rate, up to 25 changes per second), and the Home Assistant lights theirs (about once per second); the Home Assistant lights never slow the area down.
 - A light that is in the entertainment area cannot also be a Home Assistant light: it already follows the picture through the area. The settings screen says which lights, and so does the **Lights** or **Entertainment area** entity on the device page when you pick an area, group or entertainment area that would put a light in both. Pick the other lights one by one, or a group without them.
@@ -71,7 +71,7 @@ One Glowcast can drive an entertainment area and Home Assistant lights together,
 - Only when both are lost does Glowcast stop, as it does for one.
 - Switching off (or the picture source off, or Home Assistant stopping) releases the area and puts every Home Assistant light back as it was.
 
-![Glowcast's settings screen in Home Assistant: choose Entertainment area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" loading=lazy }
+![Glowcast's settings screen in Home Assistant: choose Hue area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" loading=lazy }
 
 *An entertainment area and Home Assistant lights together, under Configure: the area, the Home Assistant lights and their places, brightness, intensity and the update rate, then both on the device page.*
 

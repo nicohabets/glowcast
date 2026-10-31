@@ -164,7 +164,7 @@
         "menu_options": {
           "hue_options": "Hue entertainment area - the smoothest",
           "ha_lights_options": "Home Assistant lights - any brand, slower",
-          "combined_options": "Entertainment area and Home Assistant lights"
+          "combined_options": "Hue area and Home Assistant lights"
         },
         "menu_option_descriptions": {
           "combined_options": "Pick lights one by one, or a whole area or light group from Home Assistant; each light gets its own place."
@@ -426,7 +426,7 @@
     },
     "loose_lights_in_area": {
       "title": "Glowcast {name}: Home Assistant lights in the entertainment area",
-      "description": "{lights} were added to the entertainment area in the Hue app, so they follow the picture through the area. Glowcast leaves them out of the Home Assistant lights, so that they do not get two colours. To make this message go away, choose the Home Assistant lights again without them in Glowcast's settings (Configure, then \"Entertainment area and Home Assistant lights\"), or remove them from the entertainment area in the Hue app. The message is checked again the next time Glowcast takes over the lights."
+      "description": "{lights} were added to the entertainment area in the Hue app, so they follow the picture through the area. Glowcast leaves them out of the Home Assistant lights, so that they do not get two colours. To make this message go away, choose the Home Assistant lights again without them in Glowcast's settings (Configure, then \"Hue area and Home Assistant lights\"), or remove them from the entertainment area in the Hue app. The message is checked again the next time Glowcast takes over the lights."
     },
     "ha_lights_streamed_elsewhere": {
       "title": "Glowcast {name}: Home Assistant lights in an area another app syncs",
