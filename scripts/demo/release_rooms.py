@@ -47,7 +47,7 @@ TEXTS = Path(__file__).with_name("testing_pages.toml")
 PACKAGE = "custom_components/glowcast"
 TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # As in room.py and room_harness.py.
-LIGHTS = ("area", "ha", "combined")
+LIGHTS = ("area", "ha", "combined", "in-area")
 EXIT_NO_OUTPUT = 3
 # The largest difference (0-255, per colour component) that still counts as
 # the same: rounding, nothing to see.
@@ -70,6 +70,7 @@ OUTPUT_NAMES = {
     "area": "An entertainment area",
     "ha": "Home Assistant lights",
     "combined": "An entertainment area and Home Assistant lights together",
+    "in-area": "An entertainment area and Home Assistant lights together",
 }
 
 

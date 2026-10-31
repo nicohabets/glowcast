@@ -25,7 +25,7 @@ How the lights take the colours of the picture: a warm sunset, a pure saturated 
 
 === "v0.3.1"
 
-    Same as v0.3.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.3.0. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Sunset, in the room with v0.3.1](rooms/v0.3.0/area-sunset.gif){ width="400" loading=lazy }](rooms/v0.3.0/area-sunset.gif)
 
@@ -67,7 +67,7 @@ How the lights take the colours of the picture: a warm sunset, a pure saturated 
 
 === "v0.3.1"
 
-    Same as v0.1.1. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.1.1. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Saturated red, in the room with v0.3.1](rooms/v0.1.1/area-saturated-red.gif){ width="400" loading=lazy }](rooms/v0.1.1/area-saturated-red.gif)
 
@@ -109,7 +109,7 @@ How the lights take the colours of the picture: a warm sunset, a pure saturated 
 
 === "v0.3.1"
 
-    Same as v0.1.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.1.0. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Concert, in the room with v0.3.1](rooms/v0.1.0/area-concert.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-concert.gif)
 
