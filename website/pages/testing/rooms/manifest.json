@@ -1,0 +1,456 @@
+{
+  "tolerance": 2,
+  "releases": [
+    "v0.1.0",
+    "v0.1.1",
+    "v0.2.0",
+    "v0.3.0",
+    "v0.3.1",
+    "v0.4.0"
+  ],
+  "lights": {
+    "area": {
+      "names": {
+        "Sunset": "1 Sunset",
+        "Saturated red": "3 Saturated red",
+        "Concert": "6 Concert",
+        "Letterbox": "4 Letterbox",
+        "Fade between scenes": "5 Fade between scenes",
+        "Sudden dark picture": "2 Sudden dark picture",
+        "No picture": "7 No picture"
+      },
+      "releases": {
+        "v0.1.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-sunset.gif",
+              "since": "v0.1.0"
+            },
+            "Saturated red": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-saturated-red.gif",
+              "since": "v0.1.0"
+            },
+            "Concert": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-concert.gif",
+              "since": "v0.1.0"
+            },
+            "Letterbox": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "Fade between scenes": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-fade-between-scenes.gif",
+              "since": "v0.1.0"
+            },
+            "Sudden dark picture": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-sudden-dark-picture.gif",
+              "since": "v0.1.0"
+            },
+            "No picture": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-no-picture.gif",
+              "since": "v0.1.0"
+            }
+          }
+        },
+        "v0.1.1": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "changed",
+              "difference": 7,
+              "gif": "v0.1.1/area-sunset.gif",
+              "since": "v0.1.1"
+            },
+            "Saturated red": {
+              "status": "changed",
+              "difference": 16,
+              "gif": "v0.1.1/area-saturated-red.gif",
+              "since": "v0.1.1"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-concert.gif",
+              "since": "v0.1.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 2,
+              "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-fade-between-scenes.gif",
+              "since": "v0.1.0"
+            },
+            "Sudden dark picture": {
+              "status": "changed",
+              "difference": 20,
+              "gif": "v0.1.1/area-sudden-dark-picture.gif",
+              "since": "v0.1.1"
+            },
+            "No picture": {
+              "status": "changed",
+              "difference": 10,
+              "gif": "v0.1.1/area-no-picture.gif",
+              "since": "v0.1.1"
+            }
+          }
+        },
+        "v0.2.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-sunset.gif",
+              "since": "v0.1.1"
+            },
+            "Saturated red": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-saturated-red.gif",
+              "since": "v0.1.1"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-concert.gif",
+              "since": "v0.1.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-fade-between-scenes.gif",
+              "since": "v0.1.0"
+            },
+            "Sudden dark picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-sudden-dark-picture.gif",
+              "since": "v0.1.1"
+            },
+            "No picture": {
+              "status": "changed",
+              "difference": 26,
+              "gif": "v0.2.0/area-no-picture.gif",
+              "since": "v0.2.0"
+            }
+          }
+        },
+        "v0.3.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "changed",
+              "difference": 194,
+              "gif": "v0.3.0/area-sunset.gif",
+              "since": "v0.3.0"
+            },
+            "Saturated red": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-saturated-red.gif",
+              "since": "v0.1.1"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-concert.gif",
+              "since": "v0.1.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-fade-between-scenes.gif",
+              "since": "v0.1.0"
+            },
+            "Sudden dark picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-sudden-dark-picture.gif",
+              "since": "v0.1.1"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.2.0/area-no-picture.gif",
+              "since": "v0.2.0"
+            }
+          }
+        },
+        "v0.3.1": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.3.0/area-sunset.gif",
+              "since": "v0.3.0"
+            },
+            "Saturated red": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-saturated-red.gif",
+              "since": "v0.1.1"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-concert.gif",
+              "since": "v0.1.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-fade-between-scenes.gif",
+              "since": "v0.1.0"
+            },
+            "Sudden dark picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.1/area-sudden-dark-picture.gif",
+              "since": "v0.1.1"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.2.0/area-no-picture.gif",
+              "since": "v0.2.0"
+            }
+          }
+        },
+        "v0.4.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "changed",
+              "difference": 55,
+              "gif": "v0.4.0/area-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Saturated red": {
+              "status": "changed",
+              "difference": 161,
+              "gif": "v0.4.0/area-saturated-red.gif",
+              "since": "v0.4.0"
+            },
+            "Concert": {
+              "status": "changed",
+              "difference": 105,
+              "gif": "v0.4.0/area-concert.gif",
+              "since": "v0.4.0"
+            },
+            "Letterbox": {
+              "status": "changed",
+              "difference": 106,
+              "gif": "v0.4.0/area-letterbox.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "changed",
+              "difference": 96,
+              "gif": "v0.4.0/area-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "Sudden dark picture": {
+              "status": "changed",
+              "difference": 161,
+              "gif": "v0.4.0/area-sudden-dark-picture.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "changed",
+              "difference": 77,
+              "gif": "v0.4.0/area-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
+        }
+      }
+    },
+    "ha": {
+      "names": {
+        "Sunset": "1 Sunset",
+        "Fade between scenes": "5 Fade between scenes",
+        "No picture": "7 No picture"
+      },
+      "releases": {
+        "v0.1.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no Home Assistant lights (outputs/ha_lights.py)"
+        },
+        "v0.1.1": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no Home Assistant lights (outputs/ha_lights.py)"
+        },
+        "v0.2.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no Home Assistant lights (outputs/ha_lights.py)"
+        },
+        "v0.3.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.3.0/ha-sunset.gif",
+              "since": "v0.3.0"
+            },
+            "Fade between scenes": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.3.0/ha-fade-between-scenes.gif",
+              "since": "v0.3.0"
+            },
+            "No picture": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.3.0/ha-no-picture.gif",
+              "since": "v0.3.0"
+            }
+          }
+        },
+        "v0.3.1": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.3.0/ha-sunset.gif",
+              "since": "v0.3.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.3.0/ha-fade-between-scenes.gif",
+              "since": "v0.3.0"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.3.0/ha-no-picture.gif",
+              "since": "v0.3.0"
+            }
+          }
+        },
+        "v0.4.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "changed",
+              "difference": 6,
+              "gif": "v0.4.0/ha-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "changed",
+              "difference": 69,
+              "gif": "v0.4.0/ha-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "changed",
+              "difference": 100,
+              "gif": "v0.4.0/ha-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
+        }
+      }
+    },
+    "combined": {
+      "names": {
+        "Home Assistant lights unavailable": "8 Home Assistant lights unavailable"
+      },
+      "releases": {
+        "v0.1.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.1.1": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.2.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.3.0": {
+          "available": true,
+          "scenarios": {
+            "Home Assistant lights unavailable": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.3.0/combined-home-assistant-lights-unavailable.gif",
+              "since": "v0.3.0"
+            }
+          }
+        },
+        "v0.3.1": {
+          "available": true,
+          "scenarios": {
+            "Home Assistant lights unavailable": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.3.0/combined-home-assistant-lights-unavailable.gif",
+              "since": "v0.3.0"
+            }
+          }
+        },
+        "v0.4.0": {
+          "available": true,
+          "scenarios": {
+            "Home Assistant lights unavailable": {
+              "status": "changed",
+              "difference": 59,
+              "gif": "v0.4.0/combined-home-assistant-lights-unavailable.gif",
+              "since": "v0.4.0"
+            }
+          }
+        }
+      }
+    }
+  }
+}

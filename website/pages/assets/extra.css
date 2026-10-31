@@ -143,3 +143,15 @@
   background-color: var(--gc-violet);
   border-color: var(--gc-violet);
 }
+
+/* The testing pages (#293): a release that changed a scenario. */
+.md-typeset a.glowcast-changed {
+  color: #c2410c;
+  font-weight: 700;
+}
+[data-md-color-scheme="slate"] .md-typeset a.glowcast-changed {
+  color: var(--gc-coral);
+}
+.md-typeset .tabbed-labels > label {
+  font-variant-numeric: tabular-nums;
+}
