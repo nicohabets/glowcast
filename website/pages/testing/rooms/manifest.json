@@ -6,7 +6,9 @@
     "v0.2.0",
     "v0.3.0",
     "v0.3.1",
-    "v0.4.0"
+    "v0.4.0",
+    "v0.5.0",
+    "v0.5.1"
   ],
   "lights": {
     "area": {
@@ -338,6 +340,112 @@
               "since": "v0.4.0"
             }
           }
+        },
+        "v0.5.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Saturated red": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-saturated-red.gif",
+              "since": "v0.4.0"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-concert.gif",
+              "since": "v0.4.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-letterbox.gif",
+              "since": "v0.4.0"
+            },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-43-picture.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "Sudden dark picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-sudden-dark-picture.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
+        },
+        "v0.5.1": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Saturated red": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-saturated-red.gif",
+              "since": "v0.4.0"
+            },
+            "Concert": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-concert.gif",
+              "since": "v0.4.0"
+            },
+            "Letterbox": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-letterbox.gif",
+              "since": "v0.4.0"
+            },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-43-picture.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "Sudden dark picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-sudden-dark-picture.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/area-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
         }
       }
     },
@@ -431,6 +539,52 @@
               "since": "v0.4.0"
             }
           }
+        },
+        "v0.5.0": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
+        },
+        "v0.5.1": {
+          "available": true,
+          "scenarios": {
+            "Sunset": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-sunset.gif",
+              "since": "v0.4.0"
+            },
+            "Fade between scenes": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-fade-between-scenes.gif",
+              "since": "v0.4.0"
+            },
+            "No picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/ha-no-picture.gif",
+              "since": "v0.4.0"
+            }
+          }
         }
       }
     },
@@ -486,6 +640,28 @@
               "since": "v0.4.0"
             }
           }
+        },
+        "v0.5.0": {
+          "available": true,
+          "scenarios": {
+            "Home Assistant lights unavailable": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/combined-home-assistant-lights-unavailable.gif",
+              "since": "v0.4.0"
+            }
+          }
+        },
+        "v0.5.1": {
+          "available": true,
+          "scenarios": {
+            "Home Assistant lights unavailable": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/combined-home-assistant-lights-unavailable.gif",
+              "since": "v0.4.0"
+            }
+          }
         }
       }
     },
@@ -537,6 +713,28 @@
             "Floor lamp in the area too": {
               "status": "changed",
               "difference": 59,
+              "gif": "v0.4.0/in-area-floor-lamp-in-the-area-too.gif",
+              "since": "v0.4.0"
+            }
+          }
+        },
+        "v0.5.0": {
+          "available": true,
+          "scenarios": {
+            "Floor lamp in the area too": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.4.0/in-area-floor-lamp-in-the-area-too.gif",
+              "since": "v0.4.0"
+            }
+          }
+        },
+        "v0.5.1": {
+          "available": true,
+          "scenarios": {
+            "Floor lamp in the area too": {
+              "status": "same",
+              "difference": 0,
               "gif": "v0.4.0/in-area-floor-lamp-in-the-area-too.gif",
               "since": "v0.4.0"
             }
