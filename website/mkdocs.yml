@@ -130,4 +130,11 @@ nav:
       - Black bars and movement: testing/shape-and-movement.md
       - Dark and no picture: testing/dark.md
       - Home Assistant lights: testing/home-assistant-lights.md
+  - Light research:
+      - research/index.md
+      - Colours and fades: research/colours.md
+      - Where each light looks: research/positions.md
+      - Dark pictures and no picture: research/dark.md
+      - Lights, bridges and other apps: research/lights.md
+      - Speed and hardware: research/speed.md
   - Releases: https://github.com/nicohabets/glowcast/releases
