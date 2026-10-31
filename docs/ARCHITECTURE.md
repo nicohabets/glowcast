@@ -1,6 +1,6 @@
 # Glowcast - Architecture
 
-Status: **v0.4.0 released**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.6, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
+Status: **v0.5.0 released**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.6, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
 
 ## 1. Goal
 
@@ -543,7 +543,6 @@ tests/
   test_composite_output.py  test_combined.py   # the combined output with fakes; in Home Assistant
   test_ha_lights_streamed.py  # Home Assistant lights in an area another app streams (#219)
   test_screen_source.py    # the screen source against a fake screen helper (#110)
-  test_lively_colours.py   # the weighted region colour (#233)
   test_resume.py           # syncing again after a restart of Home Assistant (#183)
   test_help_links.py       # the links Glowcast shows in Home Assistant lead somewhere (#253)
   test_blueprint.py  test_blueprint_sync_box.py  # the blueprints (#219)
