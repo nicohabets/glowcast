@@ -64,6 +64,14 @@ TOO_MANY_CHANNELS = Issue(
     "hue_entertainment_too_many_channels",
     "the chosen entertainment area has more than 20 channels",
 )
+# Another Glowcast setup streams to the same bridge (#299): raised only when
+# the busy stop's check names it (`other_glowcast`); {other} is its title.
+ISSUE_OTHER_GLOWCAST = "other_glowcast_streams"
+OTHER_GLOWCAST = Issue(
+    ISSUE_OTHER_GLOWCAST,
+    "hue_entertainment_other_glowcast",
+    "Glowcast {other} is streaming to the same Hue bridge",
+)
 # Shown once when an entry that paired with a bridge is removed. Its text
 # lives under "issues" because Home Assistant has no translation category for
 # notifications; it is never raised as a repair issue.
@@ -100,6 +108,14 @@ STATES_TIMEOUT = 5.0
 # of a temperature this much cooler: the bridge shows sRGB warm whites
 # redder, which is why the glow is two steps cooler too (architecture 3.5, #38).
 CT_CORRECTION_K = 800
+# Looking up which Glowcast setup streams (#299), only when the bridge is busy:
+# one GET /auth/v1 per other setup on the bridge, together at most this long.
+OTHERS_TIMEOUT = 3.0
+# hass.data keys (#299): {(entry id, app key): the application id the bridge
+# gave that entry's key}, and {(bridge unique id, app key): the title of the
+# Glowcast setup that kept this key's last start busy}.
+APP_IDS = "glowcast_hue_app_ids"
+BUSY_BY = "glowcast_hue_busy_by"
 # The bridge allows 20 characters before the # of a devicetype and 19 after.
 DEVICE_NAME_LENGTH = 19
 
@@ -217,6 +233,8 @@ class HueEntertainmentOutput:
         return entry.data[CONF_HOST]
 
     async def _async_start(self, host: str, retry: bool) -> list[Channel]:
+        busy_by = _busy_by(self._hass)
+        busy_by.pop((self._bridge_unique_id, self._app_key), None)
         app_id = await self._async_application_id(host)
         areas = (await self._async_get(host, AREAS_PATH))[1].get("data", [])
         area = next((a for a in areas if a.get("id") == self._area_id), None)
@@ -236,7 +254,11 @@ class HueEntertainmentOutput:
                 continue
             streamer = (other.get("active_streamer") or {}).get("rid")
             if streamer != app_id:
-                raise OutputBusy("Another app is streaming on the Hue bridge")
+                title = await self._async_other_glowcast(host, streamer)
+                if title is None:
+                    raise OutputBusy("Another app is streaming on the Hue bridge")
+                busy_by[(self._bridge_unique_id, self._app_key)] = title
+                raise OutputBusy("Another Glowcast setup streams on the Hue bridge")
             _LOGGER.info("Stopping a stale Glowcast stream on the Hue bridge")
             await self._api.stop_entertainment(other["id"])
 
@@ -305,6 +327,45 @@ class HueEntertainmentOutput:
             raise OutputUnavailable("The Hue bridge did not return an application id")
         return app_id
 
+    async def _async_other_glowcast(self, host: str, streamer: Any) -> str | None:
+        """The title of the other Glowcast setup that streams, if it is one.
+
+        Each other Glowcast entry paired with this bridge with another key is
+        asked for its application id once (cached by entry and key, so a new
+        key after pairing again is asked again). None when no other setup
+        matches, or when the bridge does not tell in time. Never logs a key
+        or an application id.
+        """
+        if not streamer:
+            return None
+        app_ids = _app_ids(self._hass)
+        try:
+            async with asyncio.timeout(OTHERS_TIMEOUT):
+                for entry in self._hass.config_entries.async_entries(DOMAIN):
+                    bridge = entry.data.get(CONF_BRIDGE)
+                    if (
+                        not isinstance(bridge, Mapping)
+                        or bridge.get(CONF_UNIQUE_ID) != self._bridge_unique_id
+                        or not (key := bridge.get(CONF_APP_KEY))
+                        or key == self._app_key
+                    ):
+                        continue
+                    if (app_id := app_ids.get((entry.entry_id, key))) is None:
+                        try:
+                            headers, _ = await _async_clip_get(
+                                self._hass, host, key, AUTH_PATH, body=False
+                            )
+                        except (OutputAuthFailed, OutputNotFound, OutputUnavailable):
+                            continue
+                        if not (app_id := headers.get("hue-application-id")):
+                            continue
+                        app_ids[(entry.entry_id, key)] = app_id
+                    if app_id == streamer:
+                        return entry.title
+        except TimeoutError:
+            _LOGGER.debug("Could not tell which app streams on the Hue bridge")
+        return None
+
     async def _async_get(
         self, host: str, path: str, *, body: bool = True
     ) -> tuple[Any, Any]:
@@ -343,6 +404,26 @@ def create(
         bridge[CONF_CLIENT_KEY],
         options[CONF_OUTPUT][CONF_AREA_ID],
     )
+
+
+def other_glowcast(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> Mapping[str, str] | None:
+    """For a busy stop: {"other": title} when another Glowcast setup kept the
+    entry's last start busy (#299), None when another app did."""
+    bridge = data.get(CONF_BRIDGE)
+    if not isinstance(bridge, Mapping):
+        return None
+    title = _busy_by(hass).get((bridge.get(CONF_UNIQUE_ID), bridge.get(CONF_APP_KEY)))
+    return None if title is None else {"other": title}
+
+
+def _app_ids(hass: HomeAssistant) -> dict[tuple[str, str], str]:
+    return hass.data.setdefault(APP_IDS, {})
+
+
+def _busy_by(hass: HomeAssistant) -> dict[tuple[Any, Any], str]:
+    return hass.data.setdefault(BUSY_BY, {})
 
 
 def is_missing(

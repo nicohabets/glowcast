@@ -598,6 +598,33 @@ async def test_a_part_that_cannot_start_is_shown_and_the_rest_runs(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_a_part_busy_for_another_glowcast_setup_names_it(
+    hass: HomeAssistant, parts: Parts
+) -> None:
+    """The dropped part gets the issue of its type's busy check (#299); the
+    rest runs, and the issue stays while the part is dropped."""
+    lamp = add_light(hass, "floor_lamp")
+    parts.area_start_errors = [OutputBusy("another Glowcast setup streams")]
+    entry = combined_entry(hass, combined(lamp))
+    paired = entry.data["bridge"]
+    hass.data["glowcast_hue_busy_by"] = {
+        (paired["unique_id"], paired["app_key"]): "Bedroom TV"
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(lambda: hass.states.get(STATUS).attributes.get("dropped_outputs"))
+    await settle(hass)
+    assert hass.states.get(SWITCH).state == "on"
+    assert issues(hass, entry) == {"other_glowcast_streams"}
+    raised = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"other_glowcast_streams_{entry.entry_id}"
+    )
+    assert raised is not None
+    assert raised.translation_placeholders["other"] == "Bedroom TV"
+    await switch(hass, SERVICE_TURN_OFF)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_a_missing_integration_drops_its_part(
     hass: HomeAssistant, parts: Parts, fake_pipeline: Any
 ) -> None:

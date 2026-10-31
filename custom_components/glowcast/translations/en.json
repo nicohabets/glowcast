@@ -433,6 +433,10 @@
       "title": "Glowcast {name}: the entertainment area no longer exists",
       "description": "The entertainment area Glowcast streams to was removed from the Hue bridge. Choose another one in Glowcast's settings."
     },
+    "hue_entertainment_other_glowcast": {
+      "title": "Glowcast {name}: Glowcast {other} is streaming to this bridge",
+      "description": "Glowcast cannot sync because your other Glowcast setup, {other}, is streaming to the same Hue bridge. A Hue bridge streams to one entertainment area at a time, so only one Glowcast setup per bridge can sync at once. Switch Glowcast {other} off first, then switch Glowcast {name} on again. Glowcast {name} leaves the other stream alone. The message goes away the next time Glowcast {name} takes over the lights."
+    },
     "hue_entertainment_bridge_app_left": {
       "title": "Glowcast {name}: remove its app from the Hue bridge",
       "description": "Glowcast is removed from Home Assistant, but its app is still on the Hue bridge. That app's key gives full access to the bridge. To remove it, open the Hue app and go to **Settings → Apps → Network-based**, tap the info button next to **glowcast** and remove it."

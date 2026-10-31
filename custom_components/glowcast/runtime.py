@@ -401,11 +401,15 @@ class GlowcastData:
             output, brightness, self._hass.async_add_executor_job, MonotonicClock()
         )
         if reason is not None:
-            issue = output_type.stop_issues.get(reason)
+            issue, placeholders = output_type.stop_issues.get(reason), {}
+            if issue is None and (detail := self._stop_detail(reason)) is not None:
+                issue, placeholders = detail
             _LOGGER.warning(
                 "Glowcast %s could not test the lights: %s",
                 self._entry.title,
-                _STOP_MESSAGES[reason] if issue is None else issue.message,
+                _STOP_MESSAGES[reason]
+                if issue is None
+                else _message(issue, placeholders),
             )
 
     async def async_hardware_check(self) -> None:
@@ -537,6 +541,7 @@ class GlowcastData:
             for output_type in OUTPUTS.values()
             for issue in (
                 *output_type.stop_issues.values(),
+                *(detail.issue for detail in output_type.stop_details.values()),
                 *(notice.issue for notice in output_type.notices),
                 *((output_type.missing,) if missing else ()),
             )
@@ -692,7 +697,15 @@ class GlowcastData:
             issue.key
             for type_id, reason in dropped.items()
             if (output_type := OUTPUTS.get(type_id)) is not None
-            for issue in (output_type.missing, output_type.stop_issues.get(reason))
+            for issue in (
+                output_type.missing,
+                output_type.stop_issues.get(reason),
+                *(
+                    detail.issue
+                    for stop, detail in output_type.stop_details.items()
+                    if stop is reason
+                ),
+            )
             if issue is not None
         } | {
             notice.issue.key
@@ -728,6 +741,8 @@ class GlowcastData:
                 self._entry.async_start_reauth(self._hass, data={REAUTH_PART: type_id})
             elif (issue := output_type.stop_issues.get(reason)) is not None:
                 self._raise_issue(issue.key)
+            elif (detail := self._stop_detail(reason, type_id)) is not None:
+                self._raise_issue(detail[0].key, detail[1])
             elif (
                 reason is StopReason.OUTPUT_UNAVAILABLE
                 and output_type.missing is not None
@@ -760,7 +775,12 @@ class GlowcastData:
         issue = output_type.stop_issues.get(reason) or source_type.stop_issues.get(
             reason
         )
-        message = _STOP_MESSAGES[reason] if issue is None else issue.message
+        placeholders: Mapping[str, str] = {}
+        if issue is None and (detail := self._stop_detail(reason)) is not None:
+            issue, placeholders = detail
+        message = (
+            _STOP_MESSAGES[reason] if issue is None else _message(issue, placeholders)
+        )
         if reason is StopReason.USER and self._hass.is_stopping:
             # HA cancels background tasks on shutdown; the pipeline then
             # releases the lights and reports USER. It starts again after
@@ -777,7 +797,7 @@ class GlowcastData:
                 self._hass, data={REAUTH_PART: REAUTH_SOURCE}
             )
         elif issue is not None:
-            self._raise_issue(issue.key)
+            self._raise_issue(issue.key, placeholders)
         elif reason in (
             StopReason.TV_OFF,
             StopReason.SOURCE_UNAVAILABLE,
@@ -786,6 +806,20 @@ class GlowcastData:
             # The TV or the lights may have been removed from HA while syncing.
             self._missing_reference(source_type, starting=False)
         self._notify()
+
+    def _stop_detail(
+        self, reason: StopReason, type_id: str | None = None
+    ) -> tuple[Issue, Mapping[str, str]] | None:
+        """The repair issue an output part's check gives this stop, with its
+        placeholders (StopDetail); only the part `type_id` when given."""
+        for part_id, output_type, part_opts in self._parts():
+            detail = output_type.stop_details.get(reason)
+            if detail is None or type_id not in (None, part_id):
+                continue
+            placeholders = detail.check(self._hass, self._entry.data, part_opts)
+            if placeholders is not None:
+                return detail.issue, placeholders
+        return None
 
     def _raise_issue(
         self, key: str, placeholders: Mapping[str, str] | None = None
@@ -798,6 +832,7 @@ class GlowcastData:
                 (
                     output_type.missing,
                     *output_type.stop_issues.values(),
+                    *(detail.issue for detail in output_type.stop_details.values()),
                     *(notice.issue for notice in output_type.notices),
                 )
             )
@@ -845,6 +880,11 @@ def issue_keys() -> list[str]:
                 for issue in output_type.stop_issues.values()
             ),
             *(
+                detail.issue
+                for output_type in OUTPUTS.values()
+                for detail in output_type.stop_details.values()
+            ),
+            *(
                 notice.issue
                 for output_type in OUTPUTS.values()
                 for notice in output_type.notices
@@ -858,6 +898,14 @@ def async_remove_issues(hass: HomeAssistant, entry_id: str) -> None:
     """Remove an entry's repair issues, of every type."""
     for key in issue_keys():
         ir.async_delete_issue(hass, DOMAIN, issue_id(entry_id, key))
+
+
+def _message(issue: Issue, placeholders: Mapping[str, str]) -> str:
+    """The issue's line for the log, with its placeholders filled in."""
+    message = issue.message
+    for key, value in placeholders.items():
+        message = message.replace(f"{{{key}}}", value)
+    return message
 
 
 def _keys(issues: Iterable[Issue | None]) -> list[str]:
