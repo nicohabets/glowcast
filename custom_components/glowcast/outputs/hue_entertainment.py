@@ -634,18 +634,22 @@ async def async_area_lights(
 
 
 async def async_streamed_lights(
-    hass: HomeAssistant, entity_ids: Iterable[str], own_area_id: str | None
+    hass: HomeAssistant,
+    entity_ids: Iterable[str],
+    own_block: Mapping[str, Any] | None,
 ) -> dict[str, str]:
     """{entity id: area name} of these lights that are in an entertainment
     area another app streams now, for example a Hue Sync Box (#219).
 
     While an area streams, its bridge ignores other commands to its lights,
-    so they do not follow Home Assistant lights. `own_area_id` is the area
-    Glowcast streams itself (an entry with both, #11), which is left out.
+    so they do not follow Home Assistant lights. `own_block` is this type's
+    block of the same entry (an entry with both, #11), handed over by the
+    Home Assistant lights: its area is Glowcast's own and is left out.
     Only Hue lights of Home Assistant's own hue entries can be checked: each
     bridge is asked through its entry (its host and key, read at runtime,
     never stored), with GET requests only. Empty when no bridge can be asked.
     """
+    own_area_id = None if own_block is None else own_block.get(CONF_AREA_ID)
     streamed: dict[str, str] = {}
     for hue_entry, entities in _hue_bridges(hass, entity_ids):
         host, key = _bridge_access(hue_entry)
