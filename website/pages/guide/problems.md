@@ -18,7 +18,7 @@ If setup says "No Hue bridge that can stream found", set up a Hue Bridge v2 or H
 
 ## The lights stay dim
 
-- **A dark scene:** the status shows **Black picture** and the lights keep a faint warm glow on purpose. They follow again when the picture brightens.
+- **A dark scene:** the status shows **Black picture** and the lights keep a faint warm glow on purpose. They follow again when the picture brightens. Lights at the back of the room (further from the TV in the Hue app) follow more softly, so in a dark scene with a small bright spot they stay dimmer than the lights at the TV.
 - **A streaming app with copy protection (DRM):** some streaming apps in the TV's own apps give Glowcast only a black picture (tested with Prime Video). After 7 seconds without a picture Glowcast lets go of the lights and the status shows **No picture**. Home Assistant lights are put back as they were by Glowcast; an entertainment area does what its **When syncing stops** setting in the Hue app says (with **Pause on the last colour** the lights keep the last, dark colour). Glowcast stays on and follows again as soon as there is a picture. The same app on a streaming stick over HDMI works.
 - **The brightness setting:** **Brightness** sets how bright the lights are at most (default 80 %). Raise it on the device page, or raise **Intensity** for more vivid colours; see [Settings](../docs/settings.md).
 - **After Glowcast stopped:** if the lights stay on a dark colour, that is the entertainment area's **When syncing stops** setting in the Hue app. See [The lights stay on the last colour](#the-lights-stay-on-the-last-colour).

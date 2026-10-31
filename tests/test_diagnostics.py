@@ -180,7 +180,7 @@ async def test_the_download_while_syncing(
     await sync_until_measured(entry)
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
 
-    assert diagnostics["versions"]["glowcast"] == "0.3.1"
+    assert diagnostics["versions"]["glowcast"] == "0.4.0"
     assert diagnostics["versions"]["requirements"] == {"hue-entertainment": "0.1.2"}
     assert diagnostics["settings"] == {
         "brightness": 60,
@@ -311,7 +311,7 @@ async def test_the_download_while_the_entry_is_not_loaded(
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     assert diagnostics["syncing"] is False
     assert diagnostics["status"] is None
-    assert diagnostics["versions"]["glowcast"] == "0.3.1"
+    assert diagnostics["versions"]["glowcast"] == "0.4.0"
     assert await hass.config_entries.async_setup(entry.entry_id)  # for teardown
 
 
