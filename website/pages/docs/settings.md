@@ -13,7 +13,7 @@ The lights always fade smoothly between updates; a scene cut shows at once. When
 
 **Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Home Assistant lights**, or both: **Hue area and Home Assistant lights**, see [Together with an entertainment area](home-assistant-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the Home Assistant lights and their places), then brightness, intensity and the update rate. Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
 
-![The first step of Glowcast's settings screen in Home Assistant: Which lights should follow the picture?, with three options: Hue entertainment area - the smoothest, Home Assistant lights - any brand, slower, and Hue area and Home Assistant lights, with the line Pick lights one by one, or a whole area or light group from Home Assistant; each light gets its own place.](../images/settings-menu.png){ width="400" }
+![The first step of Glowcast's settings screen in Home Assistant: Which lights follow the picture?, with three options: Hue entertainment area - smoothest, Home Assistant lights - any brand, and Hue area and Home Assistant lights, with the line Pick lights one by one, or a whole area or light group from Home Assistant; each light gets its own place.](../images/settings-menu.png){ width="400" }
 
 *The first step of the settings screen under Configure: which lights follow the picture.*
 

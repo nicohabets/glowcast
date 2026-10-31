@@ -65,8 +65,8 @@
         "title": "Welke lampen volgen het beeld?",
         "description": "Je kunt dit later wijzigen in de instellingen van Glowcast.",
         "menu_options": {
-          "bridge": "Hue-entertainmentruimte - het vloeiendst",
-          "ha_lights": "Losse lampen - elke kleurenlamp, trager"
+          "bridge": "Hue-entertainmentruimte - vloeiendst",
+          "ha_lights": "Losse lampen - elk merk"
         }
       },
       "ha_lights": {
@@ -162,8 +162,8 @@
         "title": "Welke lampen volgen het beeld?",
         "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de losse lampen.",
         "menu_options": {
-          "hue_options": "Hue-entertainmentruimte - het vloeiendst",
-          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager",
+          "hue_options": "Hue-entertainmentruimte - vloeiendst",
+          "ha_lights_options": "Losse lampen - elk merk",
           "combined_options": "Entertainmentruimte en losse lampen"
         },
         "menu_option_descriptions": {
