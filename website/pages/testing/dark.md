@@ -6,7 +6,7 @@ What the lights do when the picture goes dark, and when there is no picture at a
 | Scenario | v0.4.0 | v0.3.1 | v0.3.0 | v0.2.0 | v0.1.1 | v0.1.0 |
 |---|---|---|---|---|---|---|
 | 2 Sudden dark picture | [●](#area-sudden-dark-picture "changed"){ .glowcast-changed } | [same](#area-sudden-dark-picture) | [same](#area-sudden-dark-picture) | [same](#area-sudden-dark-picture) | [●](#area-sudden-dark-picture "changed"){ .glowcast-changed } | [new](#area-sudden-dark-picture) |
-| 7 No picture | [●](#area-no-picture "changed"){ .glowcast-changed } | [same](#area-no-picture) | [same](#area-no-picture) | [●](#area-no-picture "changed"){ .glowcast-changed } | [●](#area-no-picture "changed"){ .glowcast-changed } | [new](#area-no-picture) |
+| 8 No picture | [●](#area-no-picture "changed"){ .glowcast-changed } | [same](#area-no-picture) | [same](#area-no-picture) | [●](#area-no-picture "changed"){ .glowcast-changed } | [●](#area-no-picture "changed"){ .glowcast-changed } | [new](#area-no-picture) |
 
 ●: what the lights get changed since the previous release. same: the same as in the previous release (within rounding). new: the first release with these lights. -: not available.
 
@@ -52,7 +52,7 @@ What the lights do when the picture goes dark, and when there is no picture at a
 
     [![Sudden dark picture, in the room with v0.1.0](rooms/v0.1.0/area-sudden-dark-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-sudden-dark-picture.gif)
 
-### 7 No picture { #area-no-picture }
+### 8 No picture { #area-no-picture }
 
 **The picture:** No picture at all: every pixel is zero, as the TV gives for a streaming app with copy protection.
 
@@ -60,7 +60,7 @@ What the lights do when the picture goes dark, and when there is no picture at a
 
 === "v0.4.0 ●"
 
-    ● The held colours are the livelier ones of the concert before it; letting go after 7 seconds is as before.
+    ● The held colours are the livelier ones of the 4:3 picture before it; letting go after 7 seconds is as before.
 
     [![No picture, in the room with v0.4.0](rooms/v0.4.0/area-no-picture.gif){ width="400" loading=lazy }](rooms/v0.4.0/area-no-picture.gif)
 

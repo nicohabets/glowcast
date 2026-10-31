@@ -14,7 +14,7 @@ The room is a drawing of a living room with a TV, a lightstrip round it and lamp
 Every pull request that changes what the lights get shows the room before and after the change. On these pages, the same room is drawn for every release since v0.1.0, from each release's own code, so you can see how Glowcast got better and what stayed the same:
 
 - [Colours](colours.md): a sunset, a saturated red, a concert
-- [Black bars and movement](shape-and-movement.md): a letterbox film, a fade between scenes
+- [Black bars and movement](shape-and-movement.md): a letterbox film, a 4:3 picture with bars at the sides, a fade between scenes
 - [Dark and no picture](dark.md): a sudden dark picture, no picture at all
 - [Home Assistant lights](home-assistant-lights.md): lights of any brand at their own place, and an entertainment area and Home Assistant lights together
 
@@ -25,13 +25,14 @@ Every pull request that changes what the lights get shows the room before and af
 | 3 Saturated red | [●](colours.md#area-saturated-red "changed"){ .glowcast-changed } | [same](colours.md#area-saturated-red) | [same](colours.md#area-saturated-red) | [same](colours.md#area-saturated-red) | [●](colours.md#area-saturated-red "changed"){ .glowcast-changed } | [new](colours.md#area-saturated-red) |
 | 6 Concert | [●](colours.md#area-concert "changed"){ .glowcast-changed } | [same](colours.md#area-concert) | [same](colours.md#area-concert) | [same](colours.md#area-concert) | [same](colours.md#area-concert) | [new](colours.md#area-concert) |
 | 4 Letterbox | [●](shape-and-movement.md#area-letterbox "changed"){ .glowcast-changed } | [same](shape-and-movement.md#area-letterbox) | [same](shape-and-movement.md#area-letterbox) | [same](shape-and-movement.md#area-letterbox) | [same](shape-and-movement.md#area-letterbox) | [new](shape-and-movement.md#area-letterbox) |
+| 7 4:3 picture | [●](shape-and-movement.md#area-43-picture "changed"){ .glowcast-changed } | [same](shape-and-movement.md#area-43-picture) | [same](shape-and-movement.md#area-43-picture) | [same](shape-and-movement.md#area-43-picture) | [same](shape-and-movement.md#area-43-picture) | [new](shape-and-movement.md#area-43-picture) |
 | 5 Fade between scenes | [●](shape-and-movement.md#area-fade-between-scenes "changed"){ .glowcast-changed } | [same](shape-and-movement.md#area-fade-between-scenes) | [same](shape-and-movement.md#area-fade-between-scenes) | [same](shape-and-movement.md#area-fade-between-scenes) | [same](shape-and-movement.md#area-fade-between-scenes) | [new](shape-and-movement.md#area-fade-between-scenes) |
 | 2 Sudden dark picture | [●](dark.md#area-sudden-dark-picture "changed"){ .glowcast-changed } | [same](dark.md#area-sudden-dark-picture) | [same](dark.md#area-sudden-dark-picture) | [same](dark.md#area-sudden-dark-picture) | [●](dark.md#area-sudden-dark-picture "changed"){ .glowcast-changed } | [new](dark.md#area-sudden-dark-picture) |
-| 7 No picture | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [same](dark.md#area-no-picture) | [same](dark.md#area-no-picture) | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [new](dark.md#area-no-picture) |
+| 8 No picture | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [same](dark.md#area-no-picture) | [same](dark.md#area-no-picture) | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [●](dark.md#area-no-picture "changed"){ .glowcast-changed } | [new](dark.md#area-no-picture) |
 | Home Assistant lights: 1 Sunset | [●](home-assistant-lights.md#ha-sunset "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#ha-sunset) | [new](home-assistant-lights.md#ha-sunset) | - | - | - |
 | Home Assistant lights: 5 Fade between scenes | [●](home-assistant-lights.md#ha-fade-between-scenes "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#ha-fade-between-scenes) | [new](home-assistant-lights.md#ha-fade-between-scenes) | - | - | - |
-| Home Assistant lights: 7 No picture | [●](home-assistant-lights.md#ha-no-picture "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#ha-no-picture) | [new](home-assistant-lights.md#ha-no-picture) | - | - | - |
-| Together: 8 Home Assistant lights unavailable | [●](home-assistant-lights.md#combined-home-assistant-lights-unavailable "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#combined-home-assistant-lights-unavailable) | [new](home-assistant-lights.md#combined-home-assistant-lights-unavailable) | - | - | - |
+| Home Assistant lights: 8 No picture | [●](home-assistant-lights.md#ha-no-picture "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#ha-no-picture) | [new](home-assistant-lights.md#ha-no-picture) | - | - | - |
+| Together: 9 Home Assistant lights unavailable | [●](home-assistant-lights.md#combined-home-assistant-lights-unavailable "changed"){ .glowcast-changed } | [same](home-assistant-lights.md#combined-home-assistant-lights-unavailable) | [new](home-assistant-lights.md#combined-home-assistant-lights-unavailable) | - | - | - |
 
 ●: what the lights get changed since the previous release. same: the same as in the previous release (within rounding). new: the first release with these lights. -: not available.
 

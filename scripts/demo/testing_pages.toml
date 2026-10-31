@@ -11,7 +11,7 @@ scenarios = ["area:Sunset", "area:Saturated red", "area:Concert"]
 
 [[groups]]
 page = "shape-and-movement.md"
-scenarios = ["area:Letterbox", "area:Fade between scenes"]
+scenarios = ["area:Letterbox", "area:4:3 picture", "area:Fade between scenes"]
 
 [[groups]]
 page = "dark.md"
@@ -36,6 +36,10 @@ lights = "Show the spotlights' colours, purple on the left and orange on the rig
 [scenarios."area:Letterbox"]
 picture = "A film at dusk with black bars above and below the picture, and a dim band of sky just under the top bar."
 lights = "Take their colours from the picture between the bars, not from the bars, so the lights at the top do not turn grey."
+
+[scenarios."area:4:3 picture"]
+picture = "An old 4:3 show in the wide screen: black bars on the left and the right, and in the picture a warm red wall on the left, a sky above and a teal wall on the right."
+lights = "Take the side lights' and the strip's colours from the picture's edges inside the bars: red on the left, teal on the right, not grey from the bars."
 
 [scenarios."area:Fade between scenes"]
 picture = "A blue ocean scene that slowly fades into a green meadow."
@@ -77,6 +81,7 @@ lights = "The entertainment area keeps following the picture. Glowcast notices t
 "area:Saturated red" = "The first release: the faint warm glow is mixed into every colour, so the red looks a little pinkish."
 "area:Concert" = "The first release."
 "area:Letterbox" = "The first release: the lights at the top sample the black bar and the strip of picture under it."
+"area:4:3 picture" = "The first release: the lights at the sides sample the black bar together with the edge of the picture."
 "area:Fade between scenes" = "The first release."
 "area:Sudden dark picture" = "The first release."
 "area:No picture" = "The first release: without a picture the lights keep the glow; Glowcast does not let go of them."
@@ -102,9 +107,10 @@ lights = "The entertainment area keeps following the picture. Glowcast notices t
 "area:Saturated red" = "The cut shows at once (a big jump fades in 80 milliseconds), and the strip's sides show the picture's edges."
 "area:Concert" = "Livelier colours: the lights show the spotlights' purple and orange instead of a dull, dark average."
 "area:Letterbox" = "No grey lights from black bars: Glowcast finds the bars and takes every light's colour from the picture between them."
+"area:4:3 picture" = "Glowcast finds the bars at the sides too and takes the colours from the picture inside them: the strip's ends show the red and teal walls; with livelier colours, and the table lamp at the back follows more softly."
 "area:Fade between scenes" = "Livelier colours and the strip at the picture's edges; the fade itself stays smooth."
 "area:Sudden dark picture" = "The held colours are the livelier ones of the sunset before it; the hold and the glow are as before."
-"area:No picture" = "The held colours are the livelier ones of the concert before it; letting go after 7 seconds is as before."
+"area:No picture" = "The held colours are the livelier ones of the 4:3 picture before it; letting go after 7 seconds is as before."
 "ha:Sunset" = "Livelier colours, also for Home Assistant lights."
 "ha:Fade between scenes" = "Livelier colours, also for Home Assistant lights."
 "ha:No picture" = "The held colours are the livelier ones of the scenario before it; letting go is as before."

@@ -1,11 +1,12 @@
 # Black bars and movement
 
-Pictures that do not fill the screen, and pictures that move: a film with black bars, and one scene fading into another. Each room is drawn from that release's own code (see [the room](index.md#the-room)). How the lights follow a scene cut shows at the start of [3 Saturated red](colours.md#area-saturated-red).
+Pictures that do not fill the screen, and pictures that move: a film with black bars above and below, an old 4:3 show with bars at the sides, and one scene fading into another. Each room is drawn from that release's own code (see [the room](index.md#the-room)). How the lights follow a scene cut shows at the start of [3 Saturated red](colours.md#area-saturated-red).
 
 <!-- rooms -->
 | Scenario | v0.4.0 | v0.3.1 | v0.3.0 | v0.2.0 | v0.1.1 | v0.1.0 |
 |---|---|---|---|---|---|---|
 | 4 Letterbox | [●](#area-letterbox "changed"){ .glowcast-changed } | [same](#area-letterbox) | [same](#area-letterbox) | [same](#area-letterbox) | [same](#area-letterbox) | [new](#area-letterbox) |
+| 7 4:3 picture | [●](#area-43-picture "changed"){ .glowcast-changed } | [same](#area-43-picture) | [same](#area-43-picture) | [same](#area-43-picture) | [same](#area-43-picture) | [new](#area-43-picture) |
 | 5 Fade between scenes | [●](#area-fade-between-scenes "changed"){ .glowcast-changed } | [same](#area-fade-between-scenes) | [same](#area-fade-between-scenes) | [same](#area-fade-between-scenes) | [same](#area-fade-between-scenes) | [new](#area-fade-between-scenes) |
 
 ●: what the lights get changed since the previous release. same: the same as in the previous release (within rounding). new: the first release with these lights. -: not available.
@@ -51,6 +52,48 @@ Pictures that do not fill the screen, and pictures that move: a film with black 
     The first release: the lights at the top sample the black bar and the strip of picture under it.
 
     [![Letterbox, in the room with v0.1.0](rooms/v0.1.0/area-letterbox.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-letterbox.gif)
+
+### 7 4:3 picture { #area-43-picture }
+
+**The picture:** An old 4:3 show in the wide screen: black bars on the left and the right, and in the picture a warm red wall on the left, a sky above and a teal wall on the right.
+
+**What the lights should do:** Take the side lights' and the strip's colours from the picture's edges inside the bars: red on the left, teal on the right, not grey from the bars.
+
+=== "v0.4.0 ●"
+
+    ● Glowcast finds the bars at the sides too and takes the colours from the picture inside them: the strip's ends show the red and teal walls; with livelier colours, and the table lamp at the back follows more softly.
+
+    [![4:3 picture, in the room with v0.4.0](rooms/v0.4.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.4.0/area-43-picture.gif)
+
+=== "v0.3.1"
+
+    Same as v0.1.0.
+
+    [![4:3 picture, in the room with v0.3.1](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
+
+=== "v0.3.0"
+
+    Same as v0.1.0.
+
+    [![4:3 picture, in the room with v0.3.0](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
+
+=== "v0.2.0"
+
+    Same as v0.1.0.
+
+    [![4:3 picture, in the room with v0.2.0](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
+
+=== "v0.1.1"
+
+    Same as v0.1.0.
+
+    [![4:3 picture, in the room with v0.1.1](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
+
+=== "v0.1.0"
+
+    The first release: the lights at the sides sample the black bar together with the edge of the picture.
+
+    [![4:3 picture, in the room with v0.1.0](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
 
 ### 5 Fade between scenes { #area-fade-between-scenes }
 

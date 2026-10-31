@@ -15,9 +15,10 @@
         "Saturated red": "3 Saturated red",
         "Concert": "6 Concert",
         "Letterbox": "4 Letterbox",
+        "4:3 picture": "7 4:3 picture",
         "Fade between scenes": "5 Fade between scenes",
         "Sudden dark picture": "2 Sudden dark picture",
-        "No picture": "7 No picture"
+        "No picture": "8 No picture"
       },
       "releases": {
         "v0.1.0": {
@@ -45,6 +46,12 @@
               "status": "new",
               "difference": null,
               "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "4:3 picture": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.1.0/area-43-picture.gif",
               "since": "v0.1.0"
             },
             "Fade between scenes": {
@@ -94,6 +101,12 @@
               "gif": "v0.1.0/area-letterbox.gif",
               "since": "v0.1.0"
             },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-43-picture.gif",
+              "since": "v0.1.0"
+            },
             "Fade between scenes": {
               "status": "same",
               "difference": 0,
@@ -108,7 +121,7 @@
             },
             "No picture": {
               "status": "changed",
-              "difference": 10,
+              "difference": 13,
               "gif": "v0.1.1/area-no-picture.gif",
               "since": "v0.1.1"
             }
@@ -139,6 +152,12 @@
               "status": "same",
               "difference": 0,
               "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-43-picture.gif",
               "since": "v0.1.0"
             },
             "Fade between scenes": {
@@ -188,6 +207,12 @@
               "gif": "v0.1.0/area-letterbox.gif",
               "since": "v0.1.0"
             },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-43-picture.gif",
+              "since": "v0.1.0"
+            },
             "Fade between scenes": {
               "status": "same",
               "difference": 0,
@@ -233,6 +258,12 @@
               "status": "same",
               "difference": 0,
               "gif": "v0.1.0/area-letterbox.gif",
+              "since": "v0.1.0"
+            },
+            "4:3 picture": {
+              "status": "same",
+              "difference": 0,
+              "gif": "v0.1.0/area-43-picture.gif",
               "since": "v0.1.0"
             },
             "Fade between scenes": {
@@ -282,6 +313,12 @@
               "gif": "v0.4.0/area-letterbox.gif",
               "since": "v0.4.0"
             },
+            "4:3 picture": {
+              "status": "changed",
+              "difference": 115,
+              "gif": "v0.4.0/area-43-picture.gif",
+              "since": "v0.4.0"
+            },
             "Fade between scenes": {
               "status": "changed",
               "difference": 96,
@@ -296,7 +333,7 @@
             },
             "No picture": {
               "status": "changed",
-              "difference": 77,
+              "difference": 35,
               "gif": "v0.4.0/area-no-picture.gif",
               "since": "v0.4.0"
             }
@@ -308,7 +345,7 @@
       "names": {
         "Sunset": "1 Sunset",
         "Fade between scenes": "5 Fade between scenes",
-        "No picture": "7 No picture"
+        "No picture": "8 No picture"
       },
       "releases": {
         "v0.1.0": {
@@ -389,7 +426,7 @@
             },
             "No picture": {
               "status": "changed",
-              "difference": 100,
+              "difference": 6,
               "gif": "v0.4.0/ha-no-picture.gif",
               "since": "v0.4.0"
             }
@@ -399,7 +436,7 @@
     },
     "combined": {
       "names": {
-        "Home Assistant lights unavailable": "8 Home Assistant lights unavailable"
+        "Home Assistant lights unavailable": "9 Home Assistant lights unavailable"
       },
       "releases": {
         "v0.1.0": {
@@ -444,7 +481,7 @@
           "scenarios": {
             "Home Assistant lights unavailable": {
               "status": "changed",
-              "difference": 59,
+              "difference": 68,
               "gif": "v0.4.0/combined-home-assistant-lights-unavailable.gif",
               "since": "v0.4.0"
             }

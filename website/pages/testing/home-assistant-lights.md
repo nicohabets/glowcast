@@ -7,8 +7,8 @@
 |---|---|---|---|---|---|---|
 | Home Assistant lights: 1 Sunset | [●](#ha-sunset "changed"){ .glowcast-changed } | [same](#ha-sunset) | [new](#ha-sunset) | - | - | - |
 | Home Assistant lights: 5 Fade between scenes | [●](#ha-fade-between-scenes "changed"){ .glowcast-changed } | [same](#ha-fade-between-scenes) | [new](#ha-fade-between-scenes) | - | - | - |
-| Home Assistant lights: 7 No picture | [●](#ha-no-picture "changed"){ .glowcast-changed } | [same](#ha-no-picture) | [new](#ha-no-picture) | - | - | - |
-| Together: 8 Home Assistant lights unavailable | [●](#combined-home-assistant-lights-unavailable "changed"){ .glowcast-changed } | [same](#combined-home-assistant-lights-unavailable) | [new](#combined-home-assistant-lights-unavailable) | - | - | - |
+| Home Assistant lights: 8 No picture | [●](#ha-no-picture "changed"){ .glowcast-changed } | [same](#ha-no-picture) | [new](#ha-no-picture) | - | - | - |
+| Together: 9 Home Assistant lights unavailable | [●](#combined-home-assistant-lights-unavailable "changed"){ .glowcast-changed } | [same](#combined-home-assistant-lights-unavailable) | [new](#combined-home-assistant-lights-unavailable) | - | - | - |
 
 ●: what the lights get changed since the previous release. same: the same as in the previous release (within rounding). new: the first release with these lights. -: not available.
 
@@ -84,7 +84,7 @@
 
     Not available: Home Assistant lights came in v0.3.0.
 
-### Home Assistant lights: 7 No picture { #ha-no-picture }
+### Home Assistant lights: 8 No picture { #ha-no-picture }
 
 **The picture:** No picture at all (all pixels zero), with the six Home Assistant lights.
 
@@ -94,19 +94,19 @@
 
     ● The held colours are the livelier ones of the scenario before it; letting go is as before.
 
-    [![Home Assistant lights: 7 No picture, in the room with v0.4.0](rooms/v0.4.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.4.0/ha-no-picture.gif)
+    [![Home Assistant lights: 8 No picture, in the room with v0.4.0](rooms/v0.4.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.4.0/ha-no-picture.gif)
 
 === "v0.3.1"
 
     Same as v0.3.0.
 
-    [![Home Assistant lights: 7 No picture, in the room with v0.3.1](rooms/v0.3.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)
+    [![Home Assistant lights: 8 No picture, in the room with v0.3.1](rooms/v0.3.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)
 
 === "v0.3.0"
 
     Home Assistant lights (then called loose lights) are new in v0.3.0.
 
-    [![Home Assistant lights: 7 No picture, in the room with v0.3.0](rooms/v0.3.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)
+    [![Home Assistant lights: 8 No picture, in the room with v0.3.0](rooms/v0.3.0/ha-no-picture.gif){ width="400" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)
 
 === "v0.2.0"
 
@@ -120,7 +120,7 @@
 
     Not available: Home Assistant lights came in v0.3.0.
 
-### Together: 8 Home Assistant lights unavailable { #combined-home-assistant-lights-unavailable }
+### Together: 9 Home Assistant lights unavailable { #combined-home-assistant-lights-unavailable }
 
 **The picture:** An entertainment area (the strip, the floor lamp, the light bar and the table lamp) and three Home Assistant lights together, on a slowly moving picture. The wall light becomes unavailable in Home Assistant after 1 second, the other two after 3 seconds.
 
@@ -130,19 +130,19 @@
 
     ● Livelier colours in the entertainment area; how the unavailable lights are handled is as before.
 
-    [![Together: 8 Home Assistant lights unavailable, in the room with v0.4.0](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif)
+    [![Together: 9 Home Assistant lights unavailable, in the room with v0.4.0](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif)
 
 === "v0.3.1"
 
     Same as v0.3.0.
 
-    [![Together: 8 Home Assistant lights unavailable, in the room with v0.3.1](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)
+    [![Together: 9 Home Assistant lights unavailable, in the room with v0.3.1](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)
 
 === "v0.3.0"
 
     An entertainment area and Home Assistant lights together are new in v0.3.0.
 
-    [![Together: 8 Home Assistant lights unavailable, in the room with v0.3.0](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)
+    [![Together: 9 Home Assistant lights unavailable, in the room with v0.3.0](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="400" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)
 
 === "v0.2.0"
 
