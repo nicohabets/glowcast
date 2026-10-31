@@ -71,7 +71,7 @@ One Glowcast can drive an entertainment area and Home Assistant lights together,
 - Only when both are lost does Glowcast stop, as it does for one.
 - Switching off (or the picture source off, or Home Assistant stopping) releases the area and puts every Home Assistant light back as it was.
 
-![Glowcast's settings screen in Home Assistant: choose Entertainment area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" loading=lazy }
+![Glowcast's settings screen in Home Assistant: choose Hue area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" loading=lazy }
 
 *An entertainment area and Home Assistant lights together, under Configure: the area, the Home Assistant lights and their places, brightness, intensity and the update rate, then both on the device page.*
 
