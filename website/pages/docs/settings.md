@@ -9,7 +9,7 @@ Under **Configure** (Settings → Devices & services → Glowcast), or on Glowca
 - **intensity**: how vivid the colours are (0-200 %, default 100 %);
 - the **update rate**: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows).
 
-The lights always fade smoothly between updates; with an entertainment area, a scene cut shows at once. When Glowcast takes them over, they first fade in from how they were, in about 2 seconds; a new setting while syncing applies without that fade-in.
+The lights always fade smoothly between updates; with an entertainment area, a scene cut shows at once (see [How the lights fade](#how-the-lights-fade)). When Glowcast takes them over, they first fade in from how they were, in about 2 seconds; a new setting while syncing applies without that fade-in.
 
 **Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Home Assistant lights**, or both: **Hue area and Home Assistant lights**, see [Together with an entertainment area](home-assistant-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the Home Assistant lights and their places), then brightness, intensity and the update rate. Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
 
@@ -20,6 +20,14 @@ The lights always fade smoothly between updates; with an entertainment area, a s
 ![The last page of Glowcast's settings screen in Home Assistant: a note that the same settings are on the device page under Configuration, then brightness 80 %, intensity 100 %, update rate High (3 per second).](../images/settings.png){ width="400" }
 
 *The last page of the settings screen under Configure, after the lights, with the default settings.*
+
+## How the lights fade
+
+Glowcast gets a new picture from the TV a few times per second (the update rate), and the lights fade from one picture to the next over the time until the next one. That keeps calm scenes soft: small changes and slow drifts glide instead of stepping.
+
+With an entertainment area, a light whose colour jumps by a lot, as at a scene cut, fades in about 80 milliseconds instead, so it changes with the cut and not a moment after it. Going to the warm glow after a dark scene stays a soft fade. Home Assistant lights keep their own pace: about once per second, with a fade.
+
+On the test bench (the screen helper on a computer screen, with real Hue lights, not a TV), this brought the delay from a change on the screen to the light down from about 0.42-0.48 seconds to about 0.29-0.35 seconds (median). On a TV the numbers may differ.
 
 ## Settings on the device page
 
