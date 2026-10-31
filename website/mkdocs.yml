@@ -107,6 +107,7 @@ nav:
       - Setup: docs/setup.md
       - Home Assistant lights: docs/home-assistant-lights.md
       - Settings: docs/settings.md
+      - Liveliness: docs/liveliness.md
       - Starting automatically: docs/starting.md
       - Status and diagnostics: docs/status.md
       - Troubleshooting: docs/troubleshooting.md
