@@ -50,9 +50,9 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
 -   ![A strong red picture on the TV: the lights show the same pure red.](images/illustrations/scene-3-saturated-colour.svg){ .gc-feature loading=lazy }
 
-    **Pure colours**
+    **Colours that match the picture**
 
-    A strong colour on the screen shows as that pure colour on the lights, not mixed with white.
+    The colourful, bright part of the picture leads, so the lights stay lively instead of a grey average, and black bars are left out. A strong colour shows as that pure colour, not mixed with white. Scene cuts show at once; lights at the back of the room follow more softly.
 
 -   ![Glowcast's device page in Home Assistant: the switch on under Controls and the status Streaming under Sensors.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
 

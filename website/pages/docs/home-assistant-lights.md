@@ -79,5 +79,5 @@ One Glowcast can drive an entertainment area and Home Assistant lights together,
 
 1. Open the Hue app, go to **Settings → Entertainment areas** and tap **Create entertainment area** (or **+**).
 2. Choose **TV**, pick the colour lights around the TV and tap **Continue**.
-3. Place each light on the map where it stands, and run the test the app offers.
+3. Place each light on the map where it stands, and run the test the app offers. Glowcast uses these places: each light gets the colour of the part of the picture on its side (left or right, near the floor or the ceiling). Lights towards the back of the room (further from the TV on the map) follow more softly: their colour is partly blended with the colour of the whole picture.
 4. In Glowcast's settings (**Configure**), choose **Hue entertainment area**, pair with the bridge if asked, and pick the new area.
