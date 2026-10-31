@@ -8,6 +8,8 @@ The switch turns off again soon after you switch it on, and the stop reason is *
 
 Stop the other app first (in that app, or by switching off the other Glowcast), then switch Glowcast on again.
 
+When it is your other Glowcast (two TVs on one bridge), Home Assistant also shows a repair (**Settings > Repairs**) that names it, for example "Glowcast Bedroom: Glowcast Living room is streaming to this bridge". Switch that one off first. The repair goes away the next time this Glowcast takes over the lights. The other Glowcast keeps streaming: the one you switch on never stops it.
+
 With [an entertainment area and Home Assistant lights together](lights.md#both-together), Glowcast does not stop: the Home Assistant lights follow the picture without the area, and the status shows which part dropped out; see [Part of the lights drops out](#part-of-the-lights-drops-out).
 
 ## No entertainment areas
