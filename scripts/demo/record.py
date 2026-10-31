@@ -904,8 +904,9 @@ SETUP_FLOWS = {
 }
 
 
-# Flows that start from a fresh entry with an entertainment area only.
-AREA_FLOWS = {"combined-settings"}
+# Flows that start from a fresh entry with an entertainment area only; the
+# hardware check's button is only there for a TV or an area (#270).
+AREA_FLOWS = {"combined-settings", "hardware-check"}
 
 
 def prepare(rec: Recorder, flow: str) -> None:

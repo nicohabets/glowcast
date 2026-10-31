@@ -1017,6 +1017,23 @@ async def test_probe_key_rejected(
     assert result["bridge"]["modelid"] == "BSB003"
 
 
+async def test_probe_a_404_is_not_a_removed_area(
+    hass: HomeAssistant, bridge: None, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A bridge without its config or device list (an older one) gets the
+    check's own text, not the start's "the area no longer exists" (#270)."""
+    aioclient_mock.get(f"https://{HOST}/api/config", status=404)
+    aioclient_mock.get(f"https://{HOST}/clip/v2/resource/device", status=404)
+    mock_probe_bridge(aioclient_mock, [_probe_area()])  # the rest answers
+    result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
+    assert result == {
+        "api_version": 2,
+        "bridge": {"error": hue.PROBE_NOT_FOUND},
+        "error": hue.PROBE_NOT_FOUND,
+    }
+    assert "no longer exists" not in hue.PROBE_NOT_FOUND
+
+
 async def test_probe_without_the_bridge(hass: HomeAssistant) -> None:
     result = await hue.probe(hass, PROBE_DATA, PROBE_OPTIONS, measure=True)
     assert result == {"error": "The Hue bridge is not set up (or not loaded)"}

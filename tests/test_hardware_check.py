@@ -311,3 +311,86 @@ async def test_unload_ends_a_check(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await settle(hass)
     assert notification_id(entry.entry_id) not in notices(hass)
+
+
+# Only where it can report something (#270)
+
+COMBINED = {
+    "output": {
+        "type": "combined",
+        "parts": [
+            {"type": "hue_entertainment", "area_id": "area-tv"},
+            {"type": "ha_lights", "follow": "lights", "lights": []},
+        ],
+    }
+}
+
+
+def without_probe(
+    monkeypatch: pytest.MonkeyPatch, *, source: bool, output: bool
+) -> None:
+    """Take the probe away from the webOS source and/or the Hue output, as
+    for the types that have none (the screen source, Home Assistant lights)."""
+    if source:
+        monkeypatch.setitem(
+            SOURCES, "webos", dataclasses.replace(SOURCES["webos"], probe=None)
+        )
+    if output:
+        monkeypatch.setitem(
+            OUTPUTS,
+            "hue_entertainment",
+            dataclasses.replace(OUTPUTS["hue_entertainment"], probe=None),
+        )
+
+
+@pytest.mark.parametrize("options", [None, COMBINED], ids=["alone", "combined"])
+async def test_no_button_when_no_type_has_a_probe(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    monkeypatch: pytest.MonkeyPatch,
+    options: dict[str, Any] | None,
+) -> None:
+    """The combined type's own probe only runs its parts' probes, so it does
+    not count."""
+    without_probe(monkeypatch, source=True, output=True)
+    await setup(hass, options)
+    assert er.async_get(hass).async_get(BUTTON) is None
+    assert hass.states.get(BUTTON) is None
+    # The light test stays.
+    assert hass.states.get("button.glowcast_living_room_tv_test_lights") is not None
+
+
+@pytest.mark.parametrize(
+    ("source", "output", "options"),
+    [
+        (True, False, None),  # only the output has one
+        (False, True, None),  # only the source has one
+        (True, False, COMBINED),  # only a part has one
+    ],
+    ids=["output", "source", "part"],
+)
+async def test_the_button_when_one_type_has_a_probe(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    monkeypatch: pytest.MonkeyPatch,
+    source: bool,
+    output: bool,
+    options: dict[str, Any] | None,
+) -> None:
+    without_probe(monkeypatch, source=source, output=output)
+    await setup(hass, options)
+    assert hass.states.get(BUTTON) is not None
+
+
+async def test_the_button_is_removed_after_a_change_to_types_without_one(
+    hass: HomeAssistant, fakes: FakeAdapters, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A change of type reloads the entry; the button of before does not stay
+    behind as an orphan."""
+    entry = await setup(hass)
+    assert er.async_get(hass).async_get(BUTTON) is not None
+    without_probe(monkeypatch, source=True, output=True)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert er.async_get(hass).async_get(BUTTON) is None
+    assert hass.states.get(BUTTON) is None

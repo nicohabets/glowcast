@@ -51,7 +51,7 @@ The entity ids follow Home Assistant's language when the entities are created (i
 
 The **Test lights** button on Glowcast's device, under **Configuration**, shows where each light sits, without waiting for the right scene on TV. Press it and the lights show, for about 3 seconds each:
 
-1. **Left red, right blue.** A light in the middle (ambient) takes from both halves and shows purple.
+1. **Left red, right blue.** A light in the middle (ambient) takes from both halves and shows purple. Lights far from the TV show the colour of their place too: the test leaves out the softer, whole-picture colour they get while syncing.
 2. **Top green, bottom white.** A light in the middle (ambient) shows white too.
 
 Then they return to what they did before:
@@ -59,6 +59,6 @@ Then they return to what they did before:
 - **While Glowcast syncs**, the test replaces the picture's colours, and the picture's colours then fade back in. The lights stay claimed, so there is no new connection to the bridge.
 - **While Glowcast is off**, it claims the lights for the test only and releases them afterwards, as when it stops ([When it stops](../guide/first-evening.md#when-it-stops)). The TV does not need to be on.
 
-The switch and the status do not change. The test uses your brightness, but not the intensity, so the colours stay clear. Pressing the button again during a test does nothing. Switching Glowcast on during a test ends the test first. If another app is streaming to the lights, or the lights cannot be reached, the button does nothing and the log says why. While Glowcast syncs but has let go of the lights (**Starting** or **No picture**), the button does nothing either.
+The switch and the status do not change. The test uses your brightness, but not the intensity, so the colours stay clear. Pressing the button again during a test does nothing. Switching Glowcast on during a test ends the test first. If another app is streaming to the lights, or the lights cannot be reached, the button does nothing and the log says why. With an entertainment area and Home Assistant lights together, an area that another app streams is left out, and the Home Assistant lights are still tested. While Glowcast syncs but has let go of the lights (**Starting** or **No picture**), the button does nothing either.
 
 A light in the wrong colour has the wrong place: change it under **Configure** (Home Assistant lights) or in the Hue app (an entertainment area). Home Assistant lights change about once per second, and more slowly with more than 4 lights on one network ([How fast](home-assistant-lights.md#how-fast)), so with many lights some may show a step late or not at all.
