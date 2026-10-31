@@ -1,0 +1,122 @@
+# The texts of the website's testing pages (website/pages/testing/), for
+# release_rooms.py: which scenarios each page shows, what each scenario is,
+# and what visibly changed per release. The keys are "<lights>:<name>": the
+# room's lights (area, ha, combined) and the scenario's name without its number in
+# room_harness.py. A new release adds its notes under [notes."vX.Y.Z"] for
+# the scenarios it changed, then runs `python3 scripts/demo.py rooms`.
+
+[[groups]]
+page = "colours.md"
+scenarios = ["area:Sunset", "area:Saturated red", "area:Concert"]
+
+[[groups]]
+page = "shape-and-movement.md"
+scenarios = ["area:Letterbox", "area:4:3 picture", "area:Fade between scenes"]
+
+[[groups]]
+page = "dark.md"
+scenarios = ["area:Sudden dark picture", "area:No picture"]
+
+[[groups]]
+page = "home-assistant-lights.md"
+scenarios = ["ha:Sunset", "ha:Fade between scenes", "ha:No picture", "combined:Home Assistant lights unavailable"]
+
+[scenarios."area:Sunset"]
+picture = "A sunset: an orange and pink sky with the sun low over a blue-green sea, the start of the run. Before it the lights are as they were."
+lights = "Take the picture's colours, each light the colour of its own part of the picture: warm from the sky, blue-green from the sea."
+
+[scenarios."area:Saturated red"]
+picture = "A cut from the dark picture before it to a deep, saturated red over the whole screen."
+lights = "Follow the cut quickly and show a pure red, without white or a warm glow mixed in."
+
+[scenarios."area:Concert"]
+picture = "A dark stage with a purple spotlight on the left and an orange one on the right: a colourful object on a dark background."
+lights = "Show the spotlights' colours, purple on the left and orange on the right, not a dull, dark average of the spots and the stage."
+
+[scenarios."area:Letterbox"]
+picture = "A film at dusk with black bars above and below the picture, and a dim band of sky just under the top bar."
+lights = "Take their colours from the picture between the bars, not from the bars, so the lights at the top do not turn grey."
+
+[scenarios."area:4:3 picture"]
+picture = "An old 4:3 show in the wide screen: black bars on the left and the right, and in the picture a warm red wall on the left, a sky above and a teal wall on the right."
+lights = "Take the side lights' and the strip's colours from the picture's edges inside the bars: red on the left, teal on the right, not grey from the bars."
+
+[scenarios."area:Fade between scenes"]
+picture = "A blue ocean scene that slowly fades into a green meadow."
+lights = "Follow the fade smoothly, from blue to green, without jumps."
+
+[scenarios."area:Sudden dark picture"]
+picture = "After the sunset, a sudden dark night scene: nearly black, but not all zero."
+lights = "Hold the last colours for a moment (a dark scene is often short), then fade to a faint warm glow instead of going dark."
+
+[scenarios."area:No picture"]
+picture = "No picture at all: every pixel is zero, as the TV gives for a streaming app with copy protection."
+lights = "Hold the last colours, then the glow, and after 7 seconds without a picture let go of the lights, so they return to how they were before syncing (drawn off in the room)."
+
+[scenarios."ha:Sunset"]
+prefix = "Home Assistant lights"
+picture = "The sunset, with six Home Assistant lights round the room, each at its own place: left, right, top, bottom (two) and ambient."
+lights = "Fade in from how they were to the colour of their own part of the picture, each about once per second with a smooth transition."
+
+[scenarios."ha:Fade between scenes"]
+prefix = "Home Assistant lights"
+picture = "The ocean fading into the meadow, with the six Home Assistant lights."
+lights = "Follow the fade from blue to green, a little behind the picture: Home Assistant lights change about once per second, with a fade."
+
+[scenarios."ha:No picture"]
+prefix = "Home Assistant lights"
+picture = "No picture at all (all pixels zero), with the six Home Assistant lights."
+lights = "Hold, then let go after 7 seconds without a picture: the Home Assistant lights go back to how they were (drawn off in the room)."
+
+[scenarios."combined:Home Assistant lights unavailable"]
+prefix = "Together"
+picture = "An entertainment area (the strip, the floor lamp, the light bar and the table lamp) and three Home Assistant lights together, on a slowly moving picture. The wall light becomes unavailable in Home Assistant after 1 second, the other two after 3 seconds."
+lights = "The entertainment area keeps following the picture. Glowcast notices the Home Assistant lights are gone, tries them once more after a few seconds, and then drops that part; the room names what is unavailable and dropped."
+
+# A release whose room is the same in every scenario: what it did change, in
+# every tab without a note of its own (the overview says more).
+[releases]
+"v0.3.1" = "v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes)."
+
+# What visibly changed, per release and scenario (from docs/releases/).
+# A scenario that is new or changed and has no note gets a plain line.
+
+[notes."v0.1.0"]
+"area:Sunset" = "The first release."
+"area:Saturated red" = "The first release: the faint warm glow is mixed into every colour, so the red looks a little pinkish."
+"area:Concert" = "The first release."
+"area:Letterbox" = "The first release: the lights at the top sample the black bar and the strip of picture under it."
+"area:4:3 picture" = "The first release: the lights at the sides sample the black bar together with the edge of the picture."
+"area:Fade between scenes" = "The first release."
+"area:Sudden dark picture" = "The first release."
+"area:No picture" = "The first release: without a picture the lights keep the glow; Glowcast does not let go of them."
+
+[notes."v0.1.1"]
+"area:Sunset" = "Saturated colours stay pure: the warm glow is only added to lights that show a dark part of the picture."
+"area:Saturated red" = "The red stays pure: the warm glow is no longer mixed into it."
+"area:Sudden dark picture" = "The glow is now only added to lights that show a dark part of the picture."
+"area:No picture" = "The glow is now only added to lights that show a dark part of the picture."
+
+[notes."v0.2.0"]
+"area:No picture" = "No picture, no light show: after 7 seconds of an all-zero picture Glowcast lets go of the lights."
+
+[notes."v0.3.0"]
+"area:Sunset" = "A calm start: the lights fade in from how they were, in about 2 seconds."
+"ha:Sunset" = "Home Assistant lights (then called loose lights) are new in v0.3.0."
+"ha:Fade between scenes" = "Home Assistant lights (then called loose lights) are new in v0.3.0."
+"ha:No picture" = "Home Assistant lights (then called loose lights) are new in v0.3.0."
+"combined:Home Assistant lights unavailable" = "An entertainment area and Home Assistant lights together are new in v0.3.0."
+
+[notes."v0.4.0"]
+"area:Sunset" = "Livelier colours, the lightstrip follows the edges of the picture, and the table lamp at the back of the room follows more softly."
+"area:Saturated red" = "The cut shows at once (a big jump fades in 80 milliseconds), and the strip's sides show the picture's edges."
+"area:Concert" = "Livelier colours: the lights show the spotlights' purple and orange instead of a dull, dark average."
+"area:Letterbox" = "No grey lights from black bars: Glowcast finds the bars and takes every light's colour from the picture between them."
+"area:4:3 picture" = "Glowcast finds the bars at the sides too and takes the colours from the picture inside them: the strip's ends show the red and teal walls; with livelier colours, and the table lamp at the back follows more softly."
+"area:Fade between scenes" = "Livelier colours and the strip at the picture's edges; the fade itself stays smooth."
+"area:Sudden dark picture" = "The held colours are the livelier ones of the sunset before it; the hold and the glow are as before."
+"area:No picture" = "The held colours are the livelier ones of the 4:3 picture before it; letting go after 7 seconds is as before."
+"ha:Sunset" = "Livelier colours, also for Home Assistant lights."
+"ha:Fade between scenes" = "Livelier colours, also for Home Assistant lights."
+"ha:No picture" = "The held colours are the livelier ones of the scenario before it; letting go is as before."
+"combined:Home Assistant lights unavailable" = "Livelier colours in the entertainment area; how the unavailable lights are handled is as before."

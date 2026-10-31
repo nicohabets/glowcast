@@ -22,6 +22,8 @@ Usage:
     python scripts/demo.py room [--compare] [--lights area|ha|combined]
                                 [--place LIGHT=PLACE ...] [--versus LIGHT=PLACE ...]
                                 [--names] [--out DIR]
+    python scripts/demo.py rooms [--next REF --next-label vX.Y.Z] [--force]
+                                 [--pages-only]
 
 `e2e` runs the end-to-end check (scripts/demo/e2e.py) on an instance of its
 own: the screen helper's test patterns through Glowcast's real screen source,
@@ -34,7 +36,9 @@ than this working copy's.
 Runs on Linux and macOS (on Windows: in WSL). `start` needs Python 3.14.2 or
 newer, or uv (https://docs.astral.sh/uv/) to fetch it. Everything it makes
 lives in ~/.cache/glowcast-demo, outside the repository, except the GIFs and
-stills of `room`: those go to room-out/, which git ignores.
+stills of `room`: those go to room-out/, which git ignores. `rooms` draws the
+room per release for the website's testing pages (demo/release_rooms.py); those
+GIFs are committed, in website/pages/testing/rooms/.
 """
 
 import argparse
@@ -300,6 +304,20 @@ def main() -> None:
     room.add_argument(
         "--out", type=Path, default=ROOM_OUT, help=f"where to save them ({ROOM_OUT})"
     )
+    rooms = commands.add_parser(
+        "rooms",
+        help="the room per release, for the website's testing pages",
+    )
+    rooms.add_argument("--next", help="a ref for a release that is not tagged yet")
+    rooms.add_argument("--next-label", help="its label, for example v0.5.0")
+    rooms.add_argument(
+        "--force", action="store_true", help="draw the GIFs that exist again too"
+    )
+    rooms.add_argument(
+        "--pages-only",
+        action="store_true",
+        help="only write the pages again, from the manifest",
+    )
     args = parser.parse_args()
 
     if args.command == "status":
@@ -307,6 +325,9 @@ def main() -> None:
         return
     if args.command == "room":
         draw_room(args)
+        return
+    if args.command == "rooms":
+        release_rooms(args)
         return
     if args.command == "e2e":
         run_e2e(keep=args.keep)
@@ -533,6 +554,18 @@ def draw_room(args: argparse.Namespace) -> None:
         # Ctrl+C reaches room.py too: let it remove its temporary worktree
         # (subprocess.run would kill it after a moment).
         sys.exit(process.wait())
+
+
+def release_rooms(args: argparse.Namespace) -> None:
+    """Run the release rooms script in the demo's environment."""
+    with _lock():
+        _install()
+    command = [str(_python()), str(DEMO / "release_rooms.py")]
+    if args.next or args.next_label:
+        command += ["--next", args.next or "", "--next-label", args.next_label or ""]
+    command += ["--force"] if args.force else []
+    command += ["--pages-only"] if args.pages_only else []
+    sys.exit(subprocess.run(command).returncode)
 
 
 def stop(instance: Instance) -> None:
