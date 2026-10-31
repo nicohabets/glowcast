@@ -619,6 +619,72 @@ async def test_settings_problems_raise_a_repair_issue_until_a_start_works(
     await switch(hass, SERVICE_TURN_OFF)
 
 
+async def test_busy_for_another_glowcast_setup_names_it_until_a_start_works(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The output type's check after a busy stop (#299): its repair issue and
+    log line name the other setup; the stop reason stays output_busy."""
+    entry = await setup(hass)
+    # What the Hue output keeps when another Glowcast setup kept it busy.
+    hass.data["glowcast_hue_busy_by"] = {(BRIDGE_ID, "app-key"): "Bedroom TV"}
+    FakePipeline.start_error = StopReason.OUTPUT_BUSY
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_OFF
+    assert issues(hass, entry) == {"other_glowcast_streams"}
+    raised = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"other_glowcast_streams_{entry.entry_id}"
+    )
+    assert raised is not None
+    assert raised.translation_key == "hue_entertainment_other_glowcast"
+    assert raised.translation_placeholders == {
+        "name": "Living room TV",
+        "other": "Bedroom TV",
+    }
+    assert (
+        "Glowcast Living room TV stopped: "
+        "Glowcast Bedroom TV is streaming to the same Hue bridge"
+    ) in caplog.text
+    status = hass.states.get("sensor.glowcast_living_room_tv_status")
+    assert status.attributes["stop_reason"] == "output_busy"
+
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_ON
+    assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_later_busy_stop_for_another_app_removes_the_named_issue(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """The other setup stopped and another app (or a failed lookup) keeps the
+    bridge busy now: the issue that named the setup no longer holds."""
+    entry = await setup(hass)
+    busy_by = {(BRIDGE_ID, "app-key"): "Bedroom TV"}
+    hass.data["glowcast_hue_busy_by"] = busy_by
+    FakePipeline.start_error = StopReason.OUTPUT_BUSY
+    await switch(hass, SERVICE_TURN_ON)
+    assert issues(hass, entry) == {"other_glowcast_streams"}
+    busy_by.clear()  # what the Hue output's next start does
+    FakePipeline.start_error = StopReason.OUTPUT_BUSY
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_OFF
+    assert issues(hass, entry) == set()
+
+
+async def test_busy_for_another_app_raises_no_repair_issue(
+    hass: HomeAssistant, fakes: FakeAdapters, caplog: pytest.LogCaptureFixture
+) -> None:
+    """As before #299: only the status and the log say it."""
+    entry = await setup(hass)
+    FakePipeline.start_error = StopReason.OUTPUT_BUSY
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_OFF
+    assert issues(hass, entry) == set()
+    assert (
+        "Glowcast Living room TV stopped: another app is streaming to the lights"
+    ) in caplog.text
+
+
 @pytest.mark.parametrize(
     ("reason", "issue", "message"),
     [

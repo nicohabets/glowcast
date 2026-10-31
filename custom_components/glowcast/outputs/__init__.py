@@ -42,6 +42,20 @@ class Notice:
 
 
 @dataclass(frozen=True)
+class StopDetail:
+    """A repair issue for some of the stops with one reason (architecture 4.4):
+    the type's check tells which, after the stop."""
+
+    # Raised with the placeholders `check` returns from the entry's data and
+    # options; None: not this stop, which then goes as without the detail.
+    issue: Issue
+    check: Callable[
+        [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
+        Mapping[str, str] | None,
+    ]
+
+
+@dataclass(frozen=True)
 class OutputType:
     """How Glowcast builds and checks one type of output (architecture 5)."""
 
@@ -78,6 +92,9 @@ class OutputType:
     # ones for stop reasons the user must fix in the settings.
     missing: Issue | None = None
     stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
+    # Repair issues for stop reasons that only some stops with that reason
+    # get (StopDetail); a reason in `stop_issues` does not need one.
+    stop_details: Mapping[StopReason, StopDetail] = field(default_factory=dict)
     # Run when the Glowcast entry is removed: what the user must clean up.
     async_removed: Callable[[HomeAssistant, ConfigEntry], Awaitable[None]] | None = None
     # The problems the type works around while the lights follow the picture,
@@ -105,6 +122,12 @@ OUTPUTS = {
         stop_issues={
             StopReason.OUTPUT_TOO_MANY_CHANNELS: hue_entertainment.TOO_MANY_CHANNELS,
             StopReason.OUTPUT_NOT_FOUND: hue_entertainment.AREA_NOT_FOUND,
+        },
+        stop_details={
+            # Another Glowcast setup streams to the same bridge (#299).
+            StopReason.OUTPUT_BUSY: StopDetail(
+                hue_entertainment.OTHER_GLOWCAST, hue_entertainment.other_glowcast
+            ),
         },
         async_removed=hue_entertainment.async_removed,
         probe=hue_entertainment.probe,

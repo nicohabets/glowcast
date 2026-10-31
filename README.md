@@ -109,7 +109,7 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 - **LG webOS TVs only** for now (a computer screen works as a preview), tested on one TV model (a 2023 LG G3); other webOS TVs should work the same way.
 - **webOS 26:** Home Assistant 2026.8.3 is the minimum that can work, not a guarantee; Glowcast has not been tried on such a TV yet. More: [installation](https://nicohabets.github.io/glowcast/docs/installation/#what-you-need)
 - **Streaming apps with DRM** in the TV's own apps give no picture (tested with Prime Video); the same app on a streaming stick over HDMI works.
-- **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
+- **One stream per bridge at a time**, so two TVs on one bridge cannot sync together; a repair names your other Glowcast that streams.
 - **Home Assistant lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.
 - **A Hue light follows through the entertainment area or as a Home Assistant light, not both**: one added to the area later in the Hue app is left out of the Home Assistant lights, and a repair issue says how to fix it.
 - **Next to a Hue Sync Box**, Glowcast drives Home Assistant lights only, not the box's own lights, and cannot use the box's colours.

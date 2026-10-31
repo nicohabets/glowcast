@@ -24,6 +24,8 @@ from custom_components.glowcast.core.ports import OutputBusy
 
 from .fakes import FakeAdapters, FakeOutput, FakePipeline, wait_for
 from .test_init import (  # noqa: F401
+    BRIDGE_ID,
+    issues,
     settle,
     setup,
     state,
@@ -130,6 +132,35 @@ async def test_busy_does_nothing_and_says_why(
         "Glowcast Living room TV could not test the lights: "
         "another app is streaming to the lights"
     ) in caplog.text
+    assert state(hass) == STATE_OFF
+
+
+async def test_busy_for_another_glowcast_setup_names_it_in_the_log(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The busy check of the output type (#299) names the other setup in the
+    log line; no repair issue, as for any light test that cannot start."""
+    build = fakes.output
+
+    def busy() -> FakeOutput:
+        output = build()
+        output.start_errors = [OutputBusy("another Glowcast setup streams")]
+        return output
+
+    monkeypatch.setattr(fakes, "output", busy)
+    entry = await setup(hass)
+    hass.data["glowcast_hue_busy_by"] = {(BRIDGE_ID, "app-key"): "Bedroom TV"}
+    with caplog.at_level(logging.WARNING):
+        await press(hass)
+        await wait_for(lambda: fakes.log == RELEASED)
+    assert (
+        "Glowcast Living room TV could not test the lights: "
+        "Glowcast Bedroom TV is streaming to the same Hue bridge"
+    ) in caplog.text
+    assert issues(hass, entry) == set()
     assert state(hass) == STATE_OFF
 
 
