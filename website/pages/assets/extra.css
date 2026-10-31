@@ -148,6 +148,13 @@
 .md-typeset a.glowcast-changed {
   color: #c2410c;
   font-weight: 700;
+  white-space: nowrap;
+}
+/* The GIFs in the testing pages' tables keep their size; the table scrolls
+   sideways on a phone instead of shrinking them. */
+.md-typeset table:not([class]) td img {
+  min-width: 140px;
+  max-width: none;
 }
 [data-md-color-scheme="slate"] .md-typeset a.glowcast-changed {
   color: var(--gc-coral);
