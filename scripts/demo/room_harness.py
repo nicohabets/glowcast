@@ -297,11 +297,11 @@ def scenarios(
         Scenario(
             "5 Fade between scenes", 3.0, _crossfade(_ocean, _meadow, 0.5, 2.0), 0.6
         ),
-        # All-zero frames: released after NO_PICTURE_WAIT.
         # Colourful spots on a dark stage: a mixed picture (#233).
         Scenario("6 Concert", 2.5, _still(_concert)),
         # Bars at the sides, taken after letterbox.STABLE as in 4 (#294).
         Scenario("7 4:3 picture", 4.0, _still(_four_three)),
+        # All-zero frames: released after NO_PICTURE_WAIT.
         Scenario("8 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
     ]
     if lights == "combined":
