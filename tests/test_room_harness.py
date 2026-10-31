@@ -8,8 +8,9 @@ import colorsys
 import importlib.util
 import itertools
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -244,3 +245,122 @@ def test_a_room_at_a_level_is_labelled_with_it() -> None:
         room.mode_label({"lights": "ha", "liveliness": "calm", "places": {}})
         == "Calm: Home Assistant lights"
     )
+
+
+async def test_a_light_in_the_area_follows_the_stream_only() -> None:
+    """In-area (#301): the fake bridge reports the floor lamp in the
+    entertainment area, as outputs/hue_entertainment.py asks for it; the Home
+    Assistant lights leave it out (#198), so only the stream drives it."""
+    harness = _load("room_harness")
+    hue = importlib.import_module(
+        "custom_components.glowcast.outputs.hue_entertainment"
+    )
+
+    recording = await harness.record_async(CORE, lights="in-area")
+
+    assert [r["name"] for r in recording["scenarios"]] == [
+        "1 Floor lamp in the area too"
+    ]
+    assert set(recording["bridge"]) == {
+        hue.AREAS_PATH,
+        hue.ENTERTAINMENT_PATH,
+        hue.LIGHTS_PATH,
+    }
+    assert recording["places"][harness.IN_AREA]["name"] == harness.IN_AREA_PLACE
+    commanded = {c["light"] for c in recording["commands"]}
+    assert commanded == set(harness.ha_light_ids("combined"))
+    last = recording["samples"][-1]["lights"]
+    assert harness.IN_AREA in last
+    assert not [id_ for id_ in last if id_.endswith(harness.COMMANDS)]
+    room = _load("room")
+    assert room.notes(recording["samples"][-1]) == []
+
+
+async def test_a_light_in_the_area_is_driven_twice_before_the_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As v0.3.0, whose Home Assistant lights output does not take
+    `area_lights`: the bridge is not asked, light commands drive the floor
+    lamp besides the stream, and the room draws both and says so."""
+    harness = _load("room_harness")
+    load = harness.load_glowcast
+
+    def before_the_check(core_folder: Path, lights: str) -> SimpleNamespace:
+        glowcast = load(core_folder, lights)
+        own = glowcast.ha_lights.HaLightsOutput
+
+        class Output(own):  # type: ignore[misc, valid-type]
+            def __init__(
+                self, hass: Any, output: Any, now: Callable[[], float] | None = None
+            ) -> None:
+                super().__init__(hass, output, now)
+
+        glowcast.ha_lights = SimpleNamespace(
+            **{**vars(glowcast.ha_lights), "HaLightsOutput": Output}
+        )
+        return glowcast
+
+    monkeypatch.setattr(harness, "load_glowcast", before_the_check)
+
+    recording = await harness.record_async(CORE, lights="in-area")
+
+    assert recording["bridge"] == []
+    lamp = [c for c in recording["commands"] if c["light"] == harness.IN_AREA]
+    assert lamp and lamp[0]["service"] == "turn_on"
+    sample = recording["samples"][-1]
+    stream = sample["lights"][harness.IN_AREA]
+    commands = sample["lights"][harness.IN_AREA + harness.COMMANDS]
+    # The stream gives it the left of the moving picture, light commands the
+    # right: they differ.
+    assert max(abs(a - b) for a, b in zip(stream, commands, strict=True)) > 0.1
+    room = _load("room")
+    assert room.notes(sample) == ["Floor lamp: stream and light commands"]
+    lights, by_commands = room.split_commands(sample["lights"])
+    assert set(by_commands) == {harness.IN_AREA}
+    assert harness.IN_AREA in lights
+
+
+async def test_a_bridge_request_the_fake_does_not_answer_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that asks the bridge for something else would get nothing,
+    leave no light out and look as if it drove the lamp twice: the run fails
+    instead."""
+    harness = _load("room_harness")
+    init = harness.FakeBridge.__init__
+
+    def without_lights(self: Any) -> None:
+        init(self)
+        del self.resources["light"]
+
+    monkeypatch.setattr(harness.FakeBridge, "__init__", without_lights)
+
+    with pytest.raises(RuntimeError, match="does not answer /clip/v2/resource/light"):
+        await harness.record_async(CORE, lights="in-area")
+
+
+async def test_a_release_that_does_not_ask_the_bridge_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that takes `area_lights` but asks the bridge nothing (here:
+    it finds no hue entry) would be drawn as driving the lamp twice: the run
+    fails instead."""
+    harness = _load("room_harness")
+    monkeypatch.setattr(harness.FakeHass, "_hue_entry", lambda self, *args: None)
+
+    with pytest.raises(RuntimeError, match="did not ask"):
+        await harness.record_async(CORE, lights="in-area")
+
+
+def test_a_light_driven_twice_is_drawn_with_both() -> None:
+    """The floor lamp's glow is the stream's, the lamp itself the light
+    commands' colour (#301)."""
+    room = _load("room")
+    red, blue = room.light([1.0, 0.0, 0.0]), room.light([0.0, 0.0, 1.0])
+    stream_only = room.room_svg({"floor_lamp": red}, None)
+    both = room.room_svg({"floor_lamp": red}, None, {"floor_lamp": blue})
+    glow = '<radialGradient id="gfl"><stop offset="0" stop-color="#FF0000"/>'
+    assert glow in stream_only and glow in both
+    assert room._mix(room.LAMP_OFF, "#FF0000", 1.0) in stream_only
+    assert room._mix(room.LAMP_OFF, "#0000FF", 1.0) in both
+    assert room._mix(room.LAMP_OFF, "#0000FF", 1.0) not in stream_only

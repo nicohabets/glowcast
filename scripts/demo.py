@@ -19,7 +19,7 @@ Usage:
     python scripts/demo.py clean
     python scripts/demo.py clean --all [--yes]
     python scripts/demo.py status
-    python scripts/demo.py room [--compare] [--lights area|ha|combined]
+    python scripts/demo.py room [--compare] [--lights area|ha|combined|in-area]
                                 [--place LIGHT=PLACE ...] [--versus LIGHT=PLACE ...]
                                 [--liveliness calm|normal|lively|all]
                                 [--names] [--out DIR]
@@ -278,11 +278,12 @@ def main() -> None:
     )
     room.add_argument(
         "--lights",
-        choices=("area", "ha", "combined"),
+        choices=("area", "ha", "combined", "in-area"),
         default="area",
         help="the room's lights as an entertainment area (default), as Home "
-        "Assistant lights (ha), or the area with the room's other lights as Home "
-        "Assistant lights",
+        "Assistant lights (ha), the area with the room's other lights as Home "
+        "Assistant lights (combined), or combined with the floor lamp in both "
+        "(in-area)",
     )
     room.add_argument(
         "--place",
