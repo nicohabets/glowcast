@@ -32,7 +32,7 @@ To check the places, press **Test lights** on Glowcast's device ([Test the light
 
 On Glowcast's device page, under **Configuration**, the **Lights** entity shows what the lights follow: the Home Assistant area or light group, or *Chosen lights* while you use single lights. Pick another area or group there, from a dashboard or with an automation; see [Settings](settings.md#settings-on-the-device-page).
 
-![Glowcast's device page in Home Assistant with Home Assistant lights while syncing: the switch on under Controls, the status Streaming under Sensors, and under Configuration brightness 80 %, intensity 100 %, Lights Living Room and update rate High.](../images/device-page-ha-lights.png){ width="400" loading=lazy }
+![Glowcast's device page in Home Assistant with Home Assistant lights while syncing: the switch on under Controls, the status Streaming under Sensors, and under Configuration brightness 80 %, intensity 100 %, Lights Living Room, the Test lights button and update rate High, and the Run hardware check button under Diagnostic.](../images/device-page-ha-lights.png){ width="400" loading=lazy }
 
 *The device page with Home Assistant lights: the switch, the status, and Lights under Configuration.*
 

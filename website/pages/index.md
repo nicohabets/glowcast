@@ -54,7 +54,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     A strong colour on the screen shows as that pure colour on the lights, not mixed with white.
 
--   ![Glowcast's device page in Home Assistant: the switch, the status and the settings.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
+-   ![Glowcast's device page in Home Assistant: the switch on under Controls and the status Streaming under Sensors.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
 
     **Part of Home Assistant**
 

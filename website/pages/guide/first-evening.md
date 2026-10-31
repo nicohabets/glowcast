@@ -4,7 +4,7 @@
 
 Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stops syncing. Put it where you can reach it: edit a dashboard and add a card with the switch, for example a tile card. Add the **Status** sensor (for example `sensor.glowcast_living_room_tv_status`) too if you like to see what Glowcast is doing. You can also switch it on Glowcast's device page under **Controls**, or by voice once you expose the switch to Assist.
 
-![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
+![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, the settings and the Test lights button under Configuration, and the Run hardware check button under Diagnostic.](../images/device-page.png){ width="400" }
 
 *Glowcast's device page: the switch under Controls, the status under Sensors, the settings under Configuration.*
 
