@@ -204,6 +204,26 @@ async def test_a_press_while_switching_on_does_not_capture(
     assert state(hass) == STATE_ON
 
 
+async def test_switching_off_while_a_switch_on_ends_a_check_wins(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,
+    output_probe: FakeProbe,
+) -> None:
+    """The last of start and stop wins, also while the start waits for a
+    check to end (#269)."""
+    entry = await setup(hass)
+    source_probe.release = asyncio.Event()
+    await press(hass)
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the check to end
+    await entry.runtime_data.async_stop()
+    await start
+    await settle(hass)
+    assert FakePipeline.instances == []
+    assert state(hass) == STATE_OFF
+
+
 async def test_a_failing_probe_is_recorded_and_the_check_finishes(
     hass: HomeAssistant,
     fakes: FakeAdapters,
