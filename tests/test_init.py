@@ -82,6 +82,17 @@ def tv_device(hass: HomeAssistant) -> Generator[dr.DeviceEntry]:
     tv.mock_state(hass, ConfigEntryState.NOT_LOADED)
 
 
+def stop_home_assistant(hass: HomeAssistant) -> None:
+    """What Home Assistant's async_stop does, in its order (core.py): cancel
+    the background tasks (Glowcast's here), then set the state to stopping
+    and fire the stop event. The test sets the state back to running."""
+    for task in list(hass._background_tasks):
+        if isinstance(task, asyncio.Task) and task.get_name().startswith("glowcast"):
+            task.cancel("Home Assistant is stopping")
+    hass.set_state(CoreState.stopping)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+
+
 async def settle(hass: HomeAssistant) -> None:
     """Let the pipeline's background task run; HA does not wait for it."""
     for _ in range(10):
@@ -365,7 +376,13 @@ async def test_a_restart_keeps_the_new_pipelines_status(
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
     data = entry.runtime_data
-    await data.async_restart()
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
     await settle(hass)
     first, _ = FakePipeline.instances
     assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
@@ -374,6 +391,62 @@ async def test_a_restart_keeps_the_new_pipelines_status(
     await settle(hass)
     assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
     assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_switch_on_that_waited_takes_a_new_output_in_one_handshake(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A new choice of lights while a switch-on waits behind the lock: the
+    start builds the pipeline from the new options, and the restart queued
+    behind it does not stop and claim the lights a second time (#282)."""
+    entry = await setup(hass)
+    fakes.output_stop_gate = asyncio.Event()
+    await entry.runtime_data.async_test_lights()
+    await wait_for(lambda: fakes.log == ["output.start"])
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the test's release
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
+    await asyncio.sleep(0.01)  # the restart now waits behind the start
+    fakes.output_stop_gate.set()
+    await start
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert fakes.log == [
+        "output.start",
+        "output.stop",
+        "output.close",
+        "source.start",
+        "output.start",
+    ]
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_restart_for_another_output_still_runs(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """The restart is skipped only when the running pipeline has the block."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    await data.async_restart()  # nothing changed: no second handshake
+    assert len(FakePipeline.instances) == 1
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
+    await settle(hass)
+    assert len(FakePipeline.instances) == 2
     await switch(hass, SERVICE_TURN_OFF)
 
 
@@ -858,6 +931,57 @@ async def test_home_assistant_stop_releases_the_lights(
     await settle(hass)
     assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
     assert state(hass) == STATE_OFF
+
+
+async def test_a_cancelled_switch_off_does_not_run_on(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A caller cancelled while it waits for the release is cancelled, not
+    taken for the pipeline's own end (#282); the release still completes."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    fakes.outputs[-1].stop_gate = asyncio.Event()
+    stop = hass.async_create_task(data.async_stop())
+    await asyncio.sleep(0.01)  # the stop waits for the release
+    stop.cancel()
+    await asyncio.sleep(0.01)
+    assert stop.cancelled()
+    fakes.outputs[-1].stop_gate.set()
+    await settle(hass)
+    assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
+    assert state(hass) == STATE_OFF
+
+
+@pytest.mark.parametrize("ending", ["unload", "home_assistant_stops"])
+async def test_no_start_after_unload_or_home_assistant_stopping(
+    hass: HomeAssistant, fakes: FakeAdapters, ending: str
+) -> None:
+    """A switch-on or automation that comes after the unload's (or the stop
+    event's) stop finds the lights released and claims nothing: nothing would
+    stop that pipeline any more (#282)."""
+    entry = await setup(hass)
+    data = entry.runtime_data
+    await switch(hass, SERVICE_TURN_ON)
+    fakes.outputs[-1].stop_gate = gate = asyncio.Event()
+    if ending == "unload":
+        end = hass.async_create_task(hass.config_entries.async_unload(entry.entry_id))
+    else:
+        stop_home_assistant(hass)
+        end = None
+    await asyncio.sleep(0.01)  # the stop waits for the release
+    start = hass.async_create_task(data.async_start())
+    await asyncio.sleep(0)  # the start waits behind the stop
+    gate.set()
+    if end is not None:
+        assert await end
+    await start
+    await data.async_start()  # and one after it
+    await data.async_restart()
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert fakes.log.count("output.start") == 1
+    hass.set_state(CoreState.running)
 
 
 # The real pipeline behind the switch

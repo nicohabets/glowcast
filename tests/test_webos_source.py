@@ -658,8 +658,7 @@ async def test_probe_measures_the_captures(
         "os_version": "6.4.0",
         "is_on": True,
         "is_screen_on": True,
-        "app": "com.webos.app.hdmi2",
-    }
+    }  # no app: the picture was not black (#282)
     capture = result["capture"]
     assert capture["answered"] is True
     assert capture["refused"] is None
@@ -679,20 +678,31 @@ async def test_probe_measures_the_captures(
     [client] = FakeWebOsClient.instances
     assert client.disconnected
     text = repr(result)
-    for personal in ("105KRXX0001", "a8:23:fe", "6f1c0de2", "Annas", "secret-hash"):
+    for personal in (
+        "105KRXX0001",
+        "a8:23:fe",
+        "6f1c0de2",
+        "Annas",
+        "secret-hash",
+        "com.webos.app.hdmi2",
+    ):
         assert personal not in text
 
 
+@pytest.mark.usefixtures("telling")
 async def test_probe_counts_black_captures(
     hass: HomeAssistant, add_tv_entry: AddTvEntry, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    """A protected app gives all-black captures (#8)."""
+    """A protected app gives all-black captures (#8); only then the check
+    says which app was on screen (#282)."""
     add_tv_entry()
     aioclient_mock.get(IMAGE_URL, content=_jpeg(64, 36, black=True))
-    capture = (await webos.probe(hass, DATA, {}, measure=True))["capture"]
+    result = await webos.probe(hass, DATA, {}, measure=True)
+    capture = result["capture"]
     assert capture["black_captures"] == capture["captures"] > 0
     assert capture["all_black"] is True
     assert capture["image"]["width"] == 64
+    assert result["tv"]["app"] == "com.webos.app.hdmi2"
 
 
 @pytest.mark.parametrize(
@@ -755,5 +765,6 @@ async def test_probe_while_syncing_does_not_capture(
     result = await webos.probe(hass, DATA, {}, measure=False)
     assert result["connected"] is True
     assert "capture" not in result
+    assert "app" not in result["tv"]  # no captures to say it was black
     [client] = FakeWebOsClient.instances
     assert client.payloads == []
