@@ -22,8 +22,21 @@ from .const import (
     REAUTH_PART,
     REAUTH_SOURCE,
 )
-from .core.pipeline import MonotonicClock, Phase, Pipeline, PipelineStatus, StopReason
-from .core.ports import SourceAuthFailed, SourceUnavailable
+from .core.pipeline import (
+    MonotonicClock,
+    Phase,
+    Pipeline,
+    PipelineStatus,
+    StopReason,
+    run_light_test,
+)
+from .core.ports import (
+    LightOutput,
+    SourceAuthFailed,
+    SourceNotSupported,
+    SourceUnavailable,
+)
+from .hardware_check import async_notify_done, async_run_check
 from .issues import Issue
 from .outputs import OUTPUTS, OutputType, part_options
 from .outputs.blocks import output_blocks, output_types
@@ -47,6 +60,10 @@ _STOP_MESSAGES = {
     StopReason.SOURCE_UNAVAILABLE: "the picture source failed",
     StopReason.SOURCE_AUTH_FAILED: (
         "the picture source rejected Glowcast's key; pair again"
+    ),
+    StopReason.SOURCE_NOT_SUPPORTED: "the picture source does not allow capturing",
+    StopReason.SOURCE_NOT_PERMITTED: (
+        "the picture source does not permit Glowcast to capture"
     ),
 }
 # Stops the user does not need to act on are logged at info level.
@@ -72,19 +89,39 @@ class GlowcastData:
         self._status: PipelineStatus | None = None
         self._task: asyncio.Task[None] | None = None
         self._restarting = False
-        self._stopped_during_restart = False
+        # Starts and stops one at a time, in the order they came (#269): at
+        # most one thing claims the lights or captures. Every stop counts, so
+        # a start that waited sees that a later stop wins.
+        self._transition = asyncio.Lock()
+        self._stops = 0
+        # Set when the entry unloads or Home Assistant stops: no start, light
+        # test or hardware check that comes after it runs (it could claim the
+        # lights with nothing left to release them).
+        self._closing = False
         self._listeners: list[Callable[[], None]] = []
         self._status_listeners: list[Callable[[], None]] = []
         # What follows the TV as the pipeline started with it (or as stored,
         # before the first start); the update listener gets no old options.
         self._output: Mapping[str, Any] = entry.options[CONF_OUTPUT]
+        # The output block the running pipeline started with: a restart for
+        # a new block is not needed when the start already used it.
+        self._started_output: Mapping[str, Any] | None = None
         # The parts of a combined output the running pipeline dropped, with
         # the reason their follow-up (repair issue, reauth) was for.
         self._dropped: dict[str, StopReason] = {}
         # Whether it synced when Home Assistant began to stop (#183).
         self._stopped_by_ha = False
-        # Set by async_resume(); every start and stop clears it.
+        # Set by async_resume(); every start and stop clears it. The resume's
+        # look for the picture source in progress, which they end.
         self._resume_wanted = False
+        self._look: asyncio.Task[bool] | None = None
+        # The light test while Glowcast does not sync (#182).
+        self._test: asyncio.Task[None] | None = None
+        # The hardware check (#115): the one running, whether it captures,
+        # and the last result (in memory only, for the diagnostics).
+        self._check: asyncio.Task[None] | None = None
+        self._check_measures = False
+        self._check_result: dict[str, Any] | None = None
 
     @property
     def is_on(self) -> bool:
@@ -100,6 +137,11 @@ class GlowcastData:
     def status(self) -> PipelineStatus | None:
         """The pipeline's last status, kept after a stop; None if never started."""
         return self._status
+
+    @property
+    def hardware_check(self) -> dict[str, Any] | None:
+        """The result of the last hardware check; None if none ran (#115)."""
+        return self._check_result
 
     @callback
     def async_add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
@@ -121,10 +163,35 @@ class GlowcastData:
         return lambda: self._status_listeners.remove(update)
 
     async def async_start(self) -> None:
-        """Start syncing, unless an integration the TV or lights use is not set up."""
-        if self._pipeline is not None:
-            return
+        """Start syncing, unless an integration the TV or lights use is not set up.
+
+        A light test that runs meanwhile ends first, and its lights are
+        released before syncing claims them. So do a hardware check that
+        captures and the resume's look for the picture source: their captures
+        could make the pipeline's fail. Waits for a start or stop in progress;
+        a stop that comes while this one waits wins.
+        """
+        stops = self._stops
         self._resume_wanted = False
+        async with self._transition:
+            if self._pipeline is not None:
+                return
+            await self._async_end_look()
+            if self._check_measures:
+                await self._async_end_check()
+            await self._async_end_test()
+            if self._stops != stops or self._is_closing:
+                return  # switched off, unloaded or Home Assistant stops
+            self._start_pipeline()
+
+    @property
+    def _is_closing(self) -> bool:
+        """Whether the entry unloads or Home Assistant stops."""
+        return self._closing or self._hass.is_stopping
+
+    def _start_pipeline(self) -> None:
+        """Build and run the pipeline, or raise the repair issue of a missing
+        integration entry."""
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
@@ -143,7 +210,7 @@ class GlowcastData:
             lambda status: self._async_status(pipeline, status),
         )
         self._pipeline = pipeline
-        self._output = options[CONF_OUTPUT]
+        self._output = self._started_output = options[CONF_OUTPUT]
         self._dropped = {}
         self._task = self._entry.async_create_background_task(
             self._hass, pipeline.run(), f"glowcast {self._entry.title}"
@@ -174,7 +241,8 @@ class GlowcastData:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + RESUME_WINDOW
         while self._resume_wanted:
-            on = await self._async_source_on()
+            # A hardware check that captures goes first: no look beside it.
+            on = False if self._check_measures else await self._async_look()
             if not self._resume_wanted:
                 return  # started or stopped meanwhile
             if on:
@@ -194,9 +262,33 @@ class GlowcastData:
                 return
             await asyncio.sleep(RESUME_INTERVAL)
 
+    async def _async_look(self) -> bool:
+        """Look for the picture source in a task of its own, which a start, a
+        stop and a hardware check that captures end (False then)."""
+        self._look = look = self._entry.async_create_background_task(
+            self._hass, self._async_source_on(), f"glowcast {self._entry.title} look"
+        )
+        try:
+            await asyncio.wait({look})
+        finally:
+            look.cancel()  # the resume itself ended (unload, Home Assistant stops)
+            if self._look is look:
+                self._look = None
+        return not look.cancelled() and look.result()
+
+    async def _async_end_look(self) -> None:
+        """End the resume's look in progress and wait until its connection
+        is closed."""
+        look, self._look = self._look, None
+        if look is not None and not look.done():
+            look.cancel()
+            await asyncio.wait({look})
+
     async def _async_source_on(self) -> bool:
         """Whether the picture source can be reached, is on and gives a
-        picture (a locked screen answers, but without one), by connecting."""
+        picture (a locked screen answers, but without one), by connecting.
+
+        A source that refuses its picture counts as on (#253)."""
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         if source_type.is_missing(self._hass, data, options):
@@ -208,6 +300,11 @@ class GlowcastData:
                 if not source.is_on():
                     return False
                 await source.capture()
+            return True
+        except SourceNotSupported:
+            # On, but refusing its picture: the normal start ends on the
+            # refusal after the startup grace, with the source type's repair
+            # issue, instead of looking again for minutes (#253).
             return True
         except (TimeoutError, SourceUnavailable, SourceAuthFailed):
             return False
@@ -222,21 +319,186 @@ class GlowcastData:
                 await source.close()
 
     async def async_stop(self) -> None:
-        """Stop syncing and wait until the lights are released."""
+        """Stop syncing (or the light test) and wait until the lights are
+        released. Wins over a start that waits (#269) and over a restart."""
+        self._stops += 1
         self._resume_wanted = False
-        # Switching off (or unloading) during a restart wins over the restart.
-        self._stopped_during_restart = self._restarting
-        await self._async_stop()
+        async with self._transition:
+            await self._async_end_look()
+            await self._async_end_test()
+            await self._async_stop()
+
+    async def async_close(self) -> None:
+        """Stop for good: the entry unloads or Home Assistant stops. A start,
+        light test or hardware check that comes later does nothing."""
+        self._closing = True
+        await self.async_stop()
+
+    async def async_test_lights(self) -> None:
+        """Show the light test (#182): known colours by position, about 3 s
+        each, then back to what the lights did before.
+
+        While syncing, the running pipeline shows it instead of the picture;
+        otherwise the lights are claimed for the test only and released after
+        it, as a stop does, without the picture source. The switch does not
+        change. A second press during a test does nothing.
+        """
+        title = self._entry.title
+        if self._is_closing:
+            _LOGGER.debug("Glowcast %s is unloading; no light test now", title)
+            return
+        if self._pipeline is not None:
+            if self._pipeline.testing:
+                _LOGGER.debug("Glowcast %s is testing the lights already", title)
+            elif not await self._pipeline.async_test():
+                _LOGGER.info(
+                    "Glowcast %s cannot test the lights now: they are not "
+                    "following the picture (starting, retrying or no picture)",
+                    title,
+                )
+            return
+        if self._test is not None and not self._test.done():
+            _LOGGER.debug("Glowcast %s is testing the lights already", title)
+            return
+        if self._transition.locked():
+            _LOGGER.debug(
+                "Glowcast %s is starting or stopping; no light test now", title
+            )
+            return
+        data, options = self._entry.data, self._entry.options
+        output_type = OUTPUTS.get(options[CONF_OUTPUT][CONF_TYPE])
+        if output_type is None:
+            # An entry written by a later version, after a downgrade.
+            _LOGGER.warning("Glowcast %s cannot test the lights: unknown lights", title)
+            return
+        if output_type.is_missing(self._hass, data, options):
+            issue = output_type.missing
+            _LOGGER.warning(
+                "Glowcast %s cannot test the lights: %s",
+                title,
+                "an integration it uses is not set up"
+                if issue is None
+                else issue.message,
+            )
+            return
+        output = output_type.create(self._hass, data, options)
+        _LOGGER.info("Glowcast %s tests the lights", title)
+        self._test = self._entry.async_create_background_task(
+            self._hass,
+            self._async_test(
+                output_type, output, read_settings(options).brightness / 100
+            ),
+            f"glowcast {title} light test",
+        )
+
+    async def _async_test(
+        self, output_type: OutputType, output: LightOutput, brightness: float
+    ) -> None:
+        """Run the light test while Glowcast does not sync; log why it could
+        not claim the lights (no repair issue or reauth: the next switch-on
+        does that)."""
+        reason = await run_light_test(
+            output, brightness, self._hass.async_add_executor_job, MonotonicClock()
+        )
+        if reason is not None:
+            issue = output_type.stop_issues.get(reason)
+            _LOGGER.warning(
+                "Glowcast %s could not test the lights: %s",
+                self._entry.title,
+                _STOP_MESSAGES[reason] if issue is None else issue.message,
+            )
+
+    async def async_hardware_check(self) -> None:
+        """Run the hardware check (#115) in the background, at most about 30 s.
+
+        Read-only: no stream, no light change, and the switch does not change.
+        While syncing the picture source is not captured; the running
+        pipeline's measurement counts instead. A press during a check does
+        nothing. When it is done, a notification says where the result is.
+        """
+        title = self._entry.title
+        if self._is_closing:
+            _LOGGER.debug("Glowcast %s is unloading; no hardware check now", title)
+            return
+        if self._check is not None and not self._check.done():
+            _LOGGER.debug("Glowcast %s is running the hardware check already", title)
+            return
+        # A start (or stop) in progress counts as syncing.
+        syncing = self._pipeline is not None or self._transition.locked()
+        self._check_measures = not syncing
+        _LOGGER.info("Glowcast %s runs the hardware check", title)
+        self._check = self._entry.async_create_background_task(
+            self._hass, self._async_check(syncing), f"glowcast {title} hardware check"
+        )
+
+    async def _async_check(self, syncing: bool) -> None:
+        try:
+            if not syncing:
+                await self._async_end_look()  # no look beside the captures
+            result = await async_run_check(
+                self._hass, self._entry.data, self._entry.options, syncing=syncing
+            )
+        finally:
+            self._check_measures = False
+        status = self._status if syncing and self._pipeline is not None else None
+        # While syncing: what the running pipeline measures instead.
+        result["pipeline"] = (
+            None
+            if status is None
+            else {
+                "phase": status.phase,
+                "captures_per_second": status.captures_per_second,
+                "black_picture": status.black_picture,
+            }
+        )
+        self._check_result = result
+        _LOGGER.info(
+            "Glowcast %s finished the hardware check; the result is in its diagnostics",
+            self._entry.title,
+        )
+        await async_notify_done(self._hass, self._entry.entry_id, self._entry.title)
+
+    async def _async_end_check(self) -> None:
+        """End a running hardware check that captures, and wait for it; the
+        caller's own cancellation goes through. A press meanwhile runs a check
+        that does not capture."""
+        task, self._check = self._check, None
+        if task is None or task.done():
+            return
+        task.cancel()
+        await asyncio.wait({task})
+        _LOGGER.info(
+            "Glowcast %s ended the hardware check: it starts syncing",
+            self._entry.title,
+        )
+        self._check_result = {"interrupted": "started syncing"}
+
+    async def _async_end_test(self) -> None:
+        """End a running light test and wait until its lights are released.
+
+        The caller's own cancellation goes through; the test then stays
+        known, so the next stop waits for its release too."""
+        task = self._test
+        if task is None or task.done():
+            self._test = None
+            return
+        task.cancel()
+        await asyncio.wait({task})
+        if self._test is task:
+            self._test = None
 
     async def _async_stop(self) -> None:
         if self._pipeline is not None:
             self._pipeline.stop()
         task = self._task
         if task is not None:
-            with suppress(asyncio.CancelledError):
-                await task
+            # Not `await task`: the caller's own cancellation (Home Assistant
+            # stopping) goes through instead of being taken for the task's.
+            await asyncio.wait({task})
             if self._task is task:
                 self._task = None
+            if not task.cancelled():
+                task.result()  # the pipeline's own error, as before
 
     async def async_options_updated(self) -> None:
         """New options: a running pipeline takes the settings without a restart.
@@ -275,7 +537,7 @@ class GlowcastData:
             for output_type in OUTPUTS.values()
             for issue in (
                 *output_type.stop_issues.values(),
-                output_type.notice,
+                *(notice.issue for notice in output_type.notices),
                 *((output_type.missing,) if missing else ()),
             )
         ]
@@ -285,19 +547,36 @@ class GlowcastData:
             )
 
     async def async_restart(self) -> None:
-        """Restart a running pipeline with the new settings; the switch stays on."""
-        if not self.is_on:
-            return
-        self._restarting = True
-        self._stopped_during_restart = False
-        try:
-            await self._async_stop()
-        finally:
-            self._restarting = False
-        if self._stopped_during_restart:
-            self._notify()  # the switch shows off now
-            return
-        await self.async_start()
+        """Restart a running pipeline with the new output block; the switch
+        stays on.
+
+        Like a start and a stop, one at a time: a stop that came earlier or
+        meanwhile wins (#269), and so do an unload and Home Assistant
+        stopping. Nothing to do when the running pipeline started with the
+        current block already (a switch-on that waited before it, #282)."""
+        stops = self._stops
+        async with self._transition:
+            if (
+                self._pipeline is None
+                or self._stops != stops
+                or self._is_closing
+                or self._started_output == self._entry.options[CONF_OUTPUT]
+            ):
+                # Not running, stopped, or a start that waited before this
+                # restart already used the new output block (one handshake).
+                return
+            self._restarting = True
+            try:
+                await self._async_stop()
+            finally:
+                self._restarting = False
+            if self._stops != stops or self._is_closing:
+                # Switching off (or unloading) during a restart wins over it.
+                self._notify()  # the switch shows off now
+                return
+            # Nothing else claims the lights or captures: a pipeline ran
+            # until now, and no test or check that captures starts meanwhile.
+            self._start_pipeline()
 
     @callback
     def async_remove_issues(self) -> None:
@@ -383,27 +662,26 @@ class GlowcastData:
             update()
 
     async def _async_check_notices(self, pipeline: Pipeline) -> None:
-        """Raise or remove each output part's notice, now the lights are claimed."""
+        """Raise or remove each output part's notices, now the lights are claimed."""
         output = self._entry.options[CONF_OUTPUT]
         for _, output_type, part_opts in self._parts():
-            if output_type.notice is None or output_type.async_notice is None:
-                continue
-            placeholders = await output_type.async_notice(
-                self._hass, self._entry.data, part_opts
-            )
-            if (
-                pipeline is not self._pipeline
-                or self._entry.options[CONF_OUTPUT] != output
-            ):
-                return  # stopped or changed meanwhile; the next claim checks
-            if placeholders is None:
-                ir.async_delete_issue(
-                    self._hass,
-                    DOMAIN,
-                    issue_id(self._entry.entry_id, output_type.notice.key),
+            for notice in output_type.notices:
+                placeholders = await notice.check(
+                    self._hass, self._entry.data, part_opts
                 )
-            else:
-                self._raise_issue(output_type.notice.key, placeholders)
+                if (
+                    pipeline is not self._pipeline
+                    or self._entry.options[CONF_OUTPUT] != output
+                ):
+                    return  # stopped or changed meanwhile; the next claim checks
+                if placeholders is None:
+                    ir.async_delete_issue(
+                        self._hass,
+                        DOMAIN,
+                        issue_id(self._entry.entry_id, notice.issue.key),
+                    )
+                else:
+                    self._raise_issue(notice.issue.key, placeholders)
 
     def _remove_issues_except(self, dropped: Mapping[str, StopReason]) -> None:
         """Remove the entry's repair issues, but not those of dropped parts.
@@ -417,9 +695,9 @@ class GlowcastData:
             for issue in (output_type.missing, output_type.stop_issues.get(reason))
             if issue is not None
         } | {
-            output_type.notice.key
+            notice.issue.key
             for output_type in OUTPUTS.values()
-            if output_type.notice is not None
+            for notice in output_type.notices
         }
         for key in issue_keys():
             if key not in keep:
@@ -479,7 +757,9 @@ class GlowcastData:
         data, options = self._entry.data, self._entry.options
         source_type = SOURCES[data[CONF_SOURCE][CONF_TYPE]]
         output_type = OUTPUTS[options[CONF_OUTPUT][CONF_TYPE]]
-        issue = output_type.stop_issues.get(reason)
+        issue = output_type.stop_issues.get(reason) or source_type.stop_issues.get(
+            reason
+        )
         message = _STOP_MESSAGES[reason] if issue is None else issue.message
         if reason is StopReason.USER and self._hass.is_stopping:
             # HA cancels background tasks on shutdown; the pipeline then
@@ -512,13 +792,13 @@ class GlowcastData:
     ) -> None:
         """Raise the repair issue with this key of the entry's source or outputs."""
         source_type = SOURCES[self._entry.data[CONF_SOURCE][CONF_TYPE]]
-        issues = [source_type.missing]
+        issues = [source_type.missing, *source_type.stop_issues.values()]
         for _, output_type, _ in self._parts():
             issues.extend(
                 (
                     output_type.missing,
                     *output_type.stop_issues.values(),
-                    output_type.notice,
+                    *(notice.issue for notice in output_type.notices),
                 )
             )
         issue = next(
@@ -532,6 +812,7 @@ class GlowcastData:
             severity=ir.IssueSeverity.ERROR,
             translation_key=issue.translation_key,
             translation_placeholders={
+                **issue.placeholders,
                 **(placeholders or {}),
                 "name": self._entry.title,
             },
@@ -552,13 +833,22 @@ def issue_keys() -> list[str]:
     return _keys(
         [
             *(source_type.missing for source_type in SOURCES.values()),
+            *(
+                issue
+                for source_type in SOURCES.values()
+                for issue in source_type.stop_issues.values()
+            ),
             *(output_type.missing for output_type in OUTPUTS.values()),
             *(
                 issue
                 for output_type in OUTPUTS.values()
                 for issue in output_type.stop_issues.values()
             ),
-            *(output_type.notice for output_type in OUTPUTS.values()),
+            *(
+                notice.issue
+                for output_type in OUTPUTS.values()
+                for notice in output_type.notices
+            ),
         ]
     )
 

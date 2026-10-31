@@ -12,6 +12,16 @@ When it stops by itself, the switch turns off, the [status](status.md) shows Pic
 - **The Home Assistant lights have no colour lights left to follow** (the area or light group was removed, or has no colour lights left): Home Assistant shows a repair; choose other lights in Glowcast's settings. It goes away after the next start that works.
 - **None of the Home Assistant lights is available**: Glowcast does not start (Error, `output_unavailable`); it starts again once a light is back.
 - **The TV or the bridge is no longer set up in Home Assistant**: Home Assistant shows a repair saying which integration to set up again.
+- **The TV does not allow screenshots**: Home Assistant shows a repair; see [below](#the-tv-does-not-allow-screenshots).
+
+## The TV does not allow screenshots { #the-tv-does-not-allow-screenshots }
+
+Glowcast sees the picture through the TV's screenshot call, which LG does not document. When the TV refuses that call, Glowcast stops: at once while it syncs, or after about 10 seconds of asking again when it starts, the [status](status.md) shows Error, and Home Assistant shows a repair. The TV is on; it is not a connection problem. There are two answers:
+
+- **The TV does not offer the call** ("no such service or method", stop reason `source_not_supported`): this model or its software does not have it, so Glowcast cannot work on it for now.
+- **The TV does not permit the call** ("insufficient permissions", stop reason `source_not_permitted`): the pairing the LG webOS TV integration made with the TV does not allow screenshots. Pairing the TV again may help: delete the TV in the LG webOS TV integration (**Settings → Devices & services**), add it again and accept the request on the TV, then switch Glowcast on again. Glowcast finds the TV again by itself. **Reconfigure** in that integration keeps the existing pairing; it does not ask the TV again.
+
+In both cases, please run the [hardware check](#the-hardware-check), then [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model and webOS version and attach Glowcast's diagnostics (see [below](#reporting-a-problem)), so that we can look at supporting it.
 
 ## The lights let go during a streaming app
 
@@ -33,4 +43,21 @@ Add it as a custom repository; see [Installation](installation.md#hacs-does-not-
 
 Open an issue on [GitHub](https://github.com/nicohabets/glowcast/issues) and attach Glowcast's diagnostics: **Settings → Devices & services → Glowcast → ⋮ → Download diagnostics**. The download shows the versions, your settings, the TV's and bridge's model and software version, and what Glowcast was doing last (also after it stopped, with the reason). Keys, addresses, ids, serial numbers and names are left out, but have a look before you post it: issues on GitHub are public.
 
-**Tried it on your TV?** Please tell us how it went, also when it just works: [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version, bridge and how many captures per second you get (the [Capture rate](status.md#the-capture-rate) sensor shows it).
+**Tried it on your TV?** Please tell us how it went, also when it just works: run the [hardware check](#the-hardware-check), then [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version and bridge, and attach the diagnostics.
+
+## The hardware check { #the-hardware-check }
+
+To make Glowcast work on a TV we have not tested, we need facts you cannot read off a settings screen. The **Run hardware check** button collects them. It is on Glowcast's device page under **Diagnostic** (**Settings → Devices & services → Glowcast**, then the device), when Glowcast uses an LG webOS TV or a Hue entertainment area: with a computer screen and Home Assistant lights only, there is nothing for it to check, so the button is not there.
+
+1. Turn the TV on and show a picture, for example an HDMI input or the app you watch with. Glowcast may be on or off.
+2. Press **Run hardware check**. It takes up to about 30 seconds; a notification says when it is done.
+3. Download the diagnostics (**⋮ → Download diagnostics** on Glowcast's integration page) and attach the file to a [hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md).
+
+What it collects:
+
+- **The TV**: its model, webOS and firmware version, whether it answers the screenshot call (and if not, how it refuses), the size and format of a screenshot, how long a screenshot takes (shortest, middle and longest of about 10) and how many per second, whether the screenshots were all black, and, only when they were all black, the app or input on screen (its id, such as `com.webos.app.hdmi1`, so we can recognise apps with copy protection). With a normal picture, or while Glowcast syncs, it leaves out what you are watching.
+- **The Hue bridge**: its model, software and API version; for your entertainment area: the number of channels, where each sits, and the product type of each light or gradient segment in it (a model number, never its name); whether the area or the bridge is streaming, and whether that is Glowcast or another app (not which one).
+
+It only reads: it does not start a stream or change a light. To see where your lights sit, use **Test lights** ([Test the lights](settings.md#test-lights)). While Glowcast syncs, the check takes no screenshots of its own, so it never disturbs syncing; it reports Glowcast's own capture rate instead. Switching Glowcast on while the check takes screenshots ends the check: its result then only says it was interrupted, so run it again. A TV that is off or a bridge that does not answer is recorded as such; the check still finishes.
+
+No picture is kept, and no names, addresses, keys, ids or serial numbers. The result stays in Home Assistant's memory until the next check, a reload of Glowcast (also when you change the kind of lights in the settings) or a restart of Home Assistant, and is only in the diagnostics you download yourself.

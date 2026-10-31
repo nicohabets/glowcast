@@ -1,25 +1,35 @@
 """Frame source for LG webOS TVs, reusing Home Assistant's webostv pairing."""
 
 import asyncio
+import dataclasses
 import io
 import logging
 import math
+import statistics
 from collections.abc import Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
 from aiowebostv import WebOsClient, WebOsTvState
-from aiowebostv.exceptions import WebOsTvError, WebOsTvPairError
+from aiowebostv.exceptions import (
+    WebOsTvError,
+    WebOsTvPairError,
+    WebOsTvResponseTypeError,
+    WebOsTvServiceNotFoundError,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_CLIENT_SECRET, CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from PIL import Image
 
-from ..const import CONF_SOURCE, CONF_UNIQUE_ID
+from ..const import CONF_SOURCE, CONF_UNIQUE_ID, HARDWARE_REPORT_URL
+from ..core.color_engine import is_all_zero
 from ..core.models import Frame
-from ..core.ports import SourceUnavailable
+from ..core.pipeline import StopReason
+from ..core.ports import SourceNotSupported, SourceUnavailable
 from ..devices import entry_devices
 from ..issues import Issue
 
@@ -37,6 +47,36 @@ MISSING = Issue(
     "the TV is not set up (or not loaded) in Home Assistant",
 )
 
+# Where a user whose TV refuses the capture can report it, and read more (#214).
+TROUBLESHOOTING_URL = (
+    "https://nicohabets.github.io/glowcast/docs/troubleshooting/"
+    "#the-tv-does-not-allow-screenshots"
+)
+_REFUSED_PLACEHOLDERS = {
+    "report_url": HARDWARE_REPORT_URL,
+    "help_url": TROUBLESHOOTING_URL,
+}
+# Repair issues when the TV refuses the screenshot call (#214); never rename
+# the keys.
+NOT_SUPPORTED = Issue(
+    "webos_not_supported",
+    "webos_not_supported",
+    "the TV does not offer the screenshot call Glowcast uses",
+    _REFUSED_PLACEHOLDERS,
+)
+NOT_PERMITTED = Issue(
+    "webos_not_permitted",
+    "webos_not_permitted",
+    "the TV does not permit the screenshot call Glowcast uses",
+    _REFUSED_PLACEHOLDERS,
+)
+STOP_ISSUES = {
+    StopReason.SOURCE_NOT_SUPPORTED: NOT_SUPPORTED,
+    StopReason.SOURCE_NOT_PERMITTED: NOT_PERMITTED,
+}
+# aiowebostv's error text when the TV refuses a call for lack of permission.
+INSUFFICIENT_PERMISSIONS = "401 insufficient permissions"
+
 FRAME_SIZE = (64, 36)
 # aiowebostv waits up to 10-20 s for single replies; the pipeline's startup
 # grace is 10 s, so bound the whole connect.
@@ -44,8 +84,24 @@ START_TIMEOUT = 8.0
 RECONNECT_TIMEOUT = 8.0
 CAPTURE_TIMEOUT = 5.0
 
+# The hardware check (#115): at most this many captures, started within this
+# window; it ends after this many failed captures in a row. With the connect
+# (START_TIMEOUT) and one capture (CAPTURE_TIMEOUT) it stays near 22 s, well
+# within the 25 s each probe has (probes.py), so slow TVs keep their facts.
+PROBE_CAPTURES = 10
+PROBE_WINDOW = 9.0
+PROBE_FAILURES = 3
+
 CAPTURE_URI = "tv/executeOneShot"
-CAPTURE_PAYLOAD = {"path": "/tmp/capture.jpg", "method": "DISPLAY", "format": "JPG"}
+# The size is what the tested G3 returns anyway (it ignores the size); an older
+# capture service (webOS 4) refuses a full-screen capture without one (#221).
+CAPTURE_PAYLOAD = {
+    "path": "/tmp/capture.jpg",
+    "method": "DISPLAY",
+    "format": "JPG",
+    "width": 960,
+    "height": 540,
+}
 
 
 class WebOsFrameSource:
@@ -112,6 +168,15 @@ class WebOsFrameSource:
 
     async def capture(self) -> Frame:
         """Take a screenshot and return it downscaled."""
+        frame, _ = await self._async_capture()
+        return frame
+
+    async def _async_capture(self) -> tuple[Frame, "ImageFacts"]:
+        """Take a screenshot: the downscaled frame, and what the TV sent.
+
+        Raises SourceNotSupported or SourceUnavailable as capture() does; the
+        hardware check (#115) also reads the image facts.
+        """
         client = self._client
         if client is None or not self.is_on():
             raise SourceUnavailable("The TV is off or not connected")
@@ -119,22 +184,60 @@ class WebOsFrameSource:
         # Reasons are set outside the except blocks so the original error, whose
         # text can contain the image URL, is not chained to SourceUnavailable.
         reason: str
+        not_permitted: bool | None = None  # set when the TV refuses the call
         try:
             async with asyncio.timeout(CAPTURE_TIMEOUT):
                 if client.connection is None:
                     await self._async_wait_for_reconnect(client)
                 response = await client.request(CAPTURE_URI, CAPTURE_PAYLOAD)
                 data = await self._async_download(response["imageUri"])
-                return await self._hass.async_add_executor_job(_decode, data)
+                return await self._hass.async_add_executor_job(_decode_with_facts, data)
         except TimeoutError:
             reason = "The capture timed out"
+        except WebOsTvServiceNotFoundError:
+            # "404 no such service or method": this TV has no such call (#214).
+            reason = "The TV does not offer the screenshot call"
+            not_permitted = False
+        except WebOsTvResponseTypeError as err:
+            if _is_insufficient_permissions(err):
+                reason = "The TV does not permit the screenshot call"
+                not_permitted = True
+            else:
+                reason = "The TV refused the capture"
         except WebOsTvError:
             reason = "The TV refused the capture"
         except (aiohttp.ClientError, KeyError, TypeError):
             reason = "Could not download the capture"
         except (OSError, ValueError):
             reason = "Could not read the capture"
+        if not_permitted is not None:
+            raise SourceNotSupported(reason, not_permitted=not_permitted)
         raise SourceUnavailable(reason)
+
+    def tv_facts(self) -> dict[str, Any]:
+        """What the connected TV says about itself, for the hardware check.
+
+        Only these fields, never whole answers: they also hold the TV's
+        serial number, its unique id and a MAC-like device id.
+        """
+        client = self._client
+        if client is None:
+            return {}
+        info, state = client.tv_info, client.tv_state
+        return {
+            "model": info.system.get("modelName"),
+            "product": info.software.get("product_name"),
+            "firmware": _version(
+                info.software.get("major_ver"), info.software.get("minor_ver")
+            ),
+            "webos_version": info.hello.get("deviceOSReleaseVersion"),
+            "os_version": info.hello.get("deviceOSVersion"),
+            "is_on": state.is_on,
+            "is_screen_on": state.is_screen_on,
+            # An app id or an input's app (com.webos.app.hdmi1); never the
+            # labels, which the user can name.
+            "app": state.current_app_id,
+        }
 
     async def close(self) -> None:
         """Stop watching the connection and disconnect."""
@@ -224,14 +327,103 @@ def is_missing(
     return entry is None or entry.state is not ConfigEntryState.LOADED
 
 
-def device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
-    """The TV's device in Home Assistant, to link Glowcast's device to."""
+async def probe(
+    hass: HomeAssistant,
+    data: Mapping[str, Any],
+    options: Mapping[str, Any],
+    *,
+    measure: bool,
+) -> dict[str, Any]:
+    """The hardware check of the TV (#115): what it says about itself and,
+    when `measure`, how its screenshot call answers.
+
+    Its own connection, closed at the end. Not while Glowcast syncs
+    (`measure` false): a second capture next to the pipeline's could make
+    the pipeline's fail. No pixels, image URLs, names or ids are kept; the
+    current app only when every capture was all black.
+    """
+    source = WebOsFrameSource(hass, data[CONF_SOURCE][CONF_UNIQUE_ID])
+    try:
+        try:
+            await source.start()
+        except SourceUnavailable as err:
+            return {"connected": False, "error": str(err)}
+        tv = source.tv_facts()
+        result: dict[str, Any] = {"connected": True, "tv": tv}
+        app = tv.pop("app", None)
+        if measure:
+            result["capture"] = capture = await _async_measure(source)
+            if capture["all_black"]:
+                # Only for a picture that stays black, the case it is for
+                # (an app with copy protection); otherwise it would say what
+                # the user watches, in a report posted publicly (#282).
+                tv["app"] = app
+        return result
+    finally:
+        with suppress(Exception):
+            await source.close()
+
+
+async def _async_measure(source: WebOsFrameSource) -> dict[str, Any]:
+    """A few captures in a row: whether the TV answers, and how fast."""
+    loop = asyncio.get_running_loop()
+    begin = loop.time()
+    seconds: list[float] = []
+    failures: dict[str, int] = {}
+    refused: str | None = None
+    facts: ImageFacts | None = None
+    black = in_a_row = 0
+    while len(seconds) < PROBE_CAPTURES and loop.time() - begin < PROBE_WINDOW:
+        started = loop.time()
+        try:
+            frame, facts = await source._async_capture()
+        except SourceNotSupported as err:
+            refused = "not_permitted" if err.not_permitted else "not_supported"
+            break
+        except SourceUnavailable as err:
+            # Glowcast's own reasons; never the library's error text.
+            failures[str(err)] = failures.get(str(err), 0) + 1
+            in_a_row += 1
+            if in_a_row >= PROBE_FAILURES:
+                break
+            continue
+        seconds.append(loop.time() - started)
+        in_a_row = 0
+        black += is_all_zero(frame)
+    elapsed = loop.time() - begin
+    return {
+        # True: it gave a picture; False: it refused the call (#214); None:
+        # not known (only other failures, for example the TV is off).
+        "answered": True if seconds else False if refused else None,
+        "refused": refused,
+        "failures": failures,
+        "image": None if facts is None else dataclasses.asdict(facts),
+        "captures": len(seconds),
+        "seconds_per_capture": (
+            {
+                "min": round(min(seconds), 3),
+                "median": round(statistics.median(seconds), 3),
+                "max": round(max(seconds), 3),
+            }
+            if seconds
+            else None
+        ),
+        "captures_per_second": (
+            round(len(seconds) / elapsed, 2) if seconds and elapsed > 0 else None
+        ),
+        "black_captures": black,
+        "all_black": bool(seconds) and black == len(seconds),
+    }
+
+
+def _device_identifier(data: Mapping[str, Any]) -> tuple[str, str]:
+    """The TV device's identifier in the device registry (for `device_id`)."""
     return (WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
 
 
 def device_id(hass: HomeAssistant, data: Mapping[str, Any]) -> str | None:
     """The TV device's id in Home Assistant's device registry, if it exists."""
-    identifier = device_identifier(data)
+    identifier = _device_identifier(data)
     devices = entry_devices(hass, WEBOSTV_DOMAIN, data[CONF_SOURCE][CONF_UNIQUE_ID])
     return next(
         (device.id for device in devices if identifier in device.identifiers), None
@@ -247,9 +439,40 @@ def tvs(hass: HomeAssistant) -> dict[str, str]:
     }
 
 
-def _decode(data: bytes) -> Frame:
-    """Decode a JPEG and downscale it to FRAME_SIZE (runs in the executor)."""
+def _is_insufficient_permissions(error: WebOsTvResponseTypeError) -> bool:
+    """Whether the TV refused the call for lack of permission.
+
+    aiowebostv (0.9.2 to 0.10.0) raises this error with the TV's whole error
+    response as its argument; only its "error" field is read.
+    """
+    response = error.args[0] if error.args else None
+    return (
+        isinstance(response, Mapping)
+        and response.get("error") == INSUFFICIENT_PERMISSIONS
+    )
+
+
+@dataclass(frozen=True)
+class ImageFacts:
+    """What the TV sent, from the image's header: never its pixels."""
+
+    format: str | None
+    width: int
+    height: int
+    bytes: int
+
+
+def _decode_with_facts(data: bytes) -> tuple[Frame, ImageFacts]:
+    """Decode and downscale, and read the format and size from the header
+    (runs in the executor)."""
     with Image.open(io.BytesIO(data)) as image:
+        facts = ImageFacts(image.format, image.width, image.height, len(data))
         image.draft("RGB", FRAME_SIZE)
         small = image.convert("RGB").resize(FRAME_SIZE, Image.Resampling.BOX)
-    return Frame(width=small.width, height=small.height, pixels=small.tobytes())
+    frame = Frame(width=small.width, height=small.height, pixels=small.tobytes())
+    return frame, facts
+
+
+def _version(major: Any, minor: Any) -> str | None:
+    """The firmware version as Home Assistant's webostv integration shows it."""
+    return f"{major}.{minor}" if major and minor else None

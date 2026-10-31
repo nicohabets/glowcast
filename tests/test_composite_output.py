@@ -8,6 +8,7 @@ import logging
 
 import pytest
 
+from custom_components.glowcast.core.light_test import STEP
 from custom_components.glowcast.core.models import Channel, ChannelColor
 from custom_components.glowcast.core.pipeline import (
     Phase,
@@ -16,6 +17,7 @@ from custom_components.glowcast.core.pipeline import (
     Settings,
     StopReason,
     UpdateRate,
+    run_light_test,
 )
 from custom_components.glowcast.core.ports import (
     OutputAuthFailed,
@@ -144,6 +146,28 @@ async def test_a_part_that_cannot_start_is_dropped() -> None:
     await p.tick(1)
     assert p.area.sent == []
     assert p.lights.sent
+
+
+async def test_the_light_test_leaves_out_a_busy_part_and_tests_the_rest() -> None:
+    """The light test while off (#182, #270): another app streams the area,
+    so it is left out; the Home Assistant lights still show the test, and
+    both parts are released."""
+    p = Parts()
+    p.lights.channels = [Channel("0", "left lamp", -1, 0)]
+    p.area.start_errors = [OutputBusy("another app streams")]
+
+    async def runner(func, *args):  # type: ignore[no-untyped-def]
+        return func(*args)
+
+    test = asyncio.ensure_future(run_light_test(p.output, 1.0, runner, p.clock))
+    await p.clock.advance(2 * STEP + 1)
+    assert await test is None
+    assert p.area.sent == []
+    shown = [colors[0].rgb for _, colors in p.lights.sent]
+    assert shown[0] == pytest.approx((1.0, 0.0, 0.0), abs=0.01)  # left: red
+    assert shown[-1] == pytest.approx((1.0, 1.0, 1.0), abs=0.01)  # then white
+    for log in (p.area_log, p.lights_log):
+        assert log[-2:] == ["output.stop", "output.close"]
 
 
 async def test_parts_dropped_from_the_outset_are_reported() -> None:

@@ -161,15 +161,27 @@ def colour_step(
     stop: float,
     mode: str = MODE,
 ) -> None:
-    """Each Home Assistant light shows its colour once settled (Windows times)."""
-    a, b = start + bench.th.ha_lights_settle_s, stop - 0.3
+    """Each Home Assistant light shows its colour once settled (Windows
+    times): from `ha_lights_settle_s` after Glowcast's first command to it in
+    the step."""
+    b = stop - 0.3
     samples = bench.samples()
+    sent = ha_lights.commands(
+        bench.ha.calls if bench.ha else [],
+        [entity_of(bench, li) for li in bench.ha_lights],
+    )
     numbers: dict[str, Any] = {}
     ok = True
     judged = 0
     for light in bench.ha_lights:
         label = bench.ha_lights_label[light.index]
         want = expected[light.index]
+        a = ha_lights.judged_from(
+            start,
+            [bench.win(t) for t, _ in sent[entity_of(bench, light)]],
+            stop,
+            bench.th.ha_lights_settle_s,
+        )
         states = ha_lights.states_between(
             bench.owner.samples, light.entity_id, bench.wsl(a), bench.wsl(b)
         )
@@ -179,6 +191,7 @@ def colour_step(
             continue
         judged += 1
         numbers[f"{label} expected"] = want
+        numbers[f"{label} judged from s"] = round(a - start, 2)
         if light.camera is not None:
             mean = rp.settled(samples, light.camera, a, b)
             cal = bench.cal[light.camera]
@@ -192,6 +205,8 @@ def colour_step(
         else:
             numbers[f"{label} state"] = state_colour
             numbers[f"{label} states"] = len(states)
+            if state_colour != want:
+                numbers[f"{label} colours"] = ha_lights.colour_counts(states)
             ok &= state_colour == want
     shown = "the colour of its band" if pattern == SPLIT else pattern
     bench.report.add(

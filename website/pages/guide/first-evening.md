@@ -4,9 +4,13 @@
 
 Glowcast's switch (for example `switch.glowcast_living_room_tv`) starts and stops syncing. Put it where you can reach it: edit a dashboard and add a card with the switch, for example a tile card. Add the **Status** sensor (for example `sensor.glowcast_living_room_tv_status`) too if you like to see what Glowcast is doing. You can also switch it on Glowcast's device page under **Controls**, or by voice once you expose the switch to Assist.
 
-![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
+![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, the settings and the Test lights button under Configuration, and the Run hardware check button under Diagnostic.](../images/device-page.png){ width="400" }
 
 *Glowcast's device page: the switch under Controls, the status under Sensors, the settings under Configuration.*
+
+## Check where the lights are
+
+Press **Test lights** on Glowcast's device, under **Configuration**: the lights show red on the left and blue on the right, then green at the top and white below, about 3 seconds each, and go back to how they were. A light in the wrong colour has the wrong place. See [Test the lights](../docs/settings.md#test-lights).
 
 ## Switch it on
 
@@ -40,7 +44,7 @@ Glowcast does not start by itself, with one exception: when Home Assistant resta
 The ready-made blueprint **Start Glowcast when the TV turns on** switches Glowcast on when the TV turns on.
 
 1. Open [Starting automatically](../docs/starting.md#the-blueprint) and click **Import the blueprint**. It opens the import dialog in your own Home Assistant.
-2. Create an automation from the blueprint: choose the **TV** and the **Glowcast switch**. Turn on **Also stop when the TV turns off** if you want the switch to go off the moment the TV reports "off" (Glowcast stops by itself anyway).
+2. Create an automation from the blueprint: choose the **TV** and the **Glowcast switch**. Turn on **Also stop when the TV turns off** if you want the switch to go off the moment the TV reports "off" (Glowcast stops by itself anyway). Optionally, turn on **Only after dark**, or list the inputs or apps under **Only for these inputs or apps** (see [The blueprint](../docs/starting.md#the-blueprint)).
 3. Save the automation.
 
 Glowcast waits up to 10 seconds for the TV to show a picture, so it can start the moment the TV reports "on". To write the automation yourself instead, use the example on [Your own automation](../docs/starting.md#your-own-automation).

@@ -26,10 +26,34 @@ When you pick Home Assistant lights and some of them are Hue lights that could j
 
 One Glowcast can drive an entertainment area and Home Assistant lights at the same time, with one switch: for example the Hue lights round the TV in an entertainment area, and a lamp of another brand beside the sofa as a Home Assistant light. The area keeps its own pace (up to 25 changes per second) and the Home Assistant lights theirs (about one per second); the Home Assistant lights never slow the area down.
 
-Set it up under **Configure**: choose **Entertainment area and Home Assistant lights**. You go through the [entertainment area's steps](setup.md#an-entertainment-area) first, then the [Home Assistant lights' steps](setup.md#home-assistant-lights), then brightness, intensity and the update rate. See [Both together](setup.md#both-together) on the next page.
+Set it up under **Configure**: choose **Hue area and Home Assistant lights**. You go through the [entertainment area's steps](setup.md#an-entertainment-area) first, then the [Home Assistant lights' steps](setup.md#home-assistant-lights), then brightness, intensity and the update rate. See [Both together](setup.md#both-together) on the next page.
 
-A light cannot be in both. If a Home Assistant light you pick is already in the entertainment area, the settings screen says so: "... already follow the TV through the entertainment area, so they cannot also be Home Assistant lights". Pick the other lights one by one, or an area or group without them.
+A light cannot be in both. If a Home Assistant light you pick is already in the entertainment area, the settings screen says so: "... already follow the picture through the entertainment area, so they cannot also be Home Assistant lights". Pick the other lights one by one, or an area or group without them.
 
+
+## Next to a Hue Sync Box
+
+A Philips Hue Play HDMI Sync Box syncs the Hue lights of its own entertainment area. Glowcast cannot use the box's colours (the box does not share them), but it can make your **other** lights follow the picture at the same time, so the whole room joins in:
+
+- **Use Home Assistant lights only**, no entertainment area. A Hue bridge streams to one entertainment area at a time, so a Glowcast with an area would not start while the box syncs. With Home Assistant lights only, Glowcast never touches the box's stream: the box keeps syncing when Glowcast starts, runs and stops.
+- **None of the box's own lights.** While the box syncs, the bridge ignores other commands to the lights of its entertainment area, so such a light would not follow Glowcast. Pick lights that are not in the box's area: lamps of other brands, or Hue lights outside it.
+- **Glowcast needs its own picture**: the TV, as usual, or a computer screen. It does not read the box's HDMI signal.
+
+If one of Glowcast's Home Assistant lights is a Hue light in an entertainment area that another app syncs (the box, or the Hue Sync app), Home Assistant shows a repair when Glowcast starts: **Home Assistant lights in an area another app syncs**, with the lights and the area. The other lights work as usual. Choose Home Assistant lights without it in Glowcast's settings, or take it out of the area in the Hue app.
+
+### Start and stop with the box
+
+The blueprint **Follow a Hue Sync Box** turns Glowcast on when the box starts syncing and off when it stops. It asks for:
+
+- **Sync Box syncing**: an entity that is on while the box syncs. With the [Hue Sync Box integration](https://github.com/mvdwetering/huesyncbox) (from HACS) that is the box's **Light sync** switch. Without it, Home Assistant's own Hue integration has a binary sensor for each entertainment area that is on while the area syncs: choose the one of the box's area.
+- **Glowcast switch**: the switch of the Glowcast with the Home Assistant lights.
+- **TV** (optional): only start while this TV is on, for example when the box also syncs for another screen.
+
+[Import the blueprint](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fnicohabets%2Fglowcast%2Fmain%2Fblueprints%2Fautomation%2Fglowcast%2Ffollow_sync_box.yaml){ .md-button .md-button--primary }
+
+### The timing
+
+The box's own lights follow the HDMI signal through an entertainment area, many times per second, without a visible delay. Glowcast's Home Assistant lights change about once per second each, with a fade, from about 3 pictures per second of the TV (see [How fast Home Assistant lights are](#how-fast-home-assistant-lights-are)). So they follow the same scenes, a little behind the box's lights; they are not as quick in fast cuts. How far behind has not been measured with a Sync Box yet.
 
 ## How fast Home Assistant lights are { #how-fast-home-assistant-lights-are }
 

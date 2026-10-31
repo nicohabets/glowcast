@@ -24,6 +24,7 @@ from custom_components.glowcast.core.liveliness import Liveliness, Profile
 from custom_components.glowcast.core.models import Channel, Frame
 from custom_components.glowcast.core.pipeline import (
     NO_PICTURE_WAIT,
+    STARTUP_GRACE,
     Phase,
     Pipeline,
     PipelineStatus,
@@ -41,6 +42,7 @@ from custom_components.glowcast.core.ports import (
     OutputTooManyChannels,
     OutputUnavailable,
     SourceAuthFailed,
+    SourceNotSupported,
     SourceUnavailable,
 )
 
@@ -1002,6 +1004,96 @@ async def test_source_rejects_the_key_while_streaming() -> None:
     await h.clock.advance(1)
     h.source.frames = [SourceAuthFailed("rejected")]
     assert await h.finish() == StopReason.SOURCE_AUTH_FAILED
+    assert h.log[-3:] == CLEANUP
+
+
+# The source refuses to give its picture (#214): stop at the first refusal.
+
+REFUSALS = [
+    (SourceNotSupported("no such call"), StopReason.SOURCE_NOT_SUPPORTED),
+    (
+        SourceNotSupported("not permitted", not_permitted=True),
+        StopReason.SOURCE_NOT_PERMITTED,
+    ),
+]
+
+
+@pytest.mark.parametrize(("error", "reason"), REFUSALS)
+async def test_source_refusing_at_start_stops_when_the_grace_ends(
+    error: SourceNotSupported, reason: StopReason
+) -> None:
+    """A source that may still be starting is asked again for the startup
+    grace; it stops with the refusal, and the lights are never touched."""
+    h = Harness()
+    h.source.default = error
+    await h.start()
+    await h.clock.advance(STARTUP_GRACE - 1)
+    assert h.task is not None and not h.task.done()
+    await h.clock.advance(2)
+    assert h.task.done()
+    assert await h.finish() == reason
+    assert h.source.captures > 1
+    assert "output.start" not in h.log
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_the_grace_ends_on_a_refusal_during_an_attempt() -> None:
+    """The grace may end while the next attempt is still asking: the last
+    answer, the refusal, still counts (#253)."""
+    h = Harness()
+    h.source.default = SourceNotSupported("not permitted", not_permitted=True)
+    # Attempts of 0.6 s and 1 s apart: the one from 9.6 s is cut off at 10 s.
+    h.source.capture_time = 0.6
+    await h.start()
+    await h.clock.advance(STARTUP_GRACE + 1)
+    assert await h.finish() == StopReason.SOURCE_NOT_PERMITTED
+    assert "output.start" not in h.log
+
+
+async def test_a_refusal_at_start_that_passes_starts_normally() -> None:
+    """A TV still starting its services may refuse once (#214)."""
+    h = Harness()
+    h.source.frames = [SourceNotSupported("no such call yet")]
+    await h.start()
+    await h.clock.advance(3)
+    assert h.task is not None and not h.task.done()
+    assert "output.start" in h.log
+    assert await h.stop() == StopReason.USER
+
+
+async def test_the_grace_ends_on_tv_off_after_an_earlier_refusal() -> None:
+    """Only the last answer counts: a refusal followed by no picture is TV_OFF."""
+    h = Harness()
+    h.source.frames = [SourceNotSupported("no such call yet")]
+    h.source.default = SourceUnavailable("off")
+    await h.start()
+    await h.clock.advance(STARTUP_GRACE + 1)
+    assert await h.finish() == StopReason.TV_OFF
+
+
+@pytest.mark.parametrize(("error", "reason"), REFUSALS)
+async def test_source_refuses_while_streaming(
+    error: SourceNotSupported, reason: StopReason
+) -> None:
+    """The first refusal stops, without waiting for five failed captures."""
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    captures = h.source.captures
+    h.source.frames = [error]
+    await h.clock.advance(0.5)
+    assert h.task is not None and h.task.done()
+    assert await h.finish() == reason
+    assert h.source.captures == captures + 1
+    assert h.log[-3:] == CLEANUP
+
+
+async def test_source_refuses_while_the_lights_are_released() -> None:
+    h = Harness()
+    await lose_picture(h)
+    h.source.frames = [SourceNotSupported("no such call")]
+    await h.clock.advance(0.5)
+    assert await h.finish() == StopReason.SOURCE_NOT_SUPPORTED
     assert h.log[-3:] == CLEANUP
 
 

@@ -6,8 +6,8 @@ Glowcast is a Home Assistant custom integration (HACS) that makes Hue lights fol
 
 ## Scope rules
 
-- v0.1 (webOS source, Hue entertainment-area output, one switch, the options screen) is built. The milestone in progress is **v0.4**.
-- Only work on issues in the **Todo** column of the project board (see "How we work"). An issue in any milestone, v0.4 included, is out of scope until the product owner moves it to Todo; never build ahead for a later issue.
+- v0.1 (webOS source, Hue entertainment-area output, one switch, the options screen) is built. So are v0.2 to v0.5. The milestone in progress is **v0.6**.
+- Only work on issues in the **Todo** column of the project board (see "How we work"). An issue in any milestone, v0.6 included, is out of scope until the product owner moves it to Todo; never build ahead for a later issue.
 - Keep the ports (`FrameSource`, `LightOutput`) so later features can be added without rewrites, but do not build placeholders or stub adapters for them.
 - Prefer the simplest thing that works. No speculative options, no config knobs that are not in the architecture.
 
@@ -56,7 +56,7 @@ uv run --project screen_helper glowcast-screen --pattern cycle --name "Test PC" 
 
 - Hardware: an LG OLED65G36LA (2023, G3) on webOS, a Hue Pro bridge, and a Hue entertainment area with a gradient lightstrip. Hardware details that are specific to the owner's home (names, addresses, credentials) are given in the session handover, never in this repository.
 - Measured: about 4.1 captures per second with `WebOsFrameSource` (download and decode to 64x36 included), from a 960x540 JPEG (see architecture section 2).
-- Minimum Home Assistant version: 2025.7.2 (architecture section 2).
+- Minimum Home Assistant version: 2026.8.3 (architecture section 2 and D17; webOS 26 pairing needs `aiowebostv` 0.9.2).
 
 ## How we work
 

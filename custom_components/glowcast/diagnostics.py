@@ -82,6 +82,8 @@ async def async_get_config_entry_diagnostics(
         "output": output,
         "syncing": runtime is not None and runtime.is_on,
         "status": None if status is None else dataclasses.asdict(status),
+        # The last hardware check (#115), in memory since the entry loaded.
+        "hardware_check": None if runtime is None else runtime.hardware_check,
         "repair_issues": [
             key
             for key in issue_keys()

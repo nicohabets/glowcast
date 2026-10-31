@@ -43,7 +43,11 @@ from ..issues import Issue
 from .blocks import other_block
 from .colors import at_level, average
 from .ha_lights_schedule import NETWORK_COMMANDS_PER_SECOND, Schedule, network_of
-from .hue_entertainment import OUTPUT_HUE_ENTERTAINMENT, async_area_lights
+from .hue_entertainment import (
+    OUTPUT_HUE_ENTERTAINMENT,
+    async_area_lights,
+    async_streamed_lights,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +91,13 @@ IN_AREA = Issue(
     "loose_lights_in_area",
     "loose_lights_in_area",
     "some Home Assistant lights are in the entertainment area too",
+)
+# Home Assistant lights in an entertainment area that another app streams, for
+# example a Hue Sync Box (#219): the bridge ignores their commands meanwhile.
+STREAMED = Issue(
+    "ha_lights_streamed_elsewhere",
+    "ha_lights_streamed_elsewhere",
+    "some Home Assistant lights are in an entertainment area another app streams",
 )
 
 # The send loop's rhythm: one command per network per tick at most, so never
@@ -517,6 +528,57 @@ async def async_in_area_notice(
         return None
     names = _left_out(hass).get(_left_out_key(area, options[CONF_OUTPUT]))
     return None if names is None else {"lights": names}
+
+
+async def async_streamed_notice(
+    hass: HomeAssistant, data: Mapping[str, Any], options: Mapping[str, Any]
+) -> Mapping[str, str] | None:
+    """The placeholders of STREAMED when some of the lights Glowcast drives
+    are in an entertainment area that another app streams now (#219), else
+    None (also when no bridge can be asked).
+
+    They stay in the run: they follow again when the other app stops. An
+    entertainment area of the same entry is Glowcast's own (#198).
+    """
+    try:
+        lights = [
+            light
+            for light in resolve(hass, options[CONF_OUTPUT])
+            if _available(hass, light.entity_id)
+        ]
+    except (OutputNotFound, OutputUnavailable):
+        return None
+    own = other_block(options, OUTPUT_HUE_ENTERTAINMENT)
+    streamed = await async_streamed_lights(
+        hass,
+        {
+            entity_id
+            for light in lights
+            for entity_id in (light.entity_id, *group_lights(hass, light.entity_id))
+        },
+        own,
+    )
+    found = lights_in(hass, lights, set(streamed))
+    if not found:
+        return None
+    names = ", ".join(sorted(light.name for light in found))
+    areas = ", ".join(
+        sorted(
+            {
+                streamed[entity_id]
+                for light in found
+                for entity_id in (light.entity_id, *group_lights(hass, light.entity_id))
+                if entity_id in streamed
+            }
+        )
+    )
+    _LOGGER.warning(
+        "Some Home Assistant lights are in an entertainment area that another "
+        "app streams (%s), so they do not follow Glowcast while it does: %s",
+        areas,
+        names,
+    )
+    return {"lights": names, "areas": areas}
 
 
 def _left_out(hass: HomeAssistant) -> dict[str, str | None]:

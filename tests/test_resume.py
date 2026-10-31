@@ -6,9 +6,18 @@ on. A restart is the restore cache of HA's test framework; the stop is what
 HA really does (cancel the background tasks while stopping).
 """
 
+import asyncio
+
 import pytest
-from homeassistant.const import SERVICE_TURN_OFF, SERVICE_TURN_ON, STATE_OFF, STATE_ON
-from homeassistant.core import CoreState, HomeAssistant, State
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import (
+    EVENT_STATE_CHANGED,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_OFF,
+    STATE_ON,
+)
+from homeassistant.core import CoreState, Event, HomeAssistant, State, callback
 from homeassistant.helpers import restore_state as rs
 from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
@@ -16,10 +25,23 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.glowcast import runtime
 from custom_components.glowcast.core.pipeline import StopReason
-from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.core.ports import (
+    SourceNotSupported,
+    SourceUnavailable,
+)
 
 from .fakes import FakeAdapters, FakePipeline, wait_for
-from .test_init import ENTITY, settle, setup, state, switch, tv_device  # noqa: F401
+from .test_hardware_check import FakeProbe, output_probe, source_probe  # noqa: F401
+from .test_init import (  # noqa: F401
+    ENTITY,
+    issues,
+    settle,
+    setup,
+    state,
+    stop_home_assistant,
+    switch,
+    tv_device,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -243,3 +265,190 @@ async def test_an_unexpected_error_counts_as_off(
     await wait_for(lambda: "did not continue" in caplog.text)
     assert fakes.log.count("source.start") > 1  # looked again after the error
     assert state(hass) == STATE_OFF
+
+
+@pytest.mark.usefixtures("quick")
+async def test_a_refusing_tv_is_started_and_stops_with_its_repair_issue(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A TV that refuses the screenshot call (for example after a firmware
+    update while Home Assistant was down) counts as on: the normal start
+    ends on the refusal after the startup grace, with the source type's
+    repair issue, instead of looking again for minutes (#253)."""
+    fakes.source_refusal = SourceNotSupported("refused", not_permitted=True)
+    # Stands in for the real start's grace ending on the refusal.
+    FakePipeline.start_error = StopReason.SOURCE_NOT_PERMITTED
+    states: list[str] = []
+
+    @callback
+    def changed(event: Event) -> None:
+        if event.data["entity_id"] == ENTITY:
+            states.append(event.data["new_state"].state)
+
+    hass.bus.async_listen(EVENT_STATE_CHANGED, changed)
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: issues(hass, entry) == {"webos_not_permitted"})
+    await settle(hass)
+    assert fakes.sources[0].captures == 1  # looked once, not for minutes
+    assert fakes.log[:3] == ["source.start", "source.close", "source.start"]
+    assert len(FakePipeline.instances) == 1
+    assert states[-2:] == [STATE_ON, STATE_OFF]
+    status = entry.runtime_data.status
+    assert status is not None
+    assert status.stop_reason is StopReason.SOURCE_NOT_PERMITTED
+    assert stored_resume(hass) is False  # a stop by itself is not resumed
+
+
+# Captures at once (#269)
+
+
+async def test_a_switch_on_ends_a_look_first(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A look in progress is closed before the pipeline connects, and no
+    look follows."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    await switch(hass, SERVICE_TURN_ON)
+    assert fakes.log == [
+        "source.start",
+        "source.close",
+        "source.start",
+        "output.start",
+    ]
+    fakes.source_gate.set()
+    await settle(hass)
+    assert fakes.log.count("source.start") == 2
+    assert len(FakePipeline.instances) == 1
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_switch_off_ends_a_look(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])
+    await switch(hass, SERVICE_TURN_OFF)
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    await settle(hass)
+    assert FakePipeline.instances == []
+    assert state(hass) == STATE_OFF
+
+
+@pytest.mark.usefixtures("quick")
+async def test_an_unload_ends_a_look(hass: HomeAssistant, fakes: FakeAdapters) -> None:
+    """The look's connection is closed, and no look or start follows (#282)."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    await asyncio.sleep(0.05)  # several intervals
+    await settle(hass)
+    assert fakes.log == ["source.start", "source.close"]
+    assert FakePipeline.instances == []
+    assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_home_assistant_stopping_ends_a_resume_that_waits_for_a_test(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """Home Assistant stops in its real order while the resume's start waits
+    for a light test's release: its cancelling of the resume goes through
+    instead of being taken for the test's end (#282). The test's lights are
+    released, and nothing claims them after."""
+    fakes.source_gate = asyncio.Event()
+    fakes.output_stop_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    try:
+        await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+        await entry.runtime_data.async_test_lights()
+        await wait_for(lambda: fakes.log == ["source.start", "output.start"])
+        [resume] = [
+            task
+            for task in hass._background_tasks
+            if isinstance(task, asyncio.Task) and task.get_name().endswith(" resume")
+        ]
+        fakes.source_gate.set()  # the TV is on: the resume starts
+        await wait_for(lambda: fakes.log[-1] == "source.close")
+        await asyncio.sleep(0.01)  # the start now waits for the test's release
+        assert entry.runtime_data._transition.locked()
+        stop_home_assistant(hass)
+        await asyncio.sleep(0.01)
+        assert resume.cancelled()
+        fakes.output_stop_gate.set()
+        await settle(hass)
+        assert fakes.log == [
+            "source.start",
+            "output.start",
+            "source.close",
+            "output.stop",
+            "output.close",
+        ]
+        assert FakePipeline.instances == []
+    finally:
+        fakes.source_gate.set()
+        fakes.output_stop_gate.set()
+        hass.set_state(CoreState.running)
+
+
+@pytest.mark.usefixtures("quick")
+async def test_no_look_while_a_check_measures(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,  # noqa: F811
+    output_probe: FakeProbe,  # noqa: F811
+) -> None:
+    """The check captures from the source; a look waits until it is done."""
+    restored(hass, True)
+    hass.set_state(CoreState.starting)
+    entry = await setup(hass)
+    source_probe.release = asyncio.Event()
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: len(source_probe.calls) == 1)
+    assert source_probe.calls[0]["measure"] is True
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire("homeassistant_started")
+    await asyncio.sleep(0.05)  # several intervals
+    assert fakes.log == []
+    source_probe.release.set()
+    await wait_for(lambda: state(hass) == STATE_ON)
+    assert len(FakePipeline.instances) == 1
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+@pytest.mark.usefixtures("quick")
+async def test_a_check_that_measures_ends_a_look_first(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,  # noqa: F811
+    output_probe: FakeProbe,  # noqa: F811
+) -> None:
+    """The look is closed before the check captures; the next one follows
+    after the check."""
+    fakes.source_gate = asyncio.Event()
+    restored(hass, True)
+    entry = await setup(hass)
+    await wait_for(lambda: fakes.log == ["source.start"])  # the look waits
+    source_probe.release = asyncio.Event()
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: len(source_probe.calls) == 1)
+    assert source_probe.calls[0]["measure"] is True
+    assert fakes.log == ["source.start", "source.close"]
+    await asyncio.sleep(0.05)  # several intervals
+    assert fakes.log == ["source.start", "source.close"]
+    fakes.source_gate.set()
+    source_probe.release.set()
+    await wait_for(lambda: state(hass) == STATE_ON)
+    assert len(FakePipeline.instances) == 1
+    await switch(hass, SERVICE_TURN_OFF)

@@ -7,6 +7,7 @@ colours.
 import asyncio
 import logging
 import math
+import os
 import time
 from collections.abc import Mapping
 from types import MappingProxyType
@@ -14,7 +15,10 @@ from typing import Any
 
 from custom_components.glowcast.const import CONF_OUTPUT
 from custom_components.glowcast.core.models import Channel, ChannelColor, Frame
-from custom_components.glowcast.core.ports import SourceUnavailable
+from custom_components.glowcast.core.ports import (
+    SourceNotSupported,
+    SourceUnavailable,
+)
 from custom_components.glowcast.outputs.hue_entertainment import CONF_AREA_ID
 from custom_components.glowcast.sources.webos import FRAME_SIZE
 
@@ -31,6 +35,9 @@ BLOBS = [
     ((0.6, 0.15, 0.9), 0.7, 0.025),
 ]
 BLOB_WIDTH = 0.18  # in the picture's widths
+# A TV that refuses the screenshot call (#214), to show its repair issue:
+# "not_supported" or "not_permitted" in this variable when the demo starts.
+REFUSE = "GLOWCAST_DEMO_REFUSE"
 # Channels per entertainment area, as the fake bridge reports them
 # (AREAS in fake_bridge.py; this stub cannot import it).
 AREA_CHANNELS = {
@@ -83,6 +90,11 @@ class FakeTvSource:
         if not self._started:
             raise SourceUnavailable("The fake TV is not started")
         await asyncio.sleep(CAPTURE_SECONDS)
+        if (refuse := os.environ.get(REFUSE)) in ("not_supported", "not_permitted"):
+            raise SourceNotSupported(
+                f"The fake TV refuses the screenshot call ({refuse})",
+                not_permitted=refuse == "not_permitted",
+            )
         return picture(time.monotonic())
 
     async def close(self) -> None:
@@ -127,3 +139,75 @@ class FakeLightOutput:
 
     async def close(self) -> None:
         """Nothing to close."""
+
+
+async def tv_probe(
+    hass: Any, data: Any, options: Any, *, measure: bool
+) -> dict[str, Any]:
+    """The hardware check of the fake TV (#115): generic values, in the shape
+    of the webOS probe."""
+    await asyncio.sleep(2 if measure else 0.2)
+    result: dict[str, Any] = {
+        "connected": True,
+        "tv": {
+            "model": "OLED55C3",
+            "product": "webOSTV 23",
+            "firmware": "33.31",
+            "webos_version": "10.2.0",
+            "os_version": "8.2.0",
+            "is_on": True,
+            "is_screen_on": True,
+            "app": "com.webos.app.hdmi1",
+        },
+    }
+    if measure:
+        result["capture"] = {
+            "answered": True,
+            "refused": None,
+            "failures": {},
+            "image": {"format": "JPEG", "width": 960, "height": 540, "bytes": 81234},
+            "captures": 10,
+            "seconds_per_capture": {"min": 0.21, "median": 0.24, "max": 0.31},
+            "captures_per_second": 4.1,
+            "black_captures": 0,
+            "all_black": False,
+        }
+    return result
+
+
+async def lights_probe(
+    hass: Any, data: Any, options: Any, *, measure: bool
+) -> dict[str, Any]:
+    """The hardware check of the fake bridge (#115): generic values, in the
+    shape of the Hue probe, for the chosen area's channels."""
+    count = AREA_CHANNELS.get(str(options[CONF_OUTPUT].get(CONF_AREA_ID, "")), 5)
+    return {
+        "api_version": 2,
+        "bridge": {
+            "modelid": "BSB002",
+            "swversion": "1972004020",
+            "apiversion": "1.72.0",
+            "datastoreversion": "172",
+        },
+        "areas": len(AREA_CHANNELS),
+        "streaming": "none",
+        "area": {
+            "configuration_type": "screen",
+            "channel_count": count,
+            "channels": [
+                {
+                    "channel": c,
+                    "position": {"x": c / 2 - 1, "y": 0.8, "z": 0.0},
+                    "members": [
+                        {
+                            "segment": c,
+                            "model_id": "LCX004",
+                            "archetype": "hue_lightstrip_tv",
+                        }
+                    ],
+                }
+                for c in range(count)
+            ],
+            "stream": "none",
+        },
+    }

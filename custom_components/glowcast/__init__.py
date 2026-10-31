@@ -9,7 +9,13 @@ from .outputs import OUTPUTS
 from .outputs.blocks import output_types
 from .runtime import GlowcastConfigEntry, GlowcastData, async_remove_issues
 
-PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
@@ -20,8 +26,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> 
     async def _async_ha_stop(event: Event) -> None:
         # HA does not unload entries on shutdown. It cancels background tasks
         # first, which makes the pipeline release the lights; this waits for
-        # that release as a backstop.
-        await data.async_stop()
+        # that release as a backstop. A start, light test or hardware check
+        # that comes after it does nothing (#282).
+        await data.async_close()
 
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_ha_stop)
@@ -32,8 +39,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> 
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GlowcastConfigEntry) -> bool:
-    """Stop syncing, release the lights and unload."""
-    await entry.runtime_data.async_stop()
+    """Stop syncing, release the lights and unload; nothing starts after it."""
+    await entry.runtime_data.async_close()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

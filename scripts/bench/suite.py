@@ -203,6 +203,44 @@ class Bench:
                 [t, s["status"]]
                 for t, s in (self.bridge.samples if self.bridge else [])
             ],
+            **self.raw_ha_lights(),
+        }
+
+    def raw_ha_lights(self) -> dict[str, Any]:
+        """The Home Assistant lights' polled owner states and the light calls in the
+        local HA (#217), by label: what a colour step judged, beside the
+        commands Glowcast sent."""
+        label = {
+            light.entity_id: self.ha_lights_label[light.index]
+            for light in self.ha_lights
+        }
+        proxy = {
+            p["entity_id"]: label.get(light.entity_id, "in area")
+            for light in [*self.ha_lights, *([self.in_area] if self.in_area else [])]
+            if (p := self.proxies.get(light.index))
+        }
+        calls = []
+        for t, service, data in self.ha.light_calls if self.ha else []:
+            ids = data.get("entity_id")
+            names = [
+                proxy.get(e) for e in ([ids] if isinstance(ids, str) else ids or [])
+            ]
+            if any(names):
+                calls.append(
+                    [
+                        t,
+                        service,
+                        [n for n in names if n],
+                        {k: v for k, v in data.items() if k != "entity_id"},
+                    ]
+                )
+        return {
+            "ha_lights_states": [
+                [t, label[e], ha_lights.raw_state(s)]
+                for t, e, s in (self.owner.samples if self.owner else [])
+                if e in label
+            ],
+            "ha_lights_calls": calls,
         }
 
     def forbidden(self) -> list[str]:
@@ -1447,6 +1485,83 @@ class Bench:
                 "helper stopped: tv_off, area stops, lights back (camera)",
                 "helper",
             )
+        await self.test_lights_step(mode)
+
+    async def test_lights_step(self, mode: str) -> None:
+        """The Test lights button while Glowcast is off and the helper is
+        stopped (#182): the area streams without a picture source, each light
+        the colour of its side (left red, right blue), then green or white;
+        then the area is released and the lights come back (camera), and the
+        switch stays off."""
+        assert self.ha is not None and self.bridge is not None
+        title = "test lights (off, no picture source): each light its side, back"
+        if "test_lights" not in self.ha.entities:
+            self.report.add(
+                Step(title, mode, SKIP, note="this Glowcast has no Test lights")
+            )
+            return
+        start = time.time()
+        await self.ha.call(
+            "button", "press", {"entity_id": self.ha.entities["test_lights"]}
+        )
+        area = self.cfg["bench_area_id"]
+        active = await self.bridge.wait_status(area, "active", self.th.stream_within_s)
+        if active is None:
+            self.report.add(Step(title, mode, FAIL, note="the area did not stream"))
+            return
+        # The test starts when the stream's handshake is done (seconds after
+        # the area turns active) and the lights are released right after it,
+        # so the patterns are judged back from the release: each shows for
+        # 3 s (core/light_test.py STEP).
+        inactive = await self.bridge.wait_status(area, "inactive", 25)
+        numbers: dict[str, Any] = {"area active after s": round(active - start, 2)}
+        if inactive is None:
+            self.report.add(
+                Step(title, mode, FAIL, numbers=numbers, note="area kept streaming")
+            )
+            return
+        numbers["area inactive after s"] = round(inactive - start, 2)
+        end = self.win(inactive)
+        await self.sleep_until_win(end + 0.6)
+        samples = self.samples()
+        ok = True
+        for name in self.lights:
+            first = rp.settled(samples, name, end - 5.0, end - 3.5)
+            second = rp.settled(samples, name, end - 2.0, end - 0.5)
+            seen = [
+                None if mean is None else rp.classify(mean, self.cal[name], self.th)
+                for mean in (first, second)
+            ]
+            side = None if self.sides is None else self.sides[name]
+            if side is not None:
+                ok &= seen[0] == ("red" if side == "left" else "blue")
+            else:
+                ok &= seen[0] in ("red", "blue")
+            ok &= seen[1] in ("green", "white")
+            numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
+                str(s) for s in seen
+            )
+        back = await self.wait_restored(end, self.th.restore_within_s)
+        switch = (await self.ha.state("switch"))["state"]
+        numbers["switch"] = switch
+        for light, seconds in back.items():
+            numbers[f"{self.label[light]} back after s"] = seconds
+        problems = []
+        if not ok:
+            problems.append("a light showed another colour")
+        if any(v is None for v in back.values()):
+            problems.append("a light did not come back (camera)")
+        if switch != "off":
+            problems.append("the switch changed")
+        self.report.add(
+            Step(
+                title,
+                mode,
+                FAIL if problems else PASS,
+                numbers=numbers,
+                note="; ".join(problems),
+            )
+        )
 
     async def wait_for_red(self, interval: float) -> None:
         """Until the cycle starts red: three colours before its black (all zero)."""

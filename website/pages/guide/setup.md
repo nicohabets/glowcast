@@ -16,7 +16,7 @@ Glowcast uses the TV's pairing from the LG webOS Smart TV integration, so the TV
 
 ## 3. Choose the lights
 
-**Which lights should follow the picture?** Choose **Hue entertainment area - the smoothest** or **Home Assistant lights - any brand, slower**. [Choosing your lights](lights.md) explains the difference; you can change it later.
+**Which lights follow the picture?** Choose **Hue entertainment area - smoothest** or **Home Assistant lights - any brand**. [Choosing your lights](lights.md) explains the difference; you can change it later.
 
 ### An entertainment area
 
@@ -52,12 +52,12 @@ A light that joins the area or group later follows the middle of the picture unt
 
 An entertainment area and Home Assistant lights together are set up under **Configure**, after setup:
 
-1. Open **Settings → Devices & services → Glowcast → Configure** and choose **Entertainment area and Home Assistant lights**.
+1. Open **Settings → Devices & services → Glowcast → Configure** and choose **Hue area and Home Assistant lights**.
 2. The entertainment area's steps: **Choose the entertainment area** (first **Choose the Hue bridge** and **Pair with the Hue bridge** if Glowcast has not paired with the bridge yet).
 3. The Home Assistant lights' steps, as above. A light that is already in the entertainment area cannot also be a Home Assistant light: the step says which lights, and you pick others.
 4. **Glowcast settings**: brightness, intensity, the update rate and the liveliness, which apply to both.
 
-![Glowcast's settings screen in Home Assistant: choose Entertainment area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity and the update rate, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" }
+![Glowcast's settings screen in Home Assistant: choose Hue area and Home Assistant lights, keep the entertainment area TV area, follow the Home Assistant area Living Room, put Floor lamp left and Light bar right of the screen, keep brightness, intensity, the update rate and the liveliness, save, then the device page with Entertainment area and Lights under Configuration.](../images/combined-settings-ha-lights.gif){ width="400" }
 
 *An entertainment area and Home Assistant lights together, under Configure: the area, the Home Assistant lights and their places, brightness, intensity and the update rate, then both on the device page.*
 
@@ -69,13 +69,15 @@ Glowcast adds one device, "Glowcast *TV name*", with:
 
 - a **switch** to start and stop syncing, for example `switch.glowcast_living_room_tv`;
 - a **Status** sensor that says what Glowcast is doing ([Status and diagnostics](../docs/status.md));
-- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with Home Assistant lights, **Lights** (both when you use the two together) ([Settings](../docs/settings.md)).
+- its settings under **Configuration**: **Brightness**, **Intensity**, **Update rate**, and **Entertainment area** or, with Home Assistant lights, **Lights** (both when you use the two together) ([Settings](../docs/settings.md));
+- a **Test lights** button under **Configuration**, which shows red on the left, blue on the right, then green at the top and white below, so you can check where each light sits ([Test the lights](../docs/settings.md#test-lights)).
+- a **Run hardware check** button under **Diagnostic**, for a hardware report, when Glowcast uses an LG webOS TV or a Hue entertainment area ([The hardware check](../docs/troubleshooting.md#the-hardware-check)).
 
 The switch is off. Next: [the first evening](first-evening.md).
 
 ## Changing it later
 
-Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights should follow the picture?** (**Hue entertainment area - the smoothest**, **Home Assistant lights - any brand, slower**, or **Entertainment area and Home Assistant lights**), then the lights' own settings (the area, the Home Assistant lights and their places, or both), then brightness, intensity, the update rate and the [liveliness](../docs/liveliness.md).
+Open **Settings → Devices & services → Glowcast → Configure**. It first asks **Which lights follow the picture?** (**Hue entertainment area - smoothest**, **Home Assistant lights - any brand**, or **Hue area and Home Assistant lights**), then the lights' own settings (the area, the Home Assistant lights and their places, or both), then brightness, intensity, the update rate and the [liveliness](../docs/liveliness.md).
 
 - Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before. Switching back and forth later needs no new pairing.
 - Switching between these reloads Glowcast, so syncing stops; switch it on again.

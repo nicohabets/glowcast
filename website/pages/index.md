@@ -1,6 +1,6 @@
 ---
-title: Hue lights that follow your LG TV
-description: Glowcast lets your Philips Hue lights follow what's on your LG webOS TV, from Home Assistant - no subscription, no HDMI box, nothing leaves your home.
+title: Lights that follow your LG TV
+description: Glowcast lets your lights follow what's on your LG webOS TV, from Home Assistant, with a Hue entertainment area or any colour light - no subscription, no HDMI box, nothing leaves your home.
 hide:
   - navigation
   - toc
@@ -8,9 +8,9 @@ hide:
 
 <div class="gc-hero" markdown>
 
-# Your Hue lights follow the picture on your LG TV
+# Your lights follow the picture on your LG TV
 
-<p class="gc-lead">Glowcast is a free Home Assistant integration that sends the colours on your LG webOS TV to your Philips Hue lights - no subscription, no HDMI box, nothing leaves your home.</p>
+<p class="gc-lead">Glowcast is a free Home Assistant integration that sends the colours on your LG webOS TV to a Hue entertainment area, the smoothest option, or to any colour light in Home Assistant. No subscription, no HDMI box, nothing leaves your home.</p>
 
 ![An illustrated living room: the picture on the TV changes colour and the light strip and lamps follow it.](images/illustrations/scene-1-picture-leads-loop.webp)
 
@@ -25,7 +25,7 @@ hide:
 - **Colour lights**, one of:
     - A **Hue bridge with an entertainment area**: a Philips Hue Bridge v2 or Bridge Pro, set up in Home Assistant with the **Philips Hue** integration, and an entertainment area set up in the Hue app
     - Or **Home Assistant lights**: any colour light in Home Assistant, of any brand, no Hue bridge needed
-- **Home Assistant 2025.7.2** or newer
+- **Home Assistant 2026.8.3** or newer (TVs with webOS 26 need it to pair)
 - **[HACS](https://hacs.xyz/)** to install Glowcast
 
 If you already run Home Assistant with the LG webOS integration and colour lights, you have everything you need.
@@ -54,11 +54,11 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     The colourful, bright part of the picture leads, so the lights stay lively instead of a grey average, and black bars are left out. A strong colour shows as that pure colour, not mixed with white. Scene cuts show at once, while calm scenes fade softly. Lights at the back of the room lean towards the colour of the whole picture.
 
--   ![Glowcast's device page in Home Assistant: the switch, the status and the settings.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
+-   ![Glowcast's device page in Home Assistant: the switch on under Controls and the status Streaming under Sensors.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
 
     **Part of Home Assistant**
 
-    A switch, a status and its settings on one device page. Start it with the TV, by voice or from a dashboard, and change the brightness while it runs.
+    A switch, a status and its settings on one device page, and a button to test where each light sits. Start it with the TV (only after dark or for the inputs you choose, if you like), with a Hue Sync Box, by voice or from a dashboard, and change the brightness while it runs.
 
 </div>
 
@@ -74,7 +74,7 @@ At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs 
 
 ## Honest limits
 
-- **Only LG webOS TVs for now.** Other TVs and sources are planned. So far Glowcast is tested on one TV, a 2023 LG G3.
+- **LG webOS TVs only, for now.** A computer screen works as a preview; other TVs and sources are planned. So far Glowcast is tested on one TV, a 2023 LG G3.
 - **About 3 pictures per second.** That is the TV's limit, so the lights follow scenes, not every flash. Fine as ambient light; not as fast as an HDMI Sync Box.
 - **Protected apps in the TV's own apps give no picture.** Streaming apps with DRM (tested with Prime Video) return a black frame, so the lights let go. The same app on a streaming stick over HDMI works.
 - **One stream per bridge.** A Hue bridge streams to one entertainment area at a time, so two TVs on one bridge cannot sync together.

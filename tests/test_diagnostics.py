@@ -26,9 +26,10 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from custom_components.glowcast.const import DOMAIN
 from custom_components.glowcast.core.models import Channel
 from custom_components.glowcast.outputs import OUTPUTS
-from custom_components.glowcast.sources import SOURCES
+from custom_components.glowcast.sources import SOURCES, webos
 
 from .fakes import FakeAdapters, wait_for
+from .test_webos_source import FakeWebOsClient, _jpeg
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -181,7 +182,7 @@ async def test_the_download_while_syncing(
     await sync_until_measured(entry)
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
 
-    assert diagnostics["versions"]["glowcast"] == "0.4.0"
+    assert diagnostics["versions"]["glowcast"] == "0.5.0"
     assert diagnostics["versions"]["requirements"] == {"hue-entertainment": "0.1.2"}
     assert diagnostics["settings"] == {
         "brightness": 60,
@@ -264,12 +265,11 @@ async def test_no_secrets_or_names_anywhere_in_the_download(
     assert area.state == AREA_NAME
     [output] = adapters.outputs
     assert AREA_NAME in output.channels[0].name
-    # Newer Home Assistant adds the integration's repair issues to the
-    # download; their text has the TV's name as a placeholder.
+    # Home Assistant adds the integration's repair issues to the download;
+    # their text has the TV's name as a placeholder.
     entry.runtime_data._raise_issue("area_not_found")
     download = await _get_diagnostics_for_config_entry(hass, hass_client, entry)
-    if "issues" in download:  # not on 2025.7.2
-        assert len(download["issues"]) == 1
+    assert len(download["issues"]) == 1
     text = json.dumps(download)
     for value in SECRETS:
         assert value.lower() not in text.lower()
@@ -313,7 +313,7 @@ async def test_the_download_while_the_entry_is_not_loaded(
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     assert diagnostics["syncing"] is False
     assert diagnostics["status"] is None
-    assert diagnostics["versions"]["glowcast"] == "0.4.0"
+    assert diagnostics["versions"]["glowcast"] == "0.5.0"
     assert await hass.config_entries.async_setup(entry.entry_id)  # for teardown
 
 
@@ -329,7 +329,6 @@ async def test_a_source_without_a_device(
         "webos",
         dataclasses.replace(
             SOURCES["webos"],
-            device_identifier=lambda data: None,
             device_id=lambda hass, data: None,
         ),
     )
@@ -497,3 +496,130 @@ async def test_no_bridge_among_the_hue_devices(
         )
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
     assert diagnostics["output"] == {"type": "hue_entertainment", "device": None}
+
+
+async def test_the_hardware_check_has_no_secrets_names_or_picture(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    entry: Any,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real webOS and Hue probes (#115), against a TV and a bridge that
+    tell everything they know, personal details included."""
+    image_url = f"https://{TV_HOST}:3001/resources/9f8e7d6c5b4a/capture.jpg"
+    mac = "ec:b5:fa:0a:1b:2c"
+    input_label = "Annas PlayStation"
+    light_name = "Strip achter de bank"
+    owner_id = "3e2d1c0b-aaaa-4bbb-8ccc-9d8e7f6a5b4c"
+    personal = [*SECRETS, image_url, "9f8e7d6c5b4a", mac, input_label, light_name]
+    personal.append(owner_id)
+    personal.append("com.webos.app.hdmi1")  # what was on screen (#282)
+
+    connect = FakeWebOsClient.connect
+
+    async def connect_and_tell(client: FakeWebOsClient) -> bool:
+        result = await connect(client)
+        client.request_result = {"imageUri": image_url}
+        client.tv_info.system = {"modelName": "OLED65G36LA", "serialNumber": TV_SERIAL}
+        client.tv_info.software = {
+            "product_name": "webOSTV 25",
+            "major_ver": "33",
+            "minor_ver": "31.68",
+            "device_id": mac,
+        }
+        client.tv_info.hello = {
+            "deviceOSReleaseVersion": "10.2.0",
+            "deviceUUID": TV_ID,
+        }
+        client.tv_state.current_app_id = "com.webos.app.hdmi1"
+        client.tv_state.inputs = {"HDMI_1": {"label": input_label}}
+        return result
+
+    FakeWebOsClient.instances = []
+    monkeypatch.setattr(webos, "WebOsClient", FakeWebOsClient)
+    monkeypatch.setattr(FakeWebOsClient, "connect", connect_and_tell)
+    # Glowcast's own probes, not the fakes' (the fixture fakes only create).
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(image_url, content=_jpeg())
+    base = f"https://{BRIDGE_HOST}"
+    aioclient_mock.get(
+        f"{base}/api/config",
+        json={
+            "name": BRIDGE_NAME,
+            "bridgeid": BRIDGE_ID.upper(),
+            "mac": mac,
+            "ipaddress": BRIDGE_HOST,
+            "modelid": "BSB003",
+            "swversion": "1972004020",
+            "apiversion": "1.72.0",
+        },
+    )
+    aioclient_mock.get(f"{base}/auth/v1", headers={"hue-application-id": owner_id})
+    aioclient_mock.get(
+        f"{base}/clip/v2/resource/entertainment_configuration",
+        json={
+            "data": [
+                {
+                    "id": AREA_ID,
+                    "metadata": {"name": AREA_NAME},
+                    "name": AREA_NAME,
+                    "status": "active",
+                    "active_streamer": {"rid": owner_id, "rtype": "auth_v1"},
+                    "configuration_type": "screen",
+                    "channels": [
+                        {
+                            "channel_id": 0,
+                            "position": {"x": -0.8, "y": 0.8, "z": 0.0},
+                            "members": [
+                                {"service": {"rid": BRIDGE_RESOURCE_ID}, "index": 0}
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    aioclient_mock.get(
+        f"{base}/clip/v2/resource/entertainment",
+        json={"data": [{"id": BRIDGE_RESOURCE_ID, "owner": {"rid": owner_id}}]},
+    )
+    aioclient_mock.get(
+        f"{base}/clip/v2/resource/device",
+        json={
+            "data": [
+                {
+                    "id": owner_id,
+                    "metadata": {"name": light_name},
+                    "product_data": {
+                        "model_id": "LCX004",
+                        "product_archetype": "hue_lightstrip_tv",
+                    },
+                }
+            ]
+        },
+    )
+
+    await entry.runtime_data.async_hardware_check()
+    await wait_for(lambda: entry.runtime_data.hardware_check is not None, limit=5)
+    download = await _get_diagnostics_for_config_entry(hass, hass_client, entry)
+    check = download["data"]["hardware_check"]
+    # It found what a report needs.
+    tv = check["source"]["probe"]
+    assert tv["tv"]["model"] == "OLED65G36LA"
+    assert tv["tv"]["webos_version"] == "10.2.0"
+    assert "app" not in tv["tv"]  # the picture was not black (#282)
+    assert tv["capture"]["answered"] is True
+    assert tv["capture"]["image"]["width"] == 960
+    hue = check["output"]["probe"]
+    assert hue["bridge"]["modelid"] == "BSB003"
+    assert hue["area"]["channels"][0]["members"][0]["model_id"] == "LCX004"
+    assert hue["area"]["stream"] == "glowcast"
+    # And nothing personal, and no picture.
+    text = json.dumps(download)
+    for value in personal:
+        assert value.lower() not in text.lower()
+    assert "pixels" not in json.dumps(check)
+    assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", json.dumps(check))
+    # The probe's own connection to the TV is closed.
+    assert all(client.disconnected for client in FakeWebOsClient.instances)

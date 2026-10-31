@@ -45,6 +45,7 @@ from custom_components.glowcast.core.pipeline import (
     StopReason,
     UpdateRate,
 )
+from custom_components.glowcast.core.ports import SourceNotSupported
 from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
@@ -79,6 +80,17 @@ def tv_device(hass: HomeAssistant) -> Generator[dr.DeviceEntry]:
     )
     yield device
     tv.mock_state(hass, ConfigEntryState.NOT_LOADED)
+
+
+def stop_home_assistant(hass: HomeAssistant) -> None:
+    """What Home Assistant's async_stop does, in its order (core.py): cancel
+    the background tasks (Glowcast's here), then set the state to stopping
+    and fire the stop event. The test sets the state back to running."""
+    for task in list(hass._background_tasks):
+        if isinstance(task, asyncio.Task) and task.get_name().startswith("glowcast"):
+            task.cancel("Home Assistant is stopping")
+    hass.set_state(CoreState.stopping)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
 
 
 async def settle(hass: HomeAssistant) -> None:
@@ -156,7 +168,6 @@ async def test_a_source_without_a_device(
         "webos",
         dataclasses.replace(
             SOURCES["webos"],
-            device_identifier=lambda data: None,
             device_id=lambda hass, data: None,
         ),
     )
@@ -365,7 +376,13 @@ async def test_a_restart_keeps_the_new_pipelines_status(
     entry = await setup(hass)
     await switch(hass, SERVICE_TURN_ON)
     data = entry.runtime_data
-    await data.async_restart()
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
     await settle(hass)
     first, _ = FakePipeline.instances
     assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
@@ -374,6 +391,62 @@ async def test_a_restart_keeps_the_new_pipelines_status(
     await settle(hass)
     assert data.status == PipelineStatus(Phase.STREAMING, channels=1)
     assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_switch_on_that_waited_takes_a_new_output_in_one_handshake(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A new choice of lights while a switch-on waits behind the lock: the
+    start builds the pipeline from the new options, and the restart queued
+    behind it does not stop and claim the lights a second time (#282)."""
+    entry = await setup(hass)
+    fakes.output_stop_gate = asyncio.Event()
+    await entry.runtime_data.async_test_lights()
+    await wait_for(lambda: fakes.log == ["output.start"])
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the test's release
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
+    await asyncio.sleep(0.01)  # the restart now waits behind the start
+    fakes.output_stop_gate.set()
+    await start
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert fakes.log == [
+        "output.start",
+        "output.stop",
+        "output.close",
+        "source.start",
+        "output.start",
+    ]
+    assert state(hass) == STATE_ON
+    await switch(hass, SERVICE_TURN_OFF)
+
+
+async def test_a_restart_for_another_output_still_runs(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """The restart is skipped only when the running pipeline has the block."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    await data.async_restart()  # nothing changed: no second handshake
+    assert len(FakePipeline.instances) == 1
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "output": {"type": "hue_entertainment", "area_id": "other"},
+        },
+    )
+    await settle(hass)
+    assert len(FakePipeline.instances) == 2
     await switch(hass, SERVICE_TURN_OFF)
 
 
@@ -448,6 +521,23 @@ async def test_switching_off_during_a_restart_keeps_the_stop(
     await restart
     await settle(hass)
     assert data.status == FakePipeline.stopped(StopReason.USER)
+
+
+async def test_a_restart_during_a_switch_off_does_not_switch_on_again(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A new choice of lights while a switch-off still releases them: the
+    switch-off came first and wins (#269)."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    stop = hass.async_create_task(data.async_stop())
+    assert data.is_on  # still releasing the lights
+    await data.async_restart()
+    await stop
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert state(hass) == STATE_OFF
 
 
 async def test_a_stop_without_a_reason_still_turns_the_switch_off(
@@ -529,6 +619,60 @@ async def test_settings_problems_raise_a_repair_issue_until_a_start_works(
     await switch(hass, SERVICE_TURN_OFF)
 
 
+@pytest.mark.parametrize(
+    ("reason", "issue", "message"),
+    [
+        (
+            StopReason.SOURCE_NOT_SUPPORTED,
+            "webos_not_supported",
+            "the TV does not offer the screenshot call Glowcast uses",
+        ),
+        (
+            StopReason.SOURCE_NOT_PERMITTED,
+            "webos_not_permitted",
+            "the TV does not permit the screenshot call Glowcast uses",
+        ),
+    ],
+)
+async def test_a_refused_capture_raises_the_source_types_repair_issue(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    caplog: pytest.LogCaptureFixture,
+    reason: StopReason,
+    issue: str,
+    message: str,
+) -> None:
+    """The source type brings the issue, its links and its log line (#214);
+    no reauth; cleared by the next start that works, as an output's."""
+    entry = await setup(hass)
+    FakePipeline.start_error = reason
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_OFF
+    assert issues(hass, entry) == {issue}
+    raised = ir.async_get(hass).async_get_issue(DOMAIN, f"{issue}_{entry.entry_id}")
+    assert raised is not None
+    assert raised.translation_key == issue
+    assert raised.severity is ir.IssueSeverity.ERROR
+    assert raised.translation_placeholders == {
+        "name": "Living room TV",
+        "report_url": (
+            "https://github.com/nicohabets/glowcast/issues/new"
+            "?template=hardware-report.md"
+        ),
+        "help_url": (
+            "https://nicohabets.github.io/glowcast/docs/troubleshooting/"
+            "#the-tv-does-not-allow-screenshots"
+        ),
+    }
+    assert f"Glowcast Living room TV stopped: {message}" in caplog.text
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
+
+    await switch(hass, SERVICE_TURN_ON)
+    assert state(hass) == STATE_ON
+    assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
+
+
 async def test_a_successful_retry_clears_the_repair_issues(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
@@ -601,13 +745,20 @@ async def test_tv_removed_while_syncing(
     assert issues(hass, entry) == {"source_missing"}
 
 
+@pytest.mark.parametrize(
+    ("reason", "issue"),
+    [
+        (StopReason.OUTPUT_NOT_FOUND, "area_not_found"),
+        (StopReason.SOURCE_NOT_SUPPORTED, "webos_not_supported"),
+    ],
+)
 async def test_removing_the_entry_removes_its_issues(
-    hass: HomeAssistant, fakes: FakeAdapters
+    hass: HomeAssistant, fakes: FakeAdapters, reason: StopReason, issue: str
 ) -> None:
     entry = await setup(hass)
-    FakePipeline.start_error = StopReason.OUTPUT_NOT_FOUND
+    FakePipeline.start_error = reason
     await switch(hass, SERVICE_TURN_ON)
-    assert issues(hass, entry) == {"area_not_found"}
+    assert issues(hass, entry) == {issue}
     await hass.config_entries.async_remove(entry.entry_id)
     await settle(hass)
     assert issues(hass, entry) == set()
@@ -782,6 +933,57 @@ async def test_home_assistant_stop_releases_the_lights(
     assert state(hass) == STATE_OFF
 
 
+async def test_a_cancelled_switch_off_does_not_run_on(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A caller cancelled while it waits for the release is cancelled, not
+    taken for the pipeline's own end (#282); the release still completes."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    fakes.outputs[-1].stop_gate = asyncio.Event()
+    stop = hass.async_create_task(data.async_stop())
+    await asyncio.sleep(0.01)  # the stop waits for the release
+    stop.cancel()
+    await asyncio.sleep(0.01)
+    assert stop.cancelled()
+    fakes.outputs[-1].stop_gate.set()
+    await settle(hass)
+    assert fakes.log[-3:] == ["output.stop", "output.close", "source.close"]
+    assert state(hass) == STATE_OFF
+
+
+@pytest.mark.parametrize("ending", ["unload", "home_assistant_stops"])
+async def test_no_start_after_unload_or_home_assistant_stopping(
+    hass: HomeAssistant, fakes: FakeAdapters, ending: str
+) -> None:
+    """A switch-on or automation that comes after the unload's (or the stop
+    event's) stop finds the lights released and claims nothing: nothing would
+    stop that pipeline any more (#282)."""
+    entry = await setup(hass)
+    data = entry.runtime_data
+    await switch(hass, SERVICE_TURN_ON)
+    fakes.outputs[-1].stop_gate = gate = asyncio.Event()
+    if ending == "unload":
+        end = hass.async_create_task(hass.config_entries.async_unload(entry.entry_id))
+    else:
+        stop_home_assistant(hass)
+        end = None
+    await asyncio.sleep(0.01)  # the stop waits for the release
+    start = hass.async_create_task(data.async_start())
+    await asyncio.sleep(0)  # the start waits behind the stop
+    gate.set()
+    if end is not None:
+        assert await end
+    await start
+    await data.async_start()  # and one after it
+    await data.async_restart()
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert fakes.log.count("output.start") == 1
+    hass.set_state(CoreState.running)
+
+
 # The real pipeline behind the switch
 
 
@@ -815,3 +1017,24 @@ async def test_the_real_pipeline_stopping_by_itself_turns_the_switch_off(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert adapters.log == ["source.start", "output.start", *CLEANUP]
     assert "stopped: the picture source is off or not reachable" in caplog.text
+
+
+async def test_the_real_pipeline_stops_at_once_when_the_source_refuses(
+    hass: HomeAssistant, adapters: FakeAdapters
+) -> None:
+    """A refused capture while syncing stops at once, releasing the lights
+    (#214); a refusal at the start is retried for the startup grace (tested
+    with the fake clock in test_pipeline.py)."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(lambda: "output.start" in adapters.log)
+    [source] = adapters.sources
+    source.default = SourceNotSupported("refused", not_permitted=True)
+    await wait_for(lambda: state(hass) == STATE_OFF)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert "output.stop" in adapters.log
+    assert adapters.log[-1] == "source.close"
+    assert issues(hass, entry) == {"webos_not_permitted"}
+    status = entry.runtime_data.status
+    assert status is not None
+    assert status.stop_reason is StopReason.SOURCE_NOT_PERMITTED

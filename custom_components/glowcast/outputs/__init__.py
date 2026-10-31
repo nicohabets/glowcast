@@ -13,6 +13,7 @@ from ..const import CONF_OUTPUT, CONF_TYPE
 from ..core.pipeline import StopReason
 from ..core.ports import LightOutput, OutputUnavailable
 from ..issues import Issue
+from ..probes import Probe, async_run_probe
 from . import (
     composite_flow,
     ha_lights,
@@ -24,6 +25,20 @@ from . import (
 )
 from .blocks import OUTPUT_COMBINED, output_blocks, output_types, part_options
 from .composite import CompositeOutput
+
+
+@dataclass(frozen=True)
+class Notice:
+    """A problem an output type works around while the lights follow the
+    picture, so not a stop (architecture 4.4)."""
+
+    # Its repair issue, raised with the placeholders `check` returns from the
+    # entry's data and options, and removed when it returns None.
+    issue: Issue
+    check: Callable[
+        [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
+        Awaitable[Mapping[str, str] | None],
+    ]
 
 
 @dataclass(frozen=True)
@@ -65,18 +80,13 @@ class OutputType:
     stop_issues: Mapping[StopReason, Issue] = field(default_factory=dict)
     # Run when the Glowcast entry is removed: what the user must clean up.
     async_removed: Callable[[HomeAssistant, ConfigEntry], Awaitable[None]] | None = None
-    # A problem the type works around while the lights follow the picture,
-    # checked each time they are claimed: its repair issue, raised with the
-    # placeholders the check returns from the entry's data and options, and
-    # removed when it returns None.
-    notice: Issue | None = None
-    async_notice: (
-        Callable[
-            [HomeAssistant, Mapping[str, Any], Mapping[str, Any]],
-            Awaitable[Mapping[str, str] | None],
-        ]
-        | None
-    ) = None
+    # The problems the type works around while the lights follow the picture,
+    # checked each time they are claimed (Notice).
+    notices: tuple[Notice, ...] = ()
+    # The hardware check (#115): read-only facts about the lights and the
+    # device they are driven through, without personal details; None: no
+    # probe.
+    probe: Probe | None = None
 
 
 OUTPUTS = {
@@ -97,6 +107,7 @@ OUTPUTS = {
             StopReason.OUTPUT_NOT_FOUND: hue_entertainment.AREA_NOT_FOUND,
         },
         async_removed=hue_entertainment.async_removed,
+        probe=hue_entertainment.probe,
     ),
     # Home Assistant lights: any colour light through Home Assistant (#9).
     ha_lights.OUTPUT_HA_LIGHTS: OutputType(
@@ -110,9 +121,12 @@ OUTPUTS = {
         options_step="ha_lights_options",
         entity_keys=(ha_lights_select.ENTITY_KEY,),
         stop_issues={StopReason.OUTPUT_NOT_FOUND: ha_lights.NO_LIGHTS},
-        # A light that later joined the entertainment area (#198).
-        notice=ha_lights.IN_AREA,
-        async_notice=ha_lights.async_in_area_notice,
+        notices=(
+            # A light that later joined the entertainment area (#198).
+            Notice(ha_lights.IN_AREA, ha_lights.async_in_area_notice),
+            # A light in an area another app streams, a Sync Box (#219).
+            Notice(ha_lights.STREAMED, ha_lights.async_streamed_notice),
+        ),
     ),
     # An entertainment area and Home Assistant lights together (#11): a part per type,
     # each with its own block, issues and entities. Chosen in the settings.
@@ -123,6 +137,9 @@ OUTPUTS = {
         lambda hass, data: None,
         options_steps=composite_flow.CombinedOptionsSteps,
         options_step="combined_options",
+        probe=lambda hass, data, options, *, measure: probe_combined(
+            hass, data, options, measure=measure
+        ),
     ),
 }
 
@@ -173,3 +190,28 @@ def create_combined(
         else:
             parts.append((type_id, output_type.create(hass, data, block_options)))
     return CompositeOutput(parts, dropped=dropped)
+
+
+async def probe_combined(
+    hass: HomeAssistant,
+    data: Mapping[str, Any],
+    options: Mapping[str, Any],
+    *,
+    measure: bool,
+) -> dict[str, Any]:
+    """The hardware check of a combined output: each part's own probe."""
+    return {
+        "parts": [
+            {
+                "type": block[CONF_TYPE],
+                **await async_run_probe(
+                    OUTPUTS.get(block[CONF_TYPE]),
+                    hass,
+                    data,
+                    part_options(options, block),
+                    measure=measure,
+                ),
+            }
+            for block in output_blocks(options[CONF_OUTPUT])
+        ]
+    }

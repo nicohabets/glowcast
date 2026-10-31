@@ -1,5 +1,13 @@
 {
   "entity": {
+    "button": {
+      "test_lights": {
+        "default": "mdi:palette"
+      },
+      "hardware_check": {
+        "default": "mdi:clipboard-pulse-outline"
+      }
+    },
     "sensor": {
       "status": {
         "default": "mdi:television-ambient-light",
