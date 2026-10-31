@@ -1,6 +1,6 @@
 # How Glowcast is tested
 
-Glowcast is tested in layers, most of them without a TV. Every change is checked by code first, then drawn in a room, then measured on real Hue lights. Only what is specific to the TV is left for a check on the TV itself.
+Glowcast is tested in layers, most of them without a TV. Every change is checked by tests; a change to what the lights get is also drawn in a room and measured on real Hue lights. Only what is specific to the TV is left for a check on the TV itself.
 
 ## On every change
 
@@ -52,7 +52,7 @@ The bench publishes numbers only, never camera images.
 
 ### The delay on the bench
 
-From a change on the monitor to the light passing halfway to its new colour, as the median and the slowest 10 % (p90). Measured on the test bench, with the monitor as the picture, not on a TV: on a TV the time to capture a picture comes on top.
+The time until a light changes, as the median and the slowest 10 % (p90). Screen mode: from the monitor changing to the light changing, both seen in the same camera pictures. Test patterns: from the screen helper switching pattern to the light passing halfway to its new colour, including up to about 75 ms of the camera's own delay. Measured on the test bench, not on a TV: on a TV the time to capture a picture comes on top.
 
 | Release | Screen mode (median / p90) | Test patterns (median / p90) |
 |---|---|---|

@@ -115,6 +115,7 @@ python3 scripts/demo.py rooms --pages-only                     # only write the 
 - Out: `website/pages/testing/rooms/<release>/<lights>-<scenario>.gif` and `rooms/manifest.json` (per kind of lights and release: available or why not, and per scenario its status, difference, GIF and since which release it is the same). These are committed: they are part of the website.
 - The pages: `demo/testing_pages.toml` says which scenarios each page shows (by their lights and their name without number, for example `area:Letterbox`, so renumbering a scenario keeps its texts), what each picture is and what the lights should do, and what visibly changed per release (from `docs/releases/`). The script writes each page's table (scenarios against releases, newest first) and its tabs between `<!-- rooms -->` and `<!-- /rooms -->`; the rest of each page is written by hand.
 - **For a new release:** add its notes under `[notes."vX.Y.Z"]` in `testing_pages.toml` for the scenarios it changed (run it once to see which), then `python3 scripts/demo.py rooms` once the tag exists (or with `--next` before), and commit the new GIFs, the manifest and the pages. A new scenario that the pages should show gets an entry in `testing_pages.toml` too.
+- **After a change to the harness's scenarios or `room.py`'s drawing,** run it with `--force`: the kept GIFs are only right while the harness draws the same thing (a scenario also starts from the light state the one before it leaves).
 
 ## The test bench
 
