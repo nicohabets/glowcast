@@ -208,6 +208,20 @@ def _letterbox(x: float, y: float) -> RGB:
     return _across([(70, 140, 60), (150, 175, 70)], x)  # field
 
 
+def _four_three(x: float, y: float) -> RGB:
+    """A 4:3 picture in the 16:9 frame: black bars left and right (an eighth of
+    the width each), and in the picture a warm red wall on the left, a sky
+    above and a teal wall on the right, so the lights at the sides and the
+    strip's ends show whether they read the picture's edges or the bars."""
+    bar = (1 - (4 / 3) / (16 / 9)) / 2
+    if x < bar or x > 1 - bar:
+        return 0, 0, 0
+    u = (x - bar) / (1 - 2 * bar)  # across the picture inside the bars
+    if y < 0.3:
+        return _across([(240, 150, 90), (120, 180, 235), (90, 150, 230)], u)  # sky
+    return _across([(220, 60, 50), (205, 185, 150), (30, 170, 160)], u)  # walls
+
+
 def _concert(x: float, y: float) -> RGB:
     """A concert: a purple and an orange spotlight on a dark stage (#233)."""
     if math.hypot(x - 0.3, (y - 0.35) * 0.6) < 0.12:
@@ -267,7 +281,7 @@ def scenarios(
 ) -> list[Scenario]:
     """The fixed scenarios, in order; the timings follow `core/`.
 
-    The combined output gets an eighth: its Home Assistant lights become unavailable,
+    The combined output gets a ninth: its Home Assistant lights become unavailable,
     the first (the wall light) 1 s in and the others 3 s in, until that part
     is dropped (the Home Assistant lights are checked every 5 s, then released and
     started again once after `lost_retry_delay`) while the entertainment area
@@ -286,12 +300,14 @@ def scenarios(
         # All-zero frames: released after NO_PICTURE_WAIT.
         # Colourful spots on a dark stage: a mixed picture (#233).
         Scenario("6 Concert", 2.5, _still(_concert)),
-        Scenario("7 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
+        # Bars at the sides, taken after letterbox.STABLE as in 4 (#294).
+        Scenario("7 4:3 picture", 4.0, _still(_four_three)),
+        Scenario("8 No picture", no_picture_wait + 2.0, _still(lambda x, y: (0, 0, 0))),
     ]
     if lights == "combined":
         run.append(
             Scenario(
-                "8 Home Assistant lights unavailable",
+                "9 Home Assistant lights unavailable",
                 # One Home Assistant light 1 s in, the others 3 s in, the check up to
                 # 5 s later, the retry, and a moment to see that part dropped.
                 3.0 + 5.0 + lost_retry_delay + 2.0,
