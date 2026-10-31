@@ -61,7 +61,7 @@ class Thresholds:
     # once 1.61), every colour 2.8 or more (spectrum's red, golden hour's
     # green), and 1.77 on a spot's clipped core (green, 29-10-2026).
     expected_white_ratio: float = 1.7
-    # The glow (10 % warm white) on a lit wall reads 0.004-0.04 at exposure
+    # The glow (10 % warm white) on a lit wall reads 0.004-0.07 at exposure
     # -8 (0.004 in the evening, #231), on a spot's rim about 0.35 (the clipped
     # core): lit, not off. A light that is off reads 0.000 in the evening,
     # when the dark reference has no noise at all (the camera's black floor).
