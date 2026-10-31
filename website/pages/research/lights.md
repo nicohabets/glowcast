@@ -111,11 +111,11 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 
 **The question:** does Glowcast keep running for an evening, and does it stop cleanly and start again after the usual interruptions?
 
-**The answer:** yes; about 95 minutes of syncing without a crash or an error, no visible memory growth, and a clean stop and restart after TV standby, a bridge power cut and a Home Assistant restart.
+**The answer:** yes. The measured test ran once for about 95 minutes without a crash or an error, with no visible memory growth, and stopped and started cleanly after TV standby, a bridge power cut and a Home Assistant restart. In daily use Glowcast runs for hours on end; 95 minutes is only how long this one measurement lasted.
 
 | Measurement (v0.1.0 through HACS, update rate Maximum, HDMI sources) | Result |
 |---|---|
-| Syncing | about 95 minutes |
+| Syncing in the measured run | about 95 minutes |
 | Errors / warnings | 0 / 4 (all at the bridge power cut) |
 | Home Assistant memory (the whole core) | 1154 MB at the start, then 1188-1238 MB for the last hour, mostly 1190-1210 MB |
 | TV to standby: Glowcast off | 1.20 s after the TV reported off |
@@ -124,7 +124,7 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 | Next switch-on after the bridge came back | area active 0.9 s later |
 | Home Assistant restart: area inactive | 1.27 s after the restart command |
 
-- No visible memory growth, but 95 minutes is too short to rule out a slow leak.
+- No visible memory growth in the measured run; a slow leak over many hours was not measured, but daily use for hours has shown no problems.
 - After the bridge power cut the lights stayed on the last streamed colour, while the bridge at first reported them as off; the next start and stop of Glowcast restored them.
 - Not covered: two hours at update rate High, live TV through the tuner, and apps on the TV itself.
 
