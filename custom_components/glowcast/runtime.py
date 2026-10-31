@@ -514,20 +514,26 @@ class GlowcastData:
             )
 
     async def async_restart(self) -> None:
-        """Restart a running pipeline with the new settings; the switch stays on."""
-        if not self.is_on:
-            return
+        """Restart a running pipeline with the new settings; the switch stays on.
+
+        Like a start and a stop, one at a time: a stop that came earlier or
+        meanwhile wins (#269)."""
         stops = self._stops
-        self._restarting = True
-        try:
-            await self._async_stop()
-        finally:
-            self._restarting = False
-        if self._stops != stops:
-            # Switching off (or unloading) during a restart wins over it.
-            self._notify()  # the switch shows off now
-            return
-        await self.async_start()
+        async with self._transition:
+            if self._pipeline is None or self._stops != stops:
+                return
+            self._restarting = True
+            try:
+                await self._async_stop()
+            finally:
+                self._restarting = False
+            if self._stops != stops:
+                # Switching off (or unloading) during a restart wins over it.
+                self._notify()  # the switch shows off now
+                return
+            # Nothing else claims the lights or captures: a pipeline ran
+            # until now, and no test or check that captures starts meanwhile.
+            self._start_pipeline()
 
     @callback
     def async_remove_issues(self) -> None:
