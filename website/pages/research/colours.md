@@ -28,6 +28,10 @@ The spike also tried ease-out curves (quadratic and cubic). They were faster eve
 
 *The room, left before the change and right with it: the lights on the right reach the new colour about 120 ms sooner.*
 
+[![The red sent to a light after a cut: the linear fade reaches halfway after about 170 ms, the cut fade after about 40 ms; the ease-out curves in between](chart-cut-fade.png){ width="400" loading=lazy }](chart-cut-fade.png)
+
+*What a light is sent after a cut to red at 3 captures per second: the linear fade of before, the two ease-out curves the spike tried, and the 80 ms cut fade of now. Drawn from Glowcast's `LightState`; the ease-out curves by formula.*
+
 **More:** [spike #35 and its result](https://github.com/nicohabets/glowcast/issues/35#issuecomment-6535120607), [story #258](https://github.com/nicohabets/glowcast/issues/258), [pull request #259](https://github.com/nicohabets/glowcast/pull/259), [website pull request #291](https://github.com/nicohabets/glowcast/pull/291)
 
 ## Livelier colours { #livelier-colours }

@@ -23,6 +23,10 @@ Each section is one research question, measured on the product owner's lights, t
 
 **What Glowcast does since:** v0.3.0. Home Assistant lights get 1 update per second with a 1 s fade, and at most 4 commands per second go to each Hue bridge and each Thread network (a Hue room or zone counts as one light), so with more lights each changes less often.
 
+[![The room with Home Assistant lights during a fade between scenes, v0.4.0](../testing/rooms/v0.4.0/ha-fade-between-scenes.gif){ width="400" loading=lazy }](../testing/rooms/v0.4.0/ha-fade-between-scenes.gif)
+
+*The room with six Home Assistant lights (v0.4.0): each gets a colour at most once per second and fades to it over that second, so they follow the picture a moment later and softly. Drawn from Glowcast's own code; more in [How it is tested](../testing/home-assistant-lights.md).*
+
 **More:** [spike #125](https://github.com/nicohabets/glowcast/issues/125) and its pull request [#131](https://github.com/nicohabets/glowcast/pull/131); built in [story #9](https://github.com/nicohabets/glowcast/issues/9), pull request [#173](https://github.com/nicohabets/glowcast/pull/173).
 
 ## One stream per bridge { #one-stream-per-bridge }
@@ -71,6 +75,10 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 
 **What Glowcast does since:** v0.3.1 published the research; v0.5.0 added the "Follow a Hue Sync Box" blueprint and the notice. After #272 the product owner chose to check the notice again a few seconds after the claim and remove it when Glowcast stops (option (a)); that is not built yet.
 
+[![A timeline per try: with the switch as trigger Glowcast claims the lights before the bridge reports the area active, with the binary sensor after it](chart-sync-box-notice.png){ width="400" loading=lazy }](chart-sync-box-notice.png)
+
+*Each row is one try on the emulated box: when the bridge reported the area active, when Home Assistant's binary sensor turned on, and when Glowcast claimed the lights (filled: the notice showed). Drawn from the recorded measurements.*
+
 **More:** [spike #202](https://github.com/nicohabets/glowcast/issues/202) and its pull request [#211](https://github.com/nicohabets/glowcast/pull/211); [#272](https://github.com/nicohabets/glowcast/issues/272) ([the result](https://github.com/nicohabets/glowcast/issues/272#issuecomment-6541587556)); the blueprint and notice in [#219](https://github.com/nicohabets/glowcast/issues/219), pull request [#252](https://github.com/nicohabets/glowcast/pull/252).
 
 ## The light test and a late state report { #light-test-late-report }
@@ -92,6 +100,10 @@ The later check (#272) used an emulated Sync Box on the test bench: a second cli
 - Not tested: more than 4 lights on one network.
 
 **What Glowcast does since:** no change needed. Test lights itself came in v0.5.0.
+
+[![Every light-try: the test colour is reported one to three seconds before the release, the own state shortly after it, before any switch-on](chart-light-test-reports.png){ width="400" loading=lazy }](chart-light-test-reports.png)
+
+*Every light-try, from Home Assistant's own push events: the test colour is reported before the release, the light's own state after it, so a switch-on at +1, +2 or +3 s finds the own state. Drawn from the recorded measurements.*
 
 **More:** [spike #271](https://github.com/nicohabets/glowcast/issues/271) ([the result](https://github.com/nicohabets/glowcast/issues/271#issuecomment-6540585244)), recorded in pull request [#305](https://github.com/nicohabets/glowcast/pull/305).
 
