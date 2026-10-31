@@ -235,9 +235,9 @@ def test_lights_without_a_depth_only_change_by_the_weight() -> None:
         ) == compute(frame, ha, 1.0, weight_floor=p.weight_floor, far_blend=0.0)
 
 
-# The jitter limit of spike #40: no flicker on a still picture with noise. The
-# chosen method (Normal) had at most 5 of 255 there, and the methods that
-# flickered 90 and 196; in this test's frames Normal has about 7.
+# No flicker on a still picture with noise (spike #40): the spike counted
+# 4-7 of 255 as steady and rejected the methods that jumped by 90 and 196. In
+# this test's frames Normal (v0.4) has about 7 and Lively about 8.
 JITTER_LIMIT = 10 / 255
 
 
