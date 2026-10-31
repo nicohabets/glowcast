@@ -1,6 +1,6 @@
 # Glowcast - Architecture
 
-Status: **v0.5.0 released**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.6, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
+Status: **v0.5.1 released**. This document is the source of truth for the first build. Features after v0.1 are tracked as GitHub issues (milestones v0.2 to v0.6, or no milestone when not planned yet), not here; this document only describes how the design leaves room for them (section 8).
 
 ## 1. Goal
 
