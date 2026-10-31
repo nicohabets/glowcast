@@ -66,11 +66,11 @@
         "description": "Je kunt dit later wijzigen in de instellingen van Glowcast.",
         "menu_options": {
           "bridge": "Hue-entertainmentruimte - het vloeiendst",
-          "ha_lights": "Losse lampen - elke kleurenlamp, trager"
+          "ha_lights": "Home Assistant-lampen - elk merk, trager"
         }
       },
       "ha_lights": {
-        "title": "Kies de losse lampen",
+        "title": "Kies de Home Assistant-lampen",
         "description": "Glowcast kan losse lampen volgen, de lampen van een ruimte in Home Assistant, of de lampen van een lampgroep (bijvoorbeeld een Hue-ruimte of -zone). Elke lamp krijgt een eigen plek naast het scherm.",
         "data": {
           "follow": "Volgen"
@@ -99,11 +99,11 @@
       },
       "ha_lights_hue_hint": {
         "title": "Een entertainmentruimte is vloeiender",
-        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met Home Assistant-lampen."
       },
       "ha_lights_hue_no_area": {
         "title": "Een entertainmentruimte is vloeiender",
-        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met Home Assistant-lampen."
       },
       "ha_lights_position": {
         "title": "Waar staat {light}?",
@@ -160,11 +160,11 @@
     "step": {
       "init": {
         "title": "Welke lampen volgen het beeld?",
-        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de losse lampen.",
+        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de Home Assistant-lampen.",
         "menu_options": {
           "hue_options": "Hue-entertainmentruimte - het vloeiendst",
-          "ha_lights_options": "Losse lampen - elke kleurenlamp, trager",
-          "combined_options": "Entertainmentruimte en losse lampen"
+          "ha_lights_options": "Home Assistant-lampen - elk merk, trager",
+          "combined_options": "Entertainmentruimte en Home Assistant-lampen"
         },
         "menu_option_descriptions": {
           "combined_options": "Kies lampen één voor één, of een hele ruimte of lampgroep uit Home Assistant; elke lamp krijgt een eigen plek."
@@ -207,7 +207,7 @@
         "description": "De entertainmentruimte kan nu niet worden gewijzigd: Glowcast kan de ruimtes niet uit de Hue-bridge lezen. De bridge is niet bereikbaar, heeft geen entertainmentruimtes, of accepteert de sleutel van Glowcast niet meer (dan vraagt Home Assistant je opnieuw te koppelen). De entertainmentruimte blijft zoals hij is. Klik op Verzenden om verder te gaan met de rest van de instellingen."
       },
       "ha_lights": {
-        "title": "Kies de losse lampen",
+        "title": "Kies de Home Assistant-lampen",
         "description": "Glowcast kan losse lampen volgen, de lampen van een ruimte in Home Assistant, of de lampen van een lampgroep (bijvoorbeeld een Hue-ruimte of -zone). Elke lamp krijgt een eigen plek naast het scherm.",
         "data": {
           "follow": "Volgen"
@@ -236,11 +236,11 @@
       },
       "ha_lights_hue_hint": {
         "title": "Een entertainmentruimte is vloeiender",
-        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Kies daarvoor later Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met Home Assistant-lampen."
       },
       "ha_lights_hue_no_area": {
         "title": "Een entertainmentruimte is vloeiender",
-        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met losse lampen."
+        "description": "Een deel hiervan zijn Hue-lampen die in een entertainmentruimte kunnen, maar de bridge heeft er nog geen. Een entertainmentruimte volgt het beeld veel vloeiender: tot 25 wijzigingen per seconde in plaats van ongeveer één. Maak er een in de Hue-app ([hoe]({link})) en kies daarna Hue-entertainmentruimte in de instellingen van Glowcast. Klik op Verzenden om verder te gaan met Home Assistant-lampen."
       },
       "ha_lights_position": {
         "title": "Waar staat {light}?",
@@ -283,7 +283,7 @@
       "ha_lights_no_area": "Geen enkele ruimte in Home Assistant heeft kleurenlampen. Wijs eerst lampen toe aan een ruimte.",
       "ha_lights_no_group": "Home Assistant heeft geen lampgroepen met kleurenlampen.",
       "ha_lights_none_chosen": "Kies minstens één kleurenlamp.",
-      "ha_lights_in_area": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn. Kies andere lampen, of een ruimte of groep zonder deze lampen."
+      "ha_lights_in_area": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook Home Assistant-lampen zijn. Kies andere lampen, of een ruimte of groep zonder deze lampen."
     }
   },
   "selector": {
@@ -407,13 +407,13 @@
       "description": "Glowcast kan niet synchroniseren omdat de lampen die het volgt weg zijn: de ruimte of lampgroep is verwijderd, of heeft geen kleurenlampen meer. Kies andere lampen in de instellingen van Glowcast en zet Glowcast daarna weer aan."
     },
     "loose_lights_in_area": {
-      "title": "Glowcast {name}: losse lampen in de entertainmentruimte",
-      "description": "{lights} zijn in de Hue-app aan de entertainmentruimte toegevoegd en volgen het beeld dus via de ruimte. Glowcast laat ze weg uit de losse lampen, zodat ze niet twee kleuren krijgen. Wil je deze melding kwijt, kies dan de losse lampen opnieuw zonder deze lampen in de instellingen van Glowcast (Configureren, dan \"Entertainmentruimte en losse lampen\"), of haal ze in de Hue-app uit de entertainmentruimte. De melding wordt opnieuw gecontroleerd zodra Glowcast de lampen weer overneemt."
+      "title": "Glowcast {name}: Home Assistant-lampen in de entertainmentruimte",
+      "description": "{lights} zijn in de Hue-app aan de entertainmentruimte toegevoegd en volgen het beeld dus via de ruimte. Glowcast laat ze weg uit de Home Assistant-lampen, zodat ze niet twee kleuren krijgen. Wil je deze melding kwijt, kies dan de Home Assistant-lampen opnieuw zonder deze lampen in de instellingen van Glowcast (Configureren, dan \"Entertainmentruimte en Home Assistant-lampen\"), of haal ze in de Hue-app uit de entertainmentruimte. De melding wordt opnieuw gecontroleerd zodra Glowcast de lampen weer overneemt."
     }
   },
   "exceptions": {
     "lights_in_area": {
-      "message": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook losse lampen zijn."
+      "message": "{lights} volgen de tv al via de entertainmentruimte en kunnen dus niet ook Home Assistant-lampen zijn."
     }
   }
 }
