@@ -512,6 +512,7 @@ async def test_the_hardware_check_has_no_secrets_names_or_picture(
     owner_id = "3e2d1c0b-aaaa-4bbb-8ccc-9d8e7f6a5b4c"
     personal = [*SECRETS, image_url, "9f8e7d6c5b4a", mac, input_label, light_name]
     personal.append(owner_id)
+    personal.append("com.webos.app.hdmi1")  # what was on screen (#282)
 
     connect = FakeWebOsClient.connect
 
@@ -605,7 +606,7 @@ async def test_the_hardware_check_has_no_secrets_names_or_picture(
     tv = check["source"]["probe"]
     assert tv["tv"]["model"] == "OLED65G36LA"
     assert tv["tv"]["webos_version"] == "10.2.0"
-    assert tv["tv"]["app"] == "com.webos.app.hdmi1"
+    assert "app" not in tv["tv"]  # the picture was not black (#282)
     assert tv["capture"]["answered"] is True
     assert tv["capture"]["image"]["width"] == 960
     hue = check["output"]["probe"]
