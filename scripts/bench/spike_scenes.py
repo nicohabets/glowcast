@@ -10,8 +10,9 @@ bench's full-screen window (`win/screen.py`); the screen helper shrinks it to
 second (pass a different `seed`):
 - `sparks`: the synthetic worst case. Single bright pixels of the helper's
   64x36 frame on black, with a lit share drawn from 2-8 % per picture, so the
-  share of each light's region (and of the whole frame) hovers around the
-  colour engine's 5 % threshold for black and flips from picture to picture.
+  share of each light's region hovers around the colour engine's 5 %
+  threshold for black and flips from picture to picture; a steady lit strip
+  keeps the whole frame from counting as black.
 - `starfield`: the same stars every picture, each twinkling.
 - `fireworks`: one to three bursts of coloured sparks on a night sky.
 
