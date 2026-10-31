@@ -278,6 +278,7 @@ async def test_happy_path(
         "brightness": 80,
         "intensity": 100,
         "update_rate": "high",
+        "liveliness": "normal",
     }
     entry = result["result"]
     assert entry.unique_id == TV_ID
@@ -607,9 +608,15 @@ async def test_options_flow(
     schema = {str(key): key for key in result["data_schema"].schema}
     assert schema["brightness"].default() == 50
     assert schema["update_rate"].default() == "low"
+    assert schema["liveliness"].default() == "normal"  # an entry without it
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {"brightness": 30.0, "intensity": 0.0, "update_rate": "maximum"},
+        {
+            "brightness": 30.0,
+            "intensity": 0.0,
+            "update_rate": "maximum",
+            "liveliness": "lively",
+        },
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -618,6 +625,7 @@ async def test_options_flow(
         "brightness": 30,
         "intensity": 0,
         "update_rate": "maximum",
+        "liveliness": "lively",
     }
     assert isinstance(entry.options["brightness"], int)
     # The same bridge: its keys stay as they are.
@@ -637,6 +645,7 @@ async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
     assert schema["brightness"].default() == 50
     assert schema["intensity"].default() == 100
     assert schema["update_rate"].default() == "high"
+    assert schema["liveliness"].default() == "normal"
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -645,6 +654,40 @@ async def test_options_flow_of_an_older_entry(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options["intensity"] == 100
     assert entry.options["update_rate"] == "high"
+    assert entry.options["liveliness"] == "normal"
+
+
+async def test_options_flow_offers_the_three_levels(hass: HomeAssistant) -> None:
+    """Calm, Normal and Lively, with their translated names (#16); a stored
+    level is the default."""
+    entry = glowcast_entry(
+        hass,
+        {
+            "brightness": 50,
+            "intensity": 150,
+            "update_rate": "low",
+            "liveliness": "calm",
+        },
+    )
+    result = await open_area_options(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"area": "area-tv"}
+    )
+    schema = {str(key): key for key in result["data_schema"].schema}
+    assert schema["liveliness"].default() == "calm"
+    selector = result["data_schema"].schema[schema["liveliness"]]
+    assert selector.config["options"] == ["calm", "normal", "lively"]
+    assert selector.config["translation_key"] == "liveliness"
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "brightness": 50,
+                "intensity": 150,
+                "update_rate": "low",
+                "liveliness": "wild",
+            },
+        )
 
 
 async def test_options_flow_rejects_out_of_range(hass: HomeAssistant) -> None:

@@ -155,6 +155,7 @@ async def entry(
             "brightness": 60,
             "intensity": 120,
             "update_rate": "maximum",
+            "liveliness": "calm",
         },
     )
     entry.add_to_hass(hass)
@@ -186,6 +187,7 @@ async def test_the_download_while_syncing(
         "brightness": 60,
         "intensity": 120,
         "update_rate": "maximum",
+        "liveliness": "calm",
     }
     assert diagnostics["source"] == {
         "type": "webos",
