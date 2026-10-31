@@ -25,7 +25,7 @@ Pictures that do not fill the screen, and pictures that move: a film with black 
 
 === "v0.3.1"
 
-    Same as v0.1.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.1.0. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Letterbox, in the room with v0.3.1](rooms/v0.1.0/area-letterbox.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-letterbox.gif)
 
@@ -67,7 +67,7 @@ Pictures that do not fill the screen, and pictures that move: a film with black 
 
 === "v0.3.1"
 
-    Same as v0.1.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.1.0. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![4:3 picture, in the room with v0.3.1](rooms/v0.1.0/area-43-picture.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-43-picture.gif)
 
@@ -109,7 +109,7 @@ Pictures that do not fill the screen, and pictures that move: a film with black 
 
 === "v0.3.1"
 
-    Same as v0.1.0. v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes).
+    Same as v0.1.0. v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes).
 
     [![Fade between scenes, in the room with v0.3.1](rooms/v0.1.0/area-fade-between-scenes.gif){ width="400" loading=lazy }](rooms/v0.1.0/area-fade-between-scenes.gif)
 

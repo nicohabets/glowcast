@@ -488,6 +488,61 @@
           }
         }
       }
+    },
+    "in-area": {
+      "names": {
+        "Floor lamp in the area too": "1 Floor lamp in the area too"
+      },
+      "releases": {
+        "v0.1.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.1.1": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.2.0": {
+          "available": false,
+          "why": "no_output",
+          "detail": "has no combined output (outputs/ha_lights.py, outputs/composite.py)"
+        },
+        "v0.3.0": {
+          "available": true,
+          "scenarios": {
+            "Floor lamp in the area too": {
+              "status": "new",
+              "difference": null,
+              "gif": "v0.3.0/in-area-floor-lamp-in-the-area-too.gif",
+              "since": "v0.3.0"
+            }
+          }
+        },
+        "v0.3.1": {
+          "available": true,
+          "scenarios": {
+            "Floor lamp in the area too": {
+              "status": "changed",
+              "difference": 178,
+              "gif": "v0.3.1/in-area-floor-lamp-in-the-area-too.gif",
+              "since": "v0.3.1"
+            }
+          }
+        },
+        "v0.4.0": {
+          "available": true,
+          "scenarios": {
+            "Floor lamp in the area too": {
+              "status": "changed",
+              "difference": 59,
+              "gif": "v0.4.0/in-area-floor-lamp-in-the-area-too.gif",
+              "since": "v0.4.0"
+            }
+          }
+        }
+      }
     }
   }
 }
