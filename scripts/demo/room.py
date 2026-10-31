@@ -18,7 +18,9 @@ side, labelled "main" and "this PR".
 --lights picks the output the room's lights belong to (room_harness.py): an
 entertainment area (the default), Home Assistant lights, or both combined. --place
 moves a Home Assistant light, and --versus draws a second room beside the first with
-other places, labelled with them (the place comparison). A Home Assistant light that
+other places, labelled with them (the place comparison). --liveliness runs the
+scenarios at a level (#16), and --liveliness all draws the three levels side by
+side, labelled Calm, Normal and Lively. A Home Assistant light that
 is unavailable, and a part of a combined output that is dropped, are named at
 the bottom of the room.
 
@@ -115,6 +117,10 @@ MODE_LABELS = {
     "ha": "Home Assistant lights",
     "combined": "Area + Home Assistant lights",
 }
+# As in room_harness.py: the liveliness levels (#16).
+LEVELS = ("calm", "normal", "lively")
+NORMAL = "normal"
+ALL_LEVELS = "all"
 
 Light = tuple[str, float] | None  # (colour at full brightness, strength 0-1)
 
@@ -663,10 +669,16 @@ def _gif(frames: Path, fps: float, gif: Path) -> None:
 
 
 def _record(
-    core: Path, out: Path, lights: str = "area", places: list[str] | None = None
+    core: Path,
+    out: Path,
+    lights: str = "area",
+    places: list[str] | None = None,
+    *,
+    liveliness: str = NORMAL,
 ) -> subprocess.CompletedProcess[str]:
     """Run the harness against `core` in its own interpreter; the scenarios'
-    timings always come from this working copy's core."""
+    timings always come from this working copy's core. `liveliness` is
+    passed only when it is not Normal, so the harness call is as before."""
     return subprocess.run(
         [
             sys.executable,
@@ -679,6 +691,7 @@ def _record(
             "--lights",
             lights,
             *(f"--place={value}" for value in places or []),
+            *([f"--liveliness={liveliness}"] if liveliness != NORMAL else []),
             "--out",
             str(out),
         ],
@@ -687,18 +700,28 @@ def _record(
     )
 
 
-def _record_here(out: Path, lights: str, places: list[str]) -> dict[str, Any]:
+def _record_here(
+    out: Path, lights: str, places: list[str], liveliness: str = NORMAL
+) -> dict[str, Any]:
     """The recording on this working copy; exits when it fails."""
-    result = _record(REPO / CORE, out, lights, places)
+    result = _record(REPO / CORE, out, lights, places, liveliness=liveliness)
     if result.returncode != 0:
         sys.exit(f"The scenarios failed on this working copy:\n{result.stderr}")
     return json.loads(out.read_text())
 
 
+def level_label(recording: dict[str, Any]) -> str:
+    """The recording's liveliness level, for its label: for example "Calm"."""
+    return str(recording.get("liveliness", NORMAL)).capitalize()
+
+
 def mode_label(recording: dict[str, Any]) -> str | None:
     """The label of a room on its own: none for an entertainment area (as
     #138), else the kind of output and the places --place moved (--names
-    shows them all)."""
+    shows them all); the level first when it is not Normal."""
+    if recording.get("liveliness", NORMAL) != NORMAL:
+        mode = MODE_LABELS.get(recording.get("lights", "area"))
+        return f"{level_label(recording)}: {mode}" if mode else level_label(recording)
     if (mode := MODE_LABELS.get(recording.get("lights", "area"))) is None:
         return None
     moved = ", ".join(
@@ -801,6 +824,7 @@ def main() -> None:
     parser.add_argument("--place", action="append", default=[])
     parser.add_argument("--versus", action="append", default=[])
     parser.add_argument("--names", action="store_true")
+    parser.add_argument("--liveliness", choices=(*LEVELS, ALL_LEVELS), default=NORMAL)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if args.lights == "area" and (args.place or args.versus):
@@ -809,12 +833,28 @@ def main() -> None:
         )
     if args.versus and args.compare:
         parser.error("--versus and --compare draw two rooms each: pick one")
+    if args.liveliness != NORMAL and (args.versus or args.compare):
+        parser.error(
+            "--liveliness is for this working copy on its own: "
+            "not with --compare or --versus"
+        )
     # A stop from outside also runs the cleanup (the temporary worktree).
     signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(1))
     args.out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as folder:
         tmp = Path(folder)
-        this = _record_here(tmp / "pr.json", args.lights, args.place)
+        if args.liveliness == ALL_LEVELS:
+            # The three levels side by side (#16), Calm on the left.
+            levels = [
+                _record_here(tmp / f"{level}.json", args.lights, args.place, level)
+                for level in LEVELS
+            ]
+            written = write(
+                [(level_label(r), r) for r in levels], args.out, tags=args.names
+            )
+            print(f"Wrote {len(written)} files to {args.out}")
+            return
+        this = _record_here(tmp / "pr.json", args.lights, args.place, args.liveliness)
         sides: list[tuple[str | None, dict[str, Any]]] = [(mode_label(this), this)]
         if args.versus:
             # The later of two places for a light wins (the harness reads

@@ -18,7 +18,8 @@ MIN_LIT_SHARE = 0.05
 # A lit pixel counts in its region's colour with (WEIGHT_FLOOR + saturation²)
 # x value (#233): the floor gives grey and white a say, so a small coloured
 # object only tints a white scene (spike #40: 0.5 kept the gain on mixed
-# scenes and left snow with a red jacket nearly white).
+# scenes and left snow with a red jacket nearly white). Normal's value; the
+# liveliness level passes its own (#16).
 WEIGHT_FLOOR = 0.5
 # A light with several channels at or above this depth (y) is around the TV,
 # when they are all there and on both sides of the centre (x), like a gradient
@@ -31,7 +32,8 @@ MIN_SPREAD = 0.1
 # A light further back than NEAR_TV (y) blends its region's colour with the
 # colour of the whole picture: not at all at NEAR_TV, this share at the back
 # wall (y = -1), linearly in between (#15). So lights near the TV follow their
-# part of the picture and lights far from it follow more softly.
+# part of the picture and lights far from it follow more softly. Normal's
+# value; the liveliness level passes its own (#16).
 FAR_BLEND = 0.5
 
 BLACK = (0.0, 0.0, 0.0)
@@ -140,6 +142,9 @@ def compute(
     channels: list[Channel],
     intensity: float,
     picture: Picture | None = None,
+    *,
+    weight_floor: float = WEIGHT_FLOOR,
+    far_blend: float = FAR_BLEND,
 ) -> list[ChannelColor]:
     """Return a colour per channel, in the order of `channels`.
 
@@ -147,38 +152,42 @@ def compute(
     `picture` is the part of the frame inside letterbox bars, if any.
     A channel further back than NEAR_TV gets part of the whole picture's colour
     (`_far_blend`, #15); one without a depth (y None) gets its region's only.
+    `weight_floor` and `far_blend` are the liveliness level's (#16).
     """
     regions = channel_regions(channels, frame.width, frame.height, picture)
     whole: tuple[float, float, float] | None = None
     colors: list[ChannelColor] = []
     for channel, region in zip(channels, regions, strict=True):
-        rgb = _average(frame, region)
-        blend = _far_blend(channel.y)
+        rgb = _weighted(frame, region, weight_floor)[0]
+        blend = _far_blend(channel.y, far_blend)
         if blend > 0:
             if whole is None:  # the whole picture, once per frame
-                whole = _whole(frame, picture or (0, frame.width, 0, frame.height))
+                whole = _whole(
+                    frame, picture or (0, frame.width, 0, frame.height), weight_floor
+                )
             rgb = _mix(rgb, whole, blend)
         colors.append(ChannelColor(channel.id, _saturate(rgb, intensity)))
     return colors
 
 
 def _whole(
-    frame: Frame, picture: tuple[int, int, int, int]
+    frame: Frame, picture: tuple[int, int, int, int], weight_floor: float
 ) -> tuple[float, float, float]:
     """The whole picture's colour for the far lights (#15), scaled by the
     share of its pixels that are lit (#262): a mostly dark picture with a
     small bright object adds only a dim colour, so lights at the back never
     outshine the lights at the TV in a dark scene."""
-    rgb, lit_share = _weighted(frame, picture)
+    rgb, lit_share = _weighted(frame, picture, weight_floor)
     return rgb[0] * lit_share, rgb[1] * lit_share, rgb[2] * lit_share
 
 
-def _far_blend(y: float | None) -> float:
+def _far_blend(y: float | None, far_blend: float) -> float:
     """The share of the whole picture's colour for a channel at depth y (#15):
-    0 at NEAR_TV or nearer and without a depth, FAR_BLEND at y = -1 or further."""
+    0 at NEAR_TV or nearer and without a depth, `far_blend` at y = -1 or
+    further."""
     if y is None or y >= NEAR_TV:
         return 0.0
-    return FAR_BLEND * min(1.0, (NEAR_TV - y) / (NEAR_TV + 1))
+    return far_blend * min(1.0, (NEAR_TV - y) / (NEAR_TV + 1))
 
 
 def _mix(
@@ -201,26 +210,20 @@ def _band(centre: float, start: int, end: int) -> tuple[int, int]:
     return first, first + length
 
 
-def _average(
-    frame: Frame, region: tuple[int, int, int, int]
-) -> tuple[float, float, float]:
-    """The colour of the lit pixels in a region, or black (`_weighted`)."""
-    return _weighted(frame, region)[0]
-
-
 def _weighted(
-    frame: Frame, region: tuple[int, int, int, int]
+    frame: Frame, region: tuple[int, int, int, int], weight_floor: float
 ) -> tuple[tuple[float, float, float], float]:
     """The colour of the lit pixels in a region, or black, and the share of
     the region's pixels that are lit.
 
     A weighted average (#233, spike #40): each lit pixel counts with
-    (WEIGHT_FLOOR + saturation²) x value. Colourful pixels lead and dark ones
-    give way, so a mixed region shows its colour (spotlights on a dark stage,
-    signs in a city at night); bright white keeps its say, so a small coloured
-    object only tints a white scene; a region of one colour or a smooth
-    gradient gives about its average. With high the largest component and
-    spread = high - lowest, (F + s²) x v is (F + (spread / high)²) x high / 255.
+    (weight_floor + saturation²) x value (WEIGHT_FLOOR at Normal). Colourful
+    pixels lead and dark ones give way, so a mixed region shows its colour
+    (spotlights on a dark stage, signs in a city at night); bright white keeps
+    its say, so a small coloured object only tints a white scene; a region of
+    one colour or a smooth gradient gives about its average. With high the
+    largest component and spread = high - lowest, (F + s²) x v is
+    (F + (spread / high)²) x high / 255.
     """
     col0, col1, row0, row1 = region
     pixels = frame.pixels
@@ -234,7 +237,7 @@ def _weighted(
             high = max(r, g, b)
             if high > BLACK_LEVEL:
                 spread = (high - min(r, g, b)) / high
-                w = (WEIGHT_FLOOR + spread * spread) * high
+                w = (weight_floor + spread * spread) * high
                 red += w * r
                 green += w * g
                 blue += w * b

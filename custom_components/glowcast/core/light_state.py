@@ -3,7 +3,9 @@
 Pure and synchronous, no asyncio and no Home Assistant imports: the time is an
 argument. Fades towards each new target over the measured capture interval; a
 channel whose colour jumps by more than CUT has a scene cut and fades over
-CUT_FADE instead, so the cut shows at once (#258). Holds the last colours when
+CUT_FADE instead, so the cut shows at once (#258). The liveliness level
+(#16, `liveliness.py`) can stretch the fade and change both cut values, per
+target. Holds the last colours when
 the picture suddenly turns black, and applies brightness and the minimal glow.
 When the lights have just been claimed, the first colours fade in from what
 each light showed before (#153).
@@ -31,7 +33,8 @@ FADE_IN = 2.0
 # A channel whose colour changes by more than this (the largest change of
 # one component, 0-1, in engine colours) between two frames has a cut: it
 # fades over CUT_FADE instead of the capture interval, so a scene change shows
-# at once while small changes stay soft (#35).
+# at once while small changes stay soft (#35). These are Normal's values; the
+# liveliness level passes its own with each target (#16).
 CUT = 0.25
 CUT_FADE = 0.08
 
@@ -49,8 +52,10 @@ class LightState:
         self._target: dict[str, RGB] = {}
         self._fade_start = 0.0
         self._fade_duration = 0.0
-        # The channels with a cut in the current fade: they fade over CUT_FADE.
+        # The channels with a cut in the current fade: they fade over
+        # self._cut_fade.
         self._cuts: set[str] = set()
+        self._cut_fade = CUT_FADE
         self._last_capture: float | None = None
         self._black_since: float | None = None
         # The fade-in after a claim, in sent colours (after brightness and
@@ -72,11 +77,23 @@ class LightState:
         self._fade_in_start = None
 
     def set_target(
-        self, colors: list[ChannelColor], frame_black: bool, now: float
+        self,
+        colors: list[ChannelColor],
+        frame_black: bool,
+        now: float,
+        *,
+        fade_intervals: float = 1.0,
+        cut: float | None = CUT,
+        cut_fade: float = CUT_FADE,
     ) -> None:
-        """A new frame's colours: fade to them over the last capture interval."""
+        """A new frame's colours: fade to them over the last capture interval.
+
+        The liveliness level's knobs (#16): the fade takes `fade_intervals`
+        capture intervals; a channel that changes by more than `cut` fades
+        over `cut_fade` seconds instead, and with `cut` None nothing is a cut.
+        """
         if self._last_capture is not None:
-            self._fade_duration = now - self._last_capture
+            self._fade_duration = (now - self._last_capture) * fade_intervals
         self._last_capture = now
         if self._fade_in_from is not None and self._fade_in_start is None:
             self._fade_in_start = now
@@ -90,16 +107,18 @@ class LightState:
         self._fade_from = dict(self._current)
         self._target = target
         self._fade_start = now
+        self._cut_fade = cut_fade
         self._cuts = {
             channel_id
             for channel_id, rgb in target.items()
-            if channel_id in self._fade_from
+            if cut is not None
+            and channel_id in self._fade_from
             and rgb != BLACK  # after the hold on black, fade softly to the glow
             and max(
                 abs(a - b)
                 for a, b in zip(rgb, self._fade_from[channel_id], strict=True)
             )
-            > CUT
+            > cut
         }
 
     def resume(self, channel_ids: set[str]) -> None:
@@ -119,7 +138,7 @@ class LightState:
             progress = min(1.0, (now - self._fade_start) / self._fade_duration)
         else:
             progress = 1.0
-        cut_progress = min(1.0, (now - self._fade_start) / CUT_FADE)
+        cut_progress = min(1.0, (now - self._fade_start) / self._cut_fade)
         level = min(GLOW, brightness)
         glow = tuple(level * c for c in GLOW_COLOR)
         fade_in = self._fade_in_progress(now)

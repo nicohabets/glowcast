@@ -73,6 +73,7 @@ async def async_get_config_entry_diagnostics(
             "brightness": settings.brightness,
             "intensity": settings.intensity,
             "update_rate": settings.update_rate,
+            "liveliness": settings.liveliness,
         },
         "source": {
             "type": source_type,

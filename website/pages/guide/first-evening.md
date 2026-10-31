@@ -21,7 +21,7 @@ In a dark scene the status shows **Black picture**, and the lights keep a faint 
 
 ## Make it your own
 
-Brightness, intensity and the update rate change while Glowcast syncs, without interrupting the lights: on the device page under **Configuration**, from a dashboard, or under **Configure**. A new entertainment area, area or light group restarts syncing for a few seconds; the switch stays on. All settings and their defaults are on [Settings](../docs/settings.md).
+Brightness, intensity, the update rate and the [liveliness](../docs/liveliness.md) change while Glowcast syncs, without interrupting the lights: on the device page under **Configuration**, from a dashboard, or under **Configure**. A new entertainment area, area or light group restarts syncing for a few seconds; the switch stays on. All settings and their defaults are on [Settings](../docs/settings.md).
 
 ## While Glowcast syncs
 
