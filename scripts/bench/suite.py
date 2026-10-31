@@ -1552,7 +1552,11 @@ class Bench:
                     mode,
                     FAIL,
                     numbers=numbers,
-                    note="the lights did not change (camera)",
+                    note=(
+                        "the lights did not change (camera)"
+                        if before
+                        else "no camera picture before the press"
+                    ),
                 )
             )
             return
@@ -1569,7 +1573,7 @@ class Bench:
                 else rp.classify(mean, self.cal[name], self.th, want)
                 for mean, want in zip(means, (colour, "white"), strict=True)
             ]
-            ok &= seen[0] == colour if colour else seen[0] in ("red", "blue")
+            ok &= (seen[0] == colour) if colour else (seen[0] in ("red", "blue"))
             ok &= seen[1] in ("green", "white")
             numbers[f"{self.label[name]} {side or '-'} seen"] = " then ".join(
                 str(s) for s in seen
