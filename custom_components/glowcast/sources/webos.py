@@ -454,11 +454,6 @@ class ImageFacts:
     bytes: int
 
 
-def _decode(data: bytes) -> Frame:
-    """Decode a JPEG and downscale it to FRAME_SIZE (runs in the executor)."""
-    return _decode_with_facts(data)[0]
-
-
 def _decode_with_facts(data: bytes) -> tuple[Frame, ImageFacts]:
     """Decode and downscale, and read the format and size from the header
     (runs in the executor)."""

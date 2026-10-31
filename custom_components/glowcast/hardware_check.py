@@ -1,4 +1,5 @@
-"""The hardware check (#115): what the TV and the lights can do, for a report.
+"""The hardware check (#115): what the picture source and the lights can do,
+for a report.
 
 Architecture 4.3 and 4.4. Generic: each source and output type brings its own
 probe (`probe` in SOURCES and OUTPUTS); this runs them side by side and puts

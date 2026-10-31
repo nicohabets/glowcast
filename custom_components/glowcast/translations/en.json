@@ -434,7 +434,7 @@
     },
     "hardware_check_done": {
       "title": "Glowcast {name}: hardware check done",
-      "description": "The hardware check is done. Its result is in Glowcast's diagnostics: Settings > Devices & services > Glowcast > ⋮ > Download diagnostics. To tell us how Glowcast works with your TV, attach that file to a [hardware report]({report_url}). It contains no names, addresses, keys or picture."
+      "description": "The hardware check is done. Its result is in Glowcast's diagnostics: Settings > Devices & services > Glowcast > ⋮ > Download diagnostics. To tell us how Glowcast works with your picture source and lights, attach that file to a [hardware report]({report_url}). It contains no names, addresses, keys or picture."
     }
   },
   "exceptions": {

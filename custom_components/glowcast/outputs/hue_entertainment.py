@@ -84,11 +84,15 @@ STATUS_INTERVAL = 5.0
 STATUS_TIMEOUT = 4.0
 REACHABLE_TIMEOUT = 10.0
 AREAS_TIMEOUT = 15.0
-# The hardware check (#115): every request to the bridge together.
-PROBE_TIMEOUT = 15.0
+# The hardware check (#115): every request to the bridge together, within
+# the 25 s the check gives one type's probe (probes.py).
+BRIDGE_PROBE_TIMEOUT = 15.0
 # What the bridge's unauthenticated config tells about its hardware and
 # software; never its name, MAC address or bridge id.
 BRIDGE_FIELDS = ("modelid", "swversion", "apiversion", "datastoreversion")
+# The check's own text for a 404 (a bridge without what it reads), not the
+# start's "The entertainment area no longer exists".
+PROBE_NOT_FOUND = "The Hue bridge does not have what the check asks for (HTTP 404)"
 # Reading what the lights show before the stream (for the fade-in, #153) may
 # not hold up the start for long; without it the fade-in starts from dark.
 STATES_TIMEOUT = 5.0
@@ -523,6 +527,39 @@ async def _async_clip_get(
 HINT_AREA = "area"  # they can join an entertainment area, and the bridge has one
 HINT_NO_AREA = "no_area"  # they can join one, but the bridge has none yet
 HINT_TIMEOUT = 10.0
+# What asking a bridge through Home Assistant's hue entry can raise: then the
+# bridge is left out, and nothing is refused or hinted for its lights.
+_ASK_ERRORS = (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable)
+
+
+def _hue_bridges(
+    hass: HomeAssistant, entity_ids: Iterable[str]
+) -> list[tuple[ConfigEntry, dict[str, str]]]:
+    """The loaded hue entries (API v2) that have some of these lights, each
+    with {light unique id: entity id} of its lights among them; lights of
+    other integrations are left out."""
+    registry = er.async_get(hass)
+    per_entry: dict[str, dict[str, str]] = {}
+    for entity_id in entity_ids:
+        entry = registry.async_get(entity_id)
+        if entry is not None and entry.platform == HUE_DOMAIN and entry.config_entry_id:
+            per_entry.setdefault(entry.config_entry_id, {})[entry.unique_id] = entity_id
+    bridges: list[tuple[ConfigEntry, dict[str, str]]] = []
+    for entry_id, lights in per_entry.items():
+        hue_entry = hass.config_entries.async_get_entry(entry_id)
+        if (
+            hue_entry is not None
+            and hue_entry.state is ConfigEntryState.LOADED
+            and hue_entry.data.get(CONF_API_VERSION) == 2
+        ):
+            bridges.append((hue_entry, lights))
+    return bridges
+
+
+def _bridge_access(hue_entry: ConfigEntry) -> tuple[str, str]:
+    """The host and key of Home Assistant's hue entry, read at runtime and
+    never stored."""
+    return hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
 
 
 async def async_entertainment_hint(
@@ -536,28 +573,15 @@ async def async_entertainment_hint(
     (its host and key, read at runtime, never stored): the bridge lists which
     devices can render entertainment, and its areas.
     """
-    registry = er.async_get(hass)
-    per_entry: dict[str, set[str]] = {}
-    for entity_id in entity_ids:
-        entry = registry.async_get(entity_id)
-        if entry is not None and entry.platform == HUE_DOMAIN and entry.config_entry_id:
-            per_entry.setdefault(entry.config_entry_id, set()).add(entry.unique_id)
     hint: str | None = None
-    for entry_id, light_ids in per_entry.items():
-        hue_entry = hass.config_entries.async_get_entry(entry_id)
-        if (
-            hue_entry is None
-            or hue_entry.state is not ConfigEntryState.LOADED
-            or hue_entry.data.get(CONF_API_VERSION) != 2
-        ):
-            continue
-        host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+    for hue_entry, light_ids in _hue_bridges(hass, entity_ids):
+        host, key = _bridge_access(hue_entry)
         try:
             async with asyncio.timeout(HINT_TIMEOUT):
                 lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
                 renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
                 areas = await _async_clip_data(hass, host, key, AREAS_PATH)
-        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+        except _ASK_ERRORS:
             continue
         if any(
             light.get("id") in light_ids
@@ -589,7 +613,7 @@ async def async_area_lights(
     hue_entry = _loaded_bridge(hass, bridge[CONF_UNIQUE_ID])
     if hue_entry is None:
         return set()
-    host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+    host, key = _bridge_access(hue_entry)
     try:
         async with asyncio.timeout(HINT_TIMEOUT):
             areas = await _async_clip_data(hass, host, key, AREAS_PATH)
@@ -598,7 +622,7 @@ async def async_area_lights(
                 return set()
             renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
             lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
-    except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+    except _ASK_ERRORS:
         return set()
     light_ids = _area_light_ids(area, renderers, lights)
     registry = er.async_get(hass)
@@ -622,22 +646,9 @@ async def async_streamed_lights(
     bridge is asked through its entry (its host and key, read at runtime,
     never stored), with GET requests only. Empty when no bridge can be asked.
     """
-    registry = er.async_get(hass)
-    per_entry: dict[str, dict[str, str]] = {}
-    for entity_id in entity_ids:
-        entry = registry.async_get(entity_id)
-        if entry is not None and entry.platform == HUE_DOMAIN and entry.config_entry_id:
-            per_entry.setdefault(entry.config_entry_id, {})[entry.unique_id] = entity_id
     streamed: dict[str, str] = {}
-    for entry_id, entities in per_entry.items():
-        hue_entry = hass.config_entries.async_get_entry(entry_id)
-        if (
-            hue_entry is None
-            or hue_entry.state is not ConfigEntryState.LOADED
-            or hue_entry.data.get(CONF_API_VERSION) != 2
-        ):
-            continue
-        host, key = hue_entry.data[CONF_HOST], hue_entry.data.get(CONF_API_KEY, "")
+    for hue_entry, entities in _hue_bridges(hass, entity_ids):
+        host, key = _bridge_access(hue_entry)
         try:
             async with asyncio.timeout(HINT_TIMEOUT):
                 areas = [
@@ -649,7 +660,7 @@ async def async_streamed_lights(
                     continue
                 renderers = await _async_clip_data(hass, host, key, ENTERTAINMENT_PATH)
                 lights = await _async_clip_data(hass, host, key, LIGHTS_PATH)
-        except (TimeoutError, OutputAuthFailed, OutputNotFound, OutputUnavailable):
+        except _ASK_ERRORS:
             continue
         for area in areas:
             name = (area.get("metadata") or {}).get("name") or str(area.get("id"))
@@ -831,7 +842,7 @@ async def probe(
     host, key = entry.data[CONF_HOST], bridge[CONF_APP_KEY]
     result: dict[str, Any] = {"api_version": entry.data.get(CONF_API_VERSION)}
     try:
-        async with asyncio.timeout(PROBE_TIMEOUT):
+        async with asyncio.timeout(BRIDGE_PROBE_TIMEOUT):
             result["bridge"] = await _async_bridge_facts(hass, host)
             headers, _ = await _async_clip_get(hass, host, key, AUTH_PATH, body=False)
             areas = await _async_clip_data(hass, host, key, AREAS_PATH)
@@ -840,7 +851,10 @@ async def probe(
     except TimeoutError:
         result["error"] = "The Hue bridge did not respond in time"
         return result
-    except (OutputAuthFailed, OutputNotFound, OutputUnavailable) as err:
+    except OutputNotFound:
+        result["error"] = PROBE_NOT_FOUND
+        return result
+    except (OutputAuthFailed, OutputUnavailable) as err:
         # Glowcast's own texts, without the address.
         result["error"] = str(err)
         return result
@@ -866,7 +880,9 @@ async def _async_bridge_facts(hass: HomeAssistant, host: str) -> dict[str, Any]:
     """The bridge's model and versions from its unauthenticated config."""
     try:
         _, config = await _async_clip_get(hass, host, "", CONFIG_PATH)
-    except (OutputAuthFailed, OutputNotFound, OutputUnavailable) as err:
+    except OutputNotFound:
+        return {"error": PROBE_NOT_FOUND}
+    except (OutputAuthFailed, OutputUnavailable) as err:
         return {"error": str(err)}
     if not isinstance(config, dict):
         return {"error": "The Hue bridge sent no config"}

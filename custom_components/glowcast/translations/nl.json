@@ -434,7 +434,7 @@
     },
     "hardware_check_done": {
       "title": "Glowcast {name}: hardwarecontrole klaar",
-      "description": "De hardwarecontrole is klaar. De uitkomst staat in de diagnostische gegevens van Glowcast (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten). Wil je ons laten weten hoe Glowcast met je tv werkt, voeg dat bestand dan toe aan een [hardwaremelding]({report_url}). Er staan geen namen, adressen, sleutels of beelden in."
+      "description": "De hardwarecontrole is klaar. De uitkomst staat in de diagnostische gegevens van Glowcast (te downloaden via het menu ⋮ bij Glowcast in Instellingen > Apparaten en diensten). Wil je ons laten weten hoe Glowcast met je beeldbron en lampen werkt, voeg dat bestand dan toe aan een [hardwaremelding]({report_url}). Er staan geen namen, adressen, sleutels of beelden in."
     }
   },
   "exceptions": {
