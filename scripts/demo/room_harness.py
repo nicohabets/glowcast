@@ -320,6 +320,10 @@ def load_core(folder: Path, name: str) -> ModuleType:
     sys.modules[name] = package
     spec.loader.exec_module(package)
     for module in ("models", "light_state", "pipeline"):
+        # v0.1.x kept the light state in pipeline.py (the timings come from
+        # this working copy's core/, see --timing-from).
+        if module == "light_state" and not (folder / "light_state.py").is_file():
+            continue
         setattr(package, module, importlib.import_module(f"{name}.{module}"))
     return package
 
