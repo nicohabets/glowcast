@@ -622,6 +622,14 @@ async def test_a_part_busy_for_another_glowcast_setup_names_it(
     assert raised is not None
     assert raised.translation_placeholders["other"] == "Bedroom TV"
     await switch(hass, SERVICE_TURN_OFF)
+    # Busy again, now for another app: the issue that named the setup goes.
+    hass.data["glowcast_hue_busy_by"].clear()
+    parts.area_start_errors = [OutputBusy("another app streams")]
+    await switch(hass, SERVICE_TURN_ON)
+    await wait_for(lambda: hass.states.get(STATUS).attributes.get("dropped_outputs"))
+    await settle(hass)
+    assert issues(hass, entry) == set()
+    await switch(hass, SERVICE_TURN_OFF)
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 

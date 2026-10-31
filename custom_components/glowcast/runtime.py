@@ -741,7 +741,9 @@ class GlowcastData:
                 self._entry.async_start_reauth(self._hass, data={REAUTH_PART: type_id})
             elif (issue := output_type.stop_issues.get(reason)) is not None:
                 self._raise_issue(issue.key)
-            elif (detail := self._stop_detail(reason, type_id)) is not None:
+            elif (
+                detail := self._stop_detail(reason, type_id, remove=True)
+            ) is not None:
                 self._raise_issue(detail[0].key, detail[1])
             elif (
                 reason is StopReason.OUTPUT_UNAVAILABLE
@@ -776,7 +778,10 @@ class GlowcastData:
             reason
         )
         placeholders: Mapping[str, str] = {}
-        if issue is None and (detail := self._stop_detail(reason)) is not None:
+        if (
+            issue is None
+            and (detail := self._stop_detail(reason, remove=True)) is not None
+        ):
             issue, placeholders = detail
         message = (
             _STOP_MESSAGES[reason] if issue is None else _message(issue, placeholders)
@@ -808,18 +813,30 @@ class GlowcastData:
         self._notify()
 
     def _stop_detail(
-        self, reason: StopReason, type_id: str | None = None
+        self, reason: StopReason, type_id: str | None = None, *, remove: bool = False
     ) -> tuple[Issue, Mapping[str, str]] | None:
         """The repair issue an output part's check gives this stop, with its
-        placeholders (StopDetail); only the part `type_id` when given."""
+        placeholders (StopDetail); only the part `type_id` when given.
+
+        With `remove`, the issue of a part whose check says it is not this
+        stop is removed: an earlier stop's detail no longer holds.
+        """
+        found: tuple[Issue, Mapping[str, str]] | None = None
         for part_id, output_type, part_opts in self._parts():
             detail = output_type.stop_details.get(reason)
             if detail is None or type_id not in (None, part_id):
                 continue
             placeholders = detail.check(self._hass, self._entry.data, part_opts)
-            if placeholders is not None:
-                return detail.issue, placeholders
-        return None
+            if placeholders is None:
+                if remove:
+                    ir.async_delete_issue(
+                        self._hass,
+                        DOMAIN,
+                        issue_id(self._entry.entry_id, detail.issue.key),
+                    )
+            elif found is None:
+                found = detail.issue, placeholders
+        return found
 
     def _raise_issue(
         self, key: str, placeholders: Mapping[str, str] | None = None
