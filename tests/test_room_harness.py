@@ -339,6 +339,19 @@ async def test_a_bridge_request_the_fake_does_not_answer_fails_the_run(
         await harness.record_async(CORE, lights="in-area")
 
 
+async def test_a_release_that_does_not_ask_the_bridge_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that takes `area_lights` but asks the bridge nothing (here:
+    it finds no hue entry) would be drawn as driving the lamp twice: the run
+    fails instead."""
+    harness = _load("room_harness")
+    monkeypatch.setattr(harness.FakeHass, "_hue_entry", lambda self, *args: None)
+
+    with pytest.raises(RuntimeError, match="did not ask"):
+        await harness.record_async(CORE, lights="in-area")
+
+
 def test_a_light_driven_twice_is_drawn_with_both() -> None:
     """The floor lamp's glow is the stream's, the lamp itself the light
     commands' colour (#301)."""
