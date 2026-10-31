@@ -81,7 +81,7 @@ lights = "The floor lamp follows the entertainment area only, in the colour of t
 # A release whose room is the same in every scenario: what it did change, in
 # every tab without a note of its own (the overview says more).
 [releases]
-"v0.3.1" = "Besides a light in the entertainment area too, v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes)."
+"v0.3.1" = "v0.3.1 also changed things the room does not show; see [the overview](index.md#same-room-other-changes)."
 
 # What visibly changed, per release and scenario (from docs/releases/).
 # A scenario that is new or changed and has no note gets a plain line.
