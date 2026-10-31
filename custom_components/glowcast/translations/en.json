@@ -160,7 +160,7 @@
     "step": {
       "init": {
         "title": "Which lights should follow the picture?",
-        "description": "First the lights and their own settings, then brightness, intensity and the update rate. Together: first the entertainment area, then the Home Assistant lights.",
+        "description": "First the lights and their own settings, then brightness, intensity, the update rate and the liveliness. Together: first the entertainment area, then the Home Assistant lights.",
         "menu_options": {
           "hue_options": "Hue entertainment area - the smoothest",
           "ha_lights_options": "Home Assistant lights - any brand, slower",

@@ -160,7 +160,7 @@
     "step": {
       "init": {
         "title": "Welke lampen volgen het beeld?",
-        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de Home Assistant-lampen.",
+        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit, de updatefrequentie en de levendigheid. Samen: eerst de entertainmentruimte, dan de Home Assistant-lampen.",
         "menu_options": {
           "hue_options": "Hue-entertainmentruimte - het vloeiendst",
           "ha_lights_options": "Home Assistant-lampen - elk merk, trager",
