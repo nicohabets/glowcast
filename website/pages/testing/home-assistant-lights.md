@@ -5,12 +5,12 @@
 <!-- rooms -->
 | Scenario | v0.4.0 | v0.3.1 | v0.3.0 | v0.2.0 | v0.1.1 | v0.1.0 |
 |---|---|---|---|---|---|---|
-| Home Assistant lights: 1 Sunset | [●](#ha-sunset "changed"){ .glowcast-changed } | [same](#ha-sunset) | [new](#ha-sunset) | - | - | - |
-| Home Assistant lights: 5 Fade between scenes | [●](#ha-fade-between-scenes "changed"){ .glowcast-changed } | [same](#ha-fade-between-scenes) | [new](#ha-fade-between-scenes) | - | - | - |
-| Home Assistant lights: 8 No picture | [●](#ha-no-picture "changed"){ .glowcast-changed } | [same](#ha-no-picture) | [new](#ha-no-picture) | - | - | - |
-| Together: 9 Home Assistant lights unavailable | [●](#combined-home-assistant-lights-unavailable "changed"){ .glowcast-changed } | [same](#combined-home-assistant-lights-unavailable) | [new](#combined-home-assistant-lights-unavailable) | - | - | - |
+| [Home Assistant lights: 1 Sunset](#ha-sunset) | [![Sunset in v0.4.0](rooms/v0.4.0/ha-sunset.gif){ width="140" loading=lazy }](rooms/v0.4.0/ha-sunset.gif)<br>[● changed](#ha-sunset){ .glowcast-changed } | [same](rooms/v0.3.0/ha-sunset.gif "same as v0.3.0") | [![Sunset in v0.3.0](rooms/v0.3.0/ha-sunset.gif){ width="140" loading=lazy }](rooms/v0.3.0/ha-sunset.gif)<br>[new](#ha-sunset) | - | - | - |
+| [Home Assistant lights: 5 Fade between scenes](#ha-fade-between-scenes) | [![Fade between scenes in v0.4.0](rooms/v0.4.0/ha-fade-between-scenes.gif){ width="140" loading=lazy }](rooms/v0.4.0/ha-fade-between-scenes.gif)<br>[● changed](#ha-fade-between-scenes){ .glowcast-changed } | [same](rooms/v0.3.0/ha-fade-between-scenes.gif "same as v0.3.0") | [![Fade between scenes in v0.3.0](rooms/v0.3.0/ha-fade-between-scenes.gif){ width="140" loading=lazy }](rooms/v0.3.0/ha-fade-between-scenes.gif)<br>[new](#ha-fade-between-scenes) | - | - | - |
+| [Home Assistant lights: 8 No picture](#ha-no-picture) | [![No picture in v0.4.0](rooms/v0.4.0/ha-no-picture.gif){ width="140" loading=lazy }](rooms/v0.4.0/ha-no-picture.gif)<br>[● changed](#ha-no-picture){ .glowcast-changed } | [same](rooms/v0.3.0/ha-no-picture.gif "same as v0.3.0") | [![No picture in v0.3.0](rooms/v0.3.0/ha-no-picture.gif){ width="140" loading=lazy }](rooms/v0.3.0/ha-no-picture.gif)<br>[new](#ha-no-picture) | - | - | - |
+| [Together: 9 Home Assistant lights unavailable](#combined-home-assistant-lights-unavailable) | [![Home Assistant lights unavailable in v0.4.0](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif){ width="140" loading=lazy }](rooms/v0.4.0/combined-home-assistant-lights-unavailable.gif)<br>[● changed](#combined-home-assistant-lights-unavailable){ .glowcast-changed } | [same](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif "same as v0.3.0") | [![Home Assistant lights unavailable in v0.3.0](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif){ width="140" loading=lazy }](rooms/v0.3.0/combined-home-assistant-lights-unavailable.gif)<br>[new](#combined-home-assistant-lights-unavailable) | - | - | - |
 
-●: what the lights get changed since the previous release. same: the same as in the previous release (within rounding). new: the first release with these lights. -: not available.
+● changed: what the lights get changed since the previous release; new: the first release with these lights. Both show the GIF; click it to see it full size. same: the same as in the previous release (within rounding), a link to its GIF. -: not available.
 
 ### Home Assistant lights: 1 Sunset { #ha-sunset }
 

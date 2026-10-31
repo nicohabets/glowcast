@@ -56,12 +56,15 @@ TOLERANCE = 2
 # show them 400 px wide.
 WIDTH = 600
 STEP = 3  # every third send tick: 8.3 frames per second
+# The width of a GIF in the tables, where a scenario is new or changed.
+THUMB = 140
 MARKER = re.compile(r"(<!-- rooms -->\n).*?(<!-- /rooms -->)", re.S)
 CHANGED = "●"
 LEGEND = (
-    f"{CHANGED}: what the lights get changed since the previous release. "
-    "same: the same as in the previous release (within rounding). "
-    "new: the first release with these lights. -: not available."
+    f"{CHANGED} changed: what the lights get changed since the previous release; "
+    "new: the first release with these lights. Both show the GIF; click it to "
+    "see it full size. same: the same as in the previous release (within "
+    "rounding), a link to its GIF. -: not available."
 )
 OUTPUT_NAMES = {
     "area": "An entertainment area",
@@ -320,13 +323,23 @@ def title(manifest: dict[str, Any], texts: dict[str, Any], key: str) -> str:
     return f"{prefix}: {full}" if prefix else full
 
 
-def cell(scenario: dict[str, Any] | None, href: str) -> str:
-    """A table cell: a link to the scenario's tabs."""
+def cell(scenario: dict[str, Any] | None, href: str, name: str = "") -> str:
+    """A table cell. New or changed: the scenario's GIF, small and clickable
+    to full size, with the mark linking to its tabs, so a change shows in the
+    table itself. The same: a link to the GIF it shows (the release's since
+    which it is the same)."""
     if scenario is None:
         return "-"
+    gif = f"rooms/{scenario['gif']}"
+    if scenario["status"] == "same":
+        return f'[same]({gif} "same as {scenario["since"]}")'
     if scenario["status"] == "changed":
-        return f'[{CHANGED}]({href} "changed"){{ .glowcast-changed }}'
-    return f"[{scenario['status']}]({href})"
+        mark = f"[{CHANGED} changed]({href}){{ .glowcast-changed }}"
+    else:
+        mark = f"[new]({href})"
+    alt = f"{name} in {scenario['since']}" if name else scenario["since"]
+    image = f'![{alt}]({gif}){{ width="{THUMB}" loading=lazy }}'
+    return f"[{image}]({gif})<br>{mark}"
 
 
 def table(
@@ -342,8 +355,13 @@ def table(
     for key, page in rows:
         lights, name = split(key)
         href = f"{page}#{slug(lights, name)}"
-        cells = [cell(lookup(manifest, lights, name, r)[1], href) for r in newest]
-        lines.append(f"| {title(manifest, texts, key)} | " + " | ".join(cells) + " |")
+        cells = [
+            cell(lookup(manifest, lights, name, r)[1], href, short(name))
+            for r in newest
+        ]
+        lines.append(
+            f"| [{title(manifest, texts, key)}]({href}) | " + " | ".join(cells) + " |"
+        )
     return lines
 
 
@@ -386,9 +404,7 @@ def scenario_section(
         lines += [f'=== "{release}{mark}"', ""]
         # A scenario's own note, else the release's note for every scenario
         # (for a release that changed nothing the room shows).
-        note = notes.get(release, {}).get(key) or texts.get("releases", {}).get(
-            release
-        )
+        note = notes.get(release, {}).get(key) or texts.get("releases", {}).get(release)
         if info is None:
             text = "Not made for this release."
         elif not info["available"]:

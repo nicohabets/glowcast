@@ -168,10 +168,22 @@ TEXTS = {
 def test_the_table_marks_what_changed() -> None:
     lines = rooms.table(MANIFEST, TEXTS, [("ha:Sunset", "lights.md")])
     assert lines[0] == "| Scenario | v0.4.0 | v0.3.0 | v0.2.0 |"
-    assert lines[2] == (
-        "| Home Assistant lights: 1 Sunset "
-        '| [●](lights.md#ha-sunset "changed"){ .glowcast-changed } '
-        "| [new](lights.md#ha-sunset) | - |"
+    title, changed, new, missing = (c.strip() for c in lines[2].strip("|").split(" | "))
+    assert title == "[Home Assistant lights: 1 Sunset](lights.md#ha-sunset)"
+    gif = "rooms/v0.4.0/ha-sunset.gif"
+    assert changed == (
+        f'[![Sunset in v0.4.0]({gif}){{ width="140" loading=lazy }}]({gif})'
+        "<br>[● changed](lights.md#ha-sunset){ .glowcast-changed }"
+    )
+    assert new.startswith("[![Sunset in v0.3.0](rooms/v0.3.0/ha-sunset.gif)")
+    assert new.endswith("<br>[new](lights.md#ha-sunset)")
+    assert missing == "-"
+
+
+def test_a_cell_that_is_the_same_links_to_the_gif_it_shows() -> None:
+    same = {"status": "same", "gif": "v0.3.0/ha-sunset.gif", "since": "v0.3.0"}
+    assert rooms.cell(same, "lights.md#ha-sunset") == (
+        '[same](rooms/v0.3.0/ha-sunset.gif "same as v0.3.0")'
     )
 
 
@@ -180,7 +192,7 @@ def test_the_tabs_newest_first() -> None:
     assert text.index('=== "v0.4.0 ●"') < text.index('=== "v0.3.0"')
     assert "    ● Livelier colours." in text
     gif = "rooms/v0.4.0/ha-sunset.gif"
-    assert f"({gif}){{ width=\"400\" loading=lazy }}]({gif})" in text
+    assert f'({gif}){{ width="400" loading=lazy }}]({gif})' in text
     # Plain words, not the harness's message.
     assert "Not available: Home Assistant lights came in v0.3.0." in text
 
