@@ -102,6 +102,24 @@ python3 scripts/demo.py room --liveliness all      # Calm, Normal and Lively sid
 - `--liveliness calm|normal|lively` runs the scenarios at that liveliness level (#16; Normal by default, the harness then passes no level, so an older `core/` runs as before); a room at Calm or Lively is labelled with it. `--liveliness all` draws the three levels side by side, labelled Calm, Normal and Lively (2400 px wide: the full `room.gif` is then over 10 MB, the per-scenario GIFs are not). A `core/` without the levels runs Normal only. `--liveliness` cannot be used with `--compare` or `--versus`.
 - Output, in `room-out/` (ignored by git; `--out DIR` for another folder): `room.gif` with all scenarios (800 px per room, 1600 px side by side, 12.5 frames per second, fewer only if it would be over 10 MB), and per scenario `room-<n>.gif` and a still `room-<n>.png`. The GIFs have a light background (a GIF with a transparent one is five times the size); the stills are transparent around the room, like the illustrations. Attach them to the pull request with `gh pr comment <n> --attach ...`; never commit them.
 
+### The room per release, for the website
+
+The website's testing pages (`website/pages/testing/`, #293) show the room for every release since v0.1.0, each drawn from that release's own code. `demo.py rooms` makes them, in the demo's environment like `room`:
+
+```
+python3 scripts/demo.py rooms                                  # all vX.Y.Z tags
+python3 scripts/demo.py rooms --next main --next-label v0.5.0  # and the next release, before it is tagged
+python3 scripts/demo.py rooms --pages-only                     # only write the pages again (after editing the texts)
+```
+
+- `demo/release_rooms.py` exports each release's `custom_components/glowcast/` with `git archive` into a temporary folder (the tags and the working tree are not touched) and runs the current harness against it, as `--compare` does for main: `--lights area` for every release, `ha` and `combined` for the releases that have them. The timings come from this working copy's `core/`, so every release gets the same pictures. A release that has no such lights, or whose code cannot run the scenarios, is "not available", with the reason in the manifest and in plain words on the page.
+- Each scenario is compared with the previous release's run: what is sent to each light on every send tick. Up to 2 of 255 per colour component is "same" (rounding); more is "changed" (●), with the largest difference in the manifest; the first release with these lights is "new". Note that a scenario starts with the lights as the one before it left them, so a change in, say, the sunset can show in the dark picture after it.
+- Only a new or changed scenario gets a GIF of its own (one room, labelled with the release); a scenario that is the same shows the GIF of the release since which it is the same. GIFs that exist already are kept (`--force` draws them all again), so a new release adds only its own. They are smaller than `room`'s, to keep the repository small: 600 px wide, 8.3 frames per second. Only the scenarios the pages show are drawn.
+- Out: `website/pages/testing/rooms/<release>/<lights>-<scenario>.gif` and `rooms/manifest.json` (per kind of lights and release: available or why not, and per scenario its status, difference, GIF and since which release it is the same). These are committed: they are part of the website.
+- The pages: `demo/testing_pages.toml` says which scenarios each page shows (by their lights and their name without number, for example `area:Letterbox`, so renumbering a scenario keeps its texts), what each picture is and what the lights should do, and what visibly changed per release (from `docs/releases/`). The script writes each page's table (scenarios against releases, newest first) and its tabs between `<!-- rooms -->` and `<!-- /rooms -->`; the rest of each page is written by hand.
+- **For a new release:** add its notes under `[notes."vX.Y.Z"]` in `testing_pages.toml` for the scenarios it changed (run it once to see which), then `python3 scripts/demo.py rooms` once the tag exists (or with `--next` before), and commit the new GIFs, the manifest and the pages. A new scenario that the pages should show gets an entry in `testing_pages.toml` too.
+- **After a change to the harness's scenarios or `room.py`'s drawing,** run it with `--force`: the kept GIFs are only right while the harness draws the same thing (a scenario also starts from the light state the one before it leaves).
+
 ## The test bench
 
 `bench/run.py` (#134) checks Glowcast on real hardware without the TV: a computer monitor gives the picture, one or more Hue lights in the bench's own entertainment area follow it, and a USB webcam that sees both judges the colours and the timing. When an agent runs it is in `CLAUDE.md` ("Working in parallel", rule 6).

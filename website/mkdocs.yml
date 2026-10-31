@@ -89,6 +89,9 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.highlight
   - pymdownx.superfences
+  # Tabs per release on the testing pages.
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -121,4 +124,10 @@ nav:
       - Installing and setting up: guide/setup.md
       - The first evening: guide/first-evening.md
       - When something is wrong: guide/problems.md
+  - How it is tested:
+      - testing/index.md
+      - Colours: testing/colours.md
+      - Black bars and movement: testing/shape-and-movement.md
+      - Dark and no picture: testing/dark.md
+      - Home Assistant lights: testing/home-assistant-lights.md
   - Releases: https://github.com/nicohabets/glowcast/releases
