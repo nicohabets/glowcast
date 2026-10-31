@@ -16,7 +16,11 @@ base with `main`, in a temporary worktree, and both rooms are drawn side by
 side, labelled "main" and "this PR".
 
 --lights picks the output the room's lights belong to (room_harness.py): an
-entertainment area (the default), Home Assistant lights, or both combined. --place
+entertainment area (the default), Home Assistant lights, both combined, or
+both with the floor lamp in both (in-area, #301): a light that the stream and
+light commands drive at once has its glow on the walls and the floor from the
+stream and its own colour from the light commands, and the room says so at its
+bottom. --place
 moves a Home Assistant light, and --versus draws a second room beside the first with
 other places, labelled with them (the place comparison). --liveliness runs the
 scenarios at a level (#16), and --liveliness all draws the three levels side by
@@ -110,12 +114,15 @@ PART_NAMES = {
     "hue_entertainment": "Entertainment area",
 }
 # As in room_harness.py, which runs in an interpreter of its own.
-LIGHTS = ("area", "ha", "combined")
+LIGHTS = ("area", "ha", "combined", "in-area")
 EXIT_NO_OUTPUT = 3
+# A light's colour from light commands when the stream drives it too.
+COMMANDS = "+commands"
 # How a side is labelled when it is the only one, per --lights.
 MODE_LABELS = {
     "ha": "Home Assistant lights",
     "combined": "Area + Home Assistant lights",
+    "in-area": "Area + Home Assistant lights",
 }
 # As in room_harness.py: the liveliness levels (#16).
 LEVELS = ("calm", "normal", "lively")
@@ -176,9 +183,19 @@ def light(rgb: list[float] | None) -> Light:
     return colour, round(level ** (1 / 2.2), 3)
 
 
-def room_svg(lights: dict[str, Light], screen: str | None) -> str:
+def room_svg(
+    lights: dict[str, Light],
+    screen: str | None,
+    commands: dict[str, Light] | None = None,
+) -> str:
     """The room with these lights (by room_harness.CHANNELS id) and the TV
-    showing `screen` (a PNG data URI of the frame), or off."""
+    showing `screen` (a PNG data URI of the frame), or off.
+
+    `commands`: the lights that light commands drive besides the stream
+    (#301), with what they give them: such a light's glow on the walls and the
+    floor is the stream's, the light itself shows the light commands'.
+    """
+    commands = commands or {}
     defs: list[str] = []
     back: list[str] = []
     mid: list[str] = []
@@ -204,9 +221,14 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
             f'fill="url(#g{name})" opacity="{opacity:.3f}"/></g>'
         )
 
+    def own(id_: str) -> Light:
+        """What a light itself shows: light commands' colour, when they drive
+        it besides the stream, else its channel's."""
+        return commands[id_] if id_ in commands else lights.get(id_)
+
     def fill(id_: str, off: str) -> str:
         """A lamp's own colour: towards the light's colour by its strength."""
-        if (lit := lights.get(id_)) is None:
+        if (lit := own(id_)) is None:
             return off
         colour, strength = lit
         return _mix(off, colour, strength)
@@ -276,7 +298,7 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
     def faces(id_: str, top: float, left: float) -> tuple[tuple[str, str, str], float]:
         """A light's box faces (top, left, right), whitened towards the top as
         in Room v2, and its strength (0 when off)."""
-        if (lit := lights.get(id_)) is None:
+        if (lit := own(id_)) is None:
             return (STRIP_OFF,) * 3, 0.0
         colour = fill(id_, STRIP_OFF)
         strength = lit[1]
@@ -335,14 +357,14 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
     strip = fill("console_strip", CONSOLE_STRIP_OFF)
     mid.append(_poly([(204, 56, 1), (476, 56, 1), (476, 56, 10), (204, 56, 10)], strip))
     mid.append(_poly([(480, 4, 1), (480, 56, 1), (480, 56, 10), (480, 4, 10)], strip))
-    if (lit := lights.get("console_strip")) is not None:
+    if (lit := own("console_strip")) is not None:
         mid.append(
             core([(204, 56, 4), (476, 56, 4), (476, 56, 7), (204, 56, 7)], 0.6 * lit[1])
         )
     # The orb lamp on the console.
     mid.append(_box(330, 352, 18, 40, 52, 58, (METAL,) * 3))
     ox, oy = _p(341, 29, 78)
-    orb = lights.get("console_lamp")
+    orb = own("console_lamp")
     mid.append(
         f'<circle cx="{ox:.1f}" cy="{oy:.1f}" r="21" '
         f'fill="{fill("console_lamp", LAMP_OFF)}"/>'
@@ -374,7 +396,7 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
     mid.append(_box(109, 115, 57, 63, 6, 200, (METAL,) * 3))
     shade = fill("floor_lamp", LAMP_OFF)
     shade_top = LAMP_TOP_OFF
-    if (lit := lights.get("floor_lamp")) is not None:
+    if (lit := own("floor_lamp")) is not None:
         shade_top = _mix(LAMP_TOP_OFF, "#FFF3E0", lit[1])
     mid.extend(_shade(112, 60, 198, 34, 252, 24, shade, shade_top))
 
@@ -397,7 +419,7 @@ def room_svg(lights: dict[str, Light], screen: str | None) -> str:
     front.append(_box(70, 130, 400, 460, 0, 56, WOOD))
     front.append(_box(97, 103, 427, 433, 56, 92, (METAL,) * 3))
     table_top = LAMP_TOP_OFF
-    if (lit := lights.get("table_lamp")) is not None:
+    if (lit := own("table_lamp")) is not None:
         table_top = _mix(LAMP_TOP_OFF, "#FFF3E0", lit[1])
     front.extend(
         _shade(100, 430, 90, 22, 124, 15, fill("table_lamp", LAMP_OFF), table_top)
@@ -464,6 +486,21 @@ def _shade(
 # --- Frames -----------------------------------------------------------------
 
 
+def split_commands(
+    sample_lights: dict[str, list[float] | None],
+) -> tuple[dict[str, Light], dict[str, Light]]:
+    """A sample's lights as drawn: (each channel's, and what light commands
+    give the lights that the stream drives too, by the light's id)."""
+    lights: dict[str, Light] = {}
+    commands: dict[str, Light] = {}
+    for id_, rgb in sample_lights.items():
+        if id_.endswith(COMMANDS):
+            commands[id_.removesuffix(COMMANDS)] = light(rgb)
+        else:
+            lights[id_] = light(rgb)
+    return lights, commands
+
+
 class Painter:
     """Draws a recording's samples; the same lights and picture once."""
 
@@ -475,12 +512,16 @@ class Painter:
 
     def room(self, index: int) -> Image.Image:
         sample = self._recording["samples"][index]
-        lights = {id_: light(rgb) for id_, rgb in sample["lights"].items()}
-        key = (sample["frame"], tuple(sorted(lights.items())))
+        lights, commands = split_commands(sample["lights"])
+        key = (
+            sample["frame"],
+            tuple(sorted(lights.items())),
+            tuple(sorted(commands.items())),
+        )
         if key not in self._rooms:
             import resvg_py  # only the drawing needs it, not the tests
 
-            svg = room_svg(lights, self._screen(sample["frame"]))
+            svg = room_svg(lights, self._screen(sample["frame"]), commands)
             png = resvg_py.svg_to_bytes(
                 svg_string=svg, width=ROOM_WIDTH, skip_system_fonts=True
             )
@@ -566,9 +607,16 @@ def compose(
 
 
 def notes(sample: dict[str, Any]) -> list[str]:
-    """What a sample's room says at its bottom: the Home Assistant lights that
-    are unavailable, and the parts of a combined output that are dropped."""
+    """What a sample's room says at its bottom: a light that the stream and
+    light commands drive at once (#301), the Home Assistant lights that are
+    unavailable, and the parts of a combined output that are dropped."""
     lines = []
+    lit = sample.get("lights", {})
+    for id_ in sorted(lit):
+        base = id_.removesuffix(COMMANDS)
+        if base != id_ and lit[id_] and lit.get(base):
+            name = LIGHT_NAMES.get(base, base).capitalize()
+            lines.append(f"{name}: stream and light commands")
     if unavailable := sample.get("unavailable"):
         names = [LIGHT_NAMES.get(id_, id_) for id_ in unavailable]
         if len(names) > 2:  # a list that long does not fit
@@ -829,7 +877,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.lights == "area" and (args.place or args.versus):
         parser.error(
-            "--place and --versus are for Home Assistant lights: --lights ha|combined"
+            "--place and --versus are for Home Assistant lights: "
+            "--lights ha|combined|in-area"
         )
     if args.versus and args.compare:
         parser.error("--versus and --compare draw two rooms each: pick one")

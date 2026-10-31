@@ -11,13 +11,19 @@ without the Home Assistant package around it, so the same harness runs against
 another commit's `core/` for `demo.py room --compare`; then it needs only the
 standard library (the drawing is in room.py).
 
-With `--lights ha` or `--lights combined` (#196) the lights are Glowcast's
-own outputs too: the real Home Assistant lights output (`outputs/ha_lights.py`, with its
-places, its schedule and its `transition`) and, combined, the real
+With `--lights ha`, `combined` or `in-area` (#196, #301) the lights are
+Glowcast's own outputs too: the real Home Assistant lights output
+(`outputs/ha_lights.py`, with its places, its schedule and its `transition`)
+and, combined, the real
 `CompositeOutput` with the entertainment area beside it. Only Home
 Assistant around the Home Assistant lights is a fake (FakeHass: the lights' states, an
 entity registry, and `light.turn_on` and `turn_off`, recorded); no Home
-Assistant is started. These modes import the Glowcast package of the tree that
+Assistant is started. `in-area` is combined with one more Home Assistant
+light, the floor lamp, that the bridge reports in the entertainment area
+(#198): a fake bridge (FakeBridge) answers the GET requests that
+`outputs/hue_entertainment.py` sends to ask for the area's lights. A release
+before v0.3.1 does not ask and drives the lamp twice, by the stream and by
+light commands. These modes import the Glowcast package of the tree that
 holds `--core`, so they need Home Assistant installed (the demo's environment,
 or the test requirements).
 
@@ -26,7 +32,7 @@ settings as before, so an older `core/` without the setting runs too).
 
 Usage (room.py runs it; the result is JSON):
     python room_harness.py --core DIR [--timing-from DIR]
-        [--lights area|ha|combined] [--place LIGHT=PLACE ...]
+        [--lights area|ha|combined|in-area] [--place LIGHT=PLACE ...]
         [--liveliness calm|normal|lively] --out FILE
 """
 
@@ -37,12 +43,15 @@ import dataclasses
 import heapq
 import importlib
 import importlib.util
+import inspect
 import itertools
 import json
 import math
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType, ModuleType, SimpleNamespace
 from typing import Any
@@ -109,13 +118,41 @@ HA_LIGHTS = {
 }
 
 
+# --lights in-area (#301): the Home Assistant light that is in the
+# entertainment area too, as a Hue light that joined the area later in the Hue
+# app (#198). Its place as a Home Assistant light is on the other side of the
+# TV, so its two drives differ: the stream gives it the left of the picture,
+# light commands the right.
+IN_AREA, IN_AREA_PLACE = "floor_lamp", "right"
+# A light's colour from light commands, in a sample's lights, when the stream
+# drives it too: its id with this after it ("floor_lamp+commands").
+COMMANDS = "+commands"
+
+
+def area_ids(lights: str) -> set[str]:
+    """The lights of the entertainment area with this output."""
+    return {id_ for id_, _, _ in CHANNELS} if lights in AREA_LIGHTS else set()
+
+
 def ha_light_ids(lights: str) -> list[str]:
-    """The room's Home Assistant lights with this output (see HA_LIGHTS)."""
-    area = {id_ for id_, _, _ in CHANNELS} if lights == "combined" else set()
-    return [id_ for id_ in HA_LIGHTS if id_ not in area]
+    """The room's Home Assistant lights with this output (see HA_LIGHTS): all of
+    them, those not in the area, and with in-area the one in it too."""
+    area = area_ids(lights)
+    ids = [id_ for id_ in HA_LIGHTS if id_ not in area]
+    return [*ids, IN_AREA] if lights == "in-area" else ids
 
 
-LIGHTS = ("area", "ha", "combined")
+def default_place(room_id: str, lights: str) -> str:
+    """A Home Assistant light's place when --place does not move it."""
+    if lights == "in-area" and room_id == IN_AREA:
+        return IN_AREA_PLACE
+    return HA_LIGHTS[room_id][1]
+
+
+LIGHTS = ("area", "ha", "combined", "in-area")
+# The outputs with an entertainment area and Home Assistant lights together.
+COMBINED = ("combined", "in-area")
+AREA_LIGHTS = ("area", *COMBINED)
 # The parts of a combined output, named by their type as outputs/__init__.py
 # names them.
 AREA_PART, HA_LIGHTS_PART = "hue_entertainment", "ha_lights"
@@ -304,12 +341,18 @@ def scenarios(
 ) -> list[Scenario]:
     """The fixed scenarios, in order; the timings follow `core/`.
 
+    In-area has one of its own instead (#301): moving colours, with the floor
+    lamp in the area and a Home Assistant light too, from the start.
+
     The combined output gets a ninth: its Home Assistant lights become unavailable,
     the first (the wall light) 1 s in and the others 3 s in, until that part
     is dropped (the Home Assistant lights are checked every 5 s, then released and
     started again once after `lost_retry_delay`) while the entertainment area
     keeps following the picture.
     """
+    if lights == "in-area":
+        # The fade-in, and a few commands to the Home Assistant lights after it.
+        return [Scenario("1 Floor lamp in the area too", 6.0, _drifting, 0.75)]
     run = [
         Scenario("1 Sunset", 2.5, _still(_sunset)),
         # Holds the last colours for BLACK_HOLD, then fades to the glow.
@@ -375,7 +418,7 @@ def load_glowcast(core_folder: Path, lights: str) -> SimpleNamespace:
     """
     package = core_folder.resolve().parent
     needed = ["ha_lights.py"]
-    if lights == "combined":
+    if lights in COMBINED:
         needed.append("composite.py")
     if missing := [
         name for name in needed if not (package / "outputs" / name).is_file()
@@ -398,7 +441,12 @@ def load_glowcast(core_folder: Path, lights: str) -> SimpleNamespace:
         ha_lights=importlib.import_module(f"{name}.outputs.ha_lights"),
         composite=(
             importlib.import_module(f"{name}.outputs.composite")
-            if lights == "combined"
+            if lights in COMBINED
+            else None
+        ),
+        hue=(
+            importlib.import_module(f"{name}.outputs.hue_entertainment")
+            if lights == "in-area"
             else None
         ),
     )
@@ -522,6 +570,8 @@ class FakeLight:
 
     room_id: str  # the light in the room (HA_LIGHTS)
     name: str
+    # A Hue light of Home Assistant's hue entry: its id on the bridge.
+    hue_id: str | None = None
     available: bool = True
     on: bool = False
     _from: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
@@ -573,11 +623,15 @@ class FakeRegistry:
             SimpleNamespace(
                 id=light.registry_id,
                 entity_id=light.entity_id,
+                # A Hue light by its id on the bridge, as the hue integration
+                # registers it.
+                unique_id=light.hue_id or light.registry_id,
                 domain="light",
                 # Not Hue or Matter: no shared network, so each light gets a
-                # command at most once per second.
-                platform="glowcast_room",
-                config_entry_id=None,
+                # command at most once per second. A Hue light is of the hue
+                # entry; alone on its bridge, it shares that with no other.
+                platform=HUE if light.hue_id else "glowcast_room",
+                config_entry_id=HUE_ENTRY_ID if light.hue_id else None,
                 device_id=None,
                 area_id=None,
                 disabled=False,
@@ -590,7 +644,11 @@ class FakeRegistry:
         self._by_entity_id = {entry.entity_id: entry for entry in entries}
         by_id = {entry.id: entry for entry in entries}
         self.entities = SimpleNamespace(
-            get_entry=by_id.get, values=lambda: list(entries)
+            get_entry=by_id.get,
+            values=lambda: list(entries),
+            get_entries_for_config_entry_id=lambda entry_id: [
+                entry for entry in entries if entry.config_entry_id == entry_id
+            ],
         )
 
     def async_get(self, entity_id: str) -> Any:
@@ -602,17 +660,36 @@ class FakeHass:
     the entity registry, `light.turn_on` and `turn_off` (recorded in `calls`)
     and its tasks. Nothing else of Home Assistant runs."""
 
-    def __init__(self, clock: FakeClock, lights: list[FakeLight]) -> None:
+    def __init__(
+        self,
+        clock: FakeClock,
+        lights: list[FakeLight],
+        bridge: "FakeBridge | None" = None,
+    ) -> None:
         from homeassistant.core import State
         from homeassistant.helpers import entity_registry as er
 
         self._clock = clock
         self._state = State
+        self._bridge = bridge
         self.lights = {light.entity_id: light for light in lights}
         self.calls: list[dict[str, Any]] = []
         self.data: dict[Any, Any] = {er.DATA_REGISTRY: FakeRegistry(lights)}
         self.states = SimpleNamespace(get=self._get)
         self.services = SimpleNamespace(async_call=self._async_call)
+        # Home Assistant's hue entry of the bridge, when there is one.
+        self.config_entries = SimpleNamespace(
+            async_entry_for_domain_unique_id=self._hue_entry,
+            async_get_entry=lambda entry_id: (
+                bridge.entry if bridge and entry_id == HUE_ENTRY_ID else None
+            ),
+        )
+
+    def _hue_entry(self, domain: str, unique_id: str) -> Any:
+        bridge = self._bridge
+        if bridge is None or domain != HUE or unique_id != bridge.unique_id:
+            return None
+        return bridge.entry
 
     def async_create_task(
         self, coro: Any, name: str | None = None, eager_start: bool = True
@@ -672,6 +749,152 @@ class FakeHass:
             light.turn_off()
 
 
+# --- The Hue bridge, as Home Assistant's hue entry reaches it (a fake) -------
+
+HUE = "hue"  # Home Assistant's hue integration
+HUE_ENTRY_ID = "room-hue-entry"
+# The bridge's paths (CLIP v2) that outputs/hue_entertainment.py asks.
+CLIP = "/clip/v2/resource/"
+
+
+class FakeBridge:
+    """The Hue bridge with the room's entertainment area (#301), as far as
+    `outputs/hue_entertainment.py` asks it for the area's lights (#198): GET
+    requests through Home Assistant's own hue entry, for the entertainment
+    areas (their `light_services` and channels), the entertainment services
+    and the lights. Each light of the area (the strip, the floor lamp, the
+    light bar and the table lamp) is a device with one light and one
+    entertainment service. The requests are kept in `requests` (their paths);
+    nothing else is answered, and no network is used.
+    """
+
+    unique_id = "room-bridge"
+    area_id = "room-area"
+    host = "bridge.invalid"
+    key = "room-app-key"  # Home Assistant's own key of the bridge
+
+    def __init__(self) -> None:
+        from homeassistant.config_entries import ConfigEntryState
+        from homeassistant.const import CONF_API_KEY, CONF_API_VERSION, CONF_HOST
+
+        self.requests: list[str] = []
+        self.entry = SimpleNamespace(
+            entry_id=HUE_ENTRY_ID,
+            domain=HUE,
+            unique_id=self.unique_id,
+            state=ConfigEntryState.LOADED,
+            data={CONF_HOST: self.host, CONF_API_KEY: self.key, CONF_API_VERSION: 2},
+        )
+        # The area's lights in the order of CHANNELS: the strip is one light.
+        self._lights = list(dict.fromkeys(DEPTH[id_][1] for id_, _, _ in CHANNELS))
+        self.resources = {
+            "entertainment_configuration": [
+                {
+                    "id": self.area_id,
+                    "type": "entertainment_configuration",
+                    "metadata": {"name": "Room"},
+                    "status": "inactive",
+                    "light_services": [
+                        {"rid": self.light_id(light), "rtype": "light"}
+                        for light in self._lights
+                    ],
+                    "channels": [
+                        {
+                            "channel_id": n,
+                            "members": [
+                                {
+                                    "service": {
+                                        "rid": f"entertainment-{DEPTH[id_][1]}",
+                                        "rtype": "entertainment",
+                                    },
+                                    "index": 0,
+                                }
+                            ],
+                        }
+                        for n, (id_, _, _) in enumerate(CHANNELS)
+                    ],
+                }
+            ],
+            "entertainment": [
+                {
+                    "id": f"entertainment-{light}",
+                    "type": "entertainment",
+                    "owner": {"rid": f"device-{light}", "rtype": "device"},
+                    "renderer": True,
+                }
+                for light in self._lights
+            ],
+            "light": [
+                {
+                    "id": self.light_id(light),
+                    "type": "light",
+                    "owner": {"rid": f"device-{light}", "rtype": "device"},
+                }
+                for light in self._lights
+            ],
+        }
+
+    @staticmethod
+    def light_id(light: str) -> str:
+        """A light's id on the bridge (`light` as in DEPTH)."""
+        return f"light-{light.replace('_', '-')}"
+
+    def get(
+        self, url: str, headers: Mapping[str, str] | None = None, **kwargs: Any
+    ) -> "_BridgeReply":
+        path = url.removeprefix(f"https://{self.host}")
+        self.requests.append(path)
+        found = None
+        if (
+            path.startswith(CLIP)
+            and (headers or {}).get("hue-application-key") == self.key
+        ):
+            found = self.resources.get(path.removeprefix(CLIP))
+        return _BridgeReply(None if found is None else {"errors": [], "data": found})
+
+
+class _BridgeReply:
+    """An answer of FakeBridge, as aiohttp's response (an async context)."""
+
+    def __init__(self, body: dict[str, Any] | None) -> None:
+        self._body = body
+        self.status = 404 if body is None else 200
+        self.headers: dict[str, str] = {}
+
+    async def __aenter__(self) -> "_BridgeReply":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        pass
+
+    def raise_for_status(self) -> None:
+        if self._body is None:
+            import aiohttp
+
+            raise aiohttp.ClientResponseError(None, (), status=404)  # type: ignore[arg-type]
+
+    async def json(self) -> dict[str, Any] | None:
+        return self._body
+
+
+@contextmanager
+def _bridge_session(
+    hue: ModuleType | None, bridge: FakeBridge | None
+) -> Iterator[None]:
+    """Home Assistant's session in `outputs/hue_entertainment.py` reaches
+    `bridge` while the scenarios run, and is Home Assistant's own again after
+    them (the tests import the same module)."""
+    if hue is None or bridge is None:
+        yield
+        return
+    own = hue.async_get_clientsession
+    hue.async_get_clientsession = lambda hass, *args, **kwargs: bridge
+    try:
+        yield
+    finally:
+        hue.async_get_clientsession = own
+
+
 class BadPlace(ValueError):
     """A --place for a light that is not a Home Assistant light, or a place that
     does not exist."""
@@ -698,7 +921,7 @@ def places_of(places: Mapping[str, str] | None, lights: str = "ha") -> dict[str,
     """The place of each Home Assistant light with this output: HA_LIGHTS's, with
     `places` instead."""
     ids = ha_light_ids(lights)
-    chosen = {room_id: HA_LIGHTS[room_id][1] for room_id in ids}
+    chosen = {room_id: default_place(room_id, lights) for room_id in ids}
     for room_id, value in (places or {}).items():
         if room_id not in ids:
             raise BadPlace(
@@ -753,12 +976,33 @@ class WatchedPart:
 
 
 def _ha_lights(
-    glowcast: SimpleNamespace, clock: FakeClock, places: Mapping[str, str]
+    glowcast: SimpleNamespace,
+    clock: FakeClock,
+    places: Mapping[str, str],
+    bridge: FakeBridge | None = None,
 ) -> tuple[FakeHass, Any, dict[str, tuple[float, float]]]:
     """The real Home Assistant lights output on FakeHass, set up as the settings store
-    it (architecture 5): single lights, each with its place."""
+    it (architecture 5): single lights, each with its place.
+
+    With `bridge` (in-area, #301) the floor lamp is a Hue light of that bridge,
+    in its entertainment area, and the output is made as the release's own
+    `create` makes it beside an area: a release that asks the bridge for the
+    area's lights (v0.3.1 on, #198) gets `area_lights`; an older one does not
+    ask. The output is made here, not by `create`, for the fake clock.
+    """
     ha_lights = glowcast.ha_lights
-    lights = [FakeLight(room_id, HA_LIGHTS[room_id][0]) for room_id in places]
+    lights = [
+        FakeLight(
+            room_id,
+            HA_LIGHTS[room_id][0],
+            hue_id=(
+                bridge.light_id(DEPTH[room_id][1])
+                if bridge is not None and room_id == IN_AREA
+                else None
+            ),
+        )
+        for room_id in places
+    ]
     positions = {
         light.room_id: place(places[light.room_id], ha_lights.PRESETS)
         for light in lights
@@ -775,8 +1019,17 @@ def _ha_lights(
             for light in lights
         ],
     }
-    hass = FakeHass(clock, lights)
-    output = ha_lights.HaLightsOutput(hass, block, now=clock.now)
+    hass = FakeHass(clock, lights, bridge)
+    extra: dict[str, Any] = {}
+    parameters = inspect.signature(ha_lights.HaLightsOutput).parameters
+    if bridge is not None and "area_lights" in parameters:
+        hue = glowcast.hue
+        data = {hue.CONF_BRIDGE: {hue.CONF_UNIQUE_ID: bridge.unique_id}}
+        area = {"type": hue.OUTPUT_HUE_ENTERTAINMENT, hue.CONF_AREA_ID: bridge.area_id}
+        extra["area_lights"] = partial(hue.async_area_lights, hass, data, area)
+        if "left_out_key" in parameters:
+            extra["left_out_key"] = ha_lights._left_out_key(area, block)
+    output = ha_lights.HaLightsOutput(hass, block, now=clock.now, **extra)
     return hass, output, positions
 
 
@@ -792,6 +1045,7 @@ async def _record(
     glowcast: SimpleNamespace | None = None,
     *,
     liveliness: str = NORMAL,
+    bridge: FakeBridge | None = None,
 ) -> dict[str, Any]:
     pipeline = core.pipeline
     clock = FakeClock()
@@ -807,8 +1061,8 @@ async def _record(
     else:
         assert glowcast is not None
         chosen = places_of(places, lights)
-        hass, output, positions = _ha_lights(glowcast, clock, chosen)
-        if lights == "combined":
+        hass, output, positions = _ha_lights(glowcast, clock, chosen, bridge)
+        if lights in COMBINED:
             area = RecordingOutput(core.models)
             watched[HA_LIGHTS_PART] = WatchedPart(output)
             output = glowcast.composite.CompositeOutput(
@@ -853,7 +1107,13 @@ async def _record(
             # A light that was never claimed or is released is off.
             lit = dict(area.colors) if area is not None else {}
             if hass is not None:
-                lit |= hass.levels(clock.now())
+                # A light of the area that light commands drive too (in-area,
+                # before v0.3.1): what they give it, beside the stream's.
+                in_area = area_ids(lights)
+                lit |= {
+                    room_id + COMMANDS if room_id in in_area else room_id: level
+                    for room_id, level in hass.levels(clock.now()).items()
+                }
             samples.append(
                 {
                     "scenario": index,
@@ -896,7 +1156,7 @@ async def _record(
                 "name": name,
                 "x": positions[room_id][0],
                 "z": positions[room_id][1],
-                "moved": name != HA_LIGHTS[room_id][1],
+                "moved": name != default_place(room_id, lights),
             }
             for room_id, name in chosen.items()
         },
@@ -907,6 +1167,8 @@ async def _record(
         "samples": samples,
         # What reached Home Assistant for the Home Assistant lights, in order.
         "commands": hass.calls if hass is not None else [],
+        # What the bridge was asked (in-area): the paths, in order.
+        "bridge": bridge.requests if bridge is not None else [],
     }
 
 
@@ -943,8 +1205,10 @@ async def record_async(
 
     `lights`: the room's lights as an entertainment area ("area"), as Home
     Assistant lights at `places` ("ha"), or both ("combined": the area as with
-    "area", the other lights of HA_LIGHTS as Home Assistant lights). Raises
-    NoOutput when the tree of `core_folder` has no such output.
+    "area", the other lights of HA_LIGHTS as Home Assistant lights; "in-area":
+    as combined, with the floor lamp a Home Assistant light too, which the
+    bridge reports in the area). Raises NoOutput when the tree of
+    `core_folder` has no such output.
 
     `liveliness`: the level the pipeline runs at (LEVELS); raises
     NoLiveliness for Calm or Lively when that `core/` has no levels.
@@ -969,7 +1233,11 @@ async def record_async(
             lights,
             timing.pipeline.LOST_RETRY_DELAY,
         )
-    return await _record(core, run, lights, places, glowcast, liveliness=liveliness)
+    bridge = FakeBridge() if lights == "in-area" else None
+    with _bridge_session(glowcast.hue if glowcast else None, bridge):
+        return await _record(
+            core, run, lights, places, glowcast, liveliness=liveliness, bridge=bridge
+        )
 
 
 def parse_places(values: list[str]) -> dict[str, str]:
