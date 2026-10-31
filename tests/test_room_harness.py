@@ -8,8 +8,9 @@ import colorsys
 import importlib.util
 import itertools
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -254,11 +255,9 @@ async def test_a_light_in_the_area_follows_the_stream_only() -> None:
     hue = importlib.import_module(
         "custom_components.glowcast.outputs.hue_entertainment"
     )
-    session = hue.async_get_clientsession
 
     recording = await harness.record_async(CORE, lights="in-area")
 
-    assert hue.async_get_clientsession is session  # Home Assistant's own again
     assert [r["name"] for r in recording["scenarios"]] == [
         "1 Floor lamp in the area too"
     ]
@@ -277,21 +276,35 @@ async def test_a_light_in_the_area_follows_the_stream_only() -> None:
     assert room.notes(recording["samples"][-1]) == []
 
 
-async def test_a_light_in_the_area_is_driven_twice_without_the_check(
+async def test_a_light_in_the_area_is_driven_twice_before_the_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """As before v0.3.1, or when the bridge does not answer (it refuses
-    nothing): light commands drive the floor lamp besides the stream, and the
-    room draws both and says so."""
+    """As v0.3.0, whose Home Assistant lights output does not take
+    `area_lights`: the bridge is not asked, light commands drive the floor
+    lamp besides the stream, and the room draws both and says so."""
     harness = _load("room_harness")
-    monkeypatch.setattr(
-        harness.FakeBridge,
-        "get",
-        lambda self, url, headers=None, **kwargs: harness._BridgeReply(None),
-    )
+    load = harness.load_glowcast
+
+    def before_the_check(core_folder: Path, lights: str) -> SimpleNamespace:
+        glowcast = load(core_folder, lights)
+        own = glowcast.ha_lights.HaLightsOutput
+
+        class Output(own):  # type: ignore[misc, valid-type]
+            def __init__(
+                self, hass: Any, output: Any, now: Callable[[], float] | None = None
+            ) -> None:
+                super().__init__(hass, output, now)
+
+        glowcast.ha_lights = SimpleNamespace(
+            **{**vars(glowcast.ha_lights), "HaLightsOutput": Output}
+        )
+        return glowcast
+
+    monkeypatch.setattr(harness, "load_glowcast", before_the_check)
 
     recording = await harness.record_async(CORE, lights="in-area")
 
+    assert recording["bridge"] == []
     lamp = [c for c in recording["commands"] if c["light"] == harness.IN_AREA]
     assert lamp and lamp[0]["service"] == "turn_on"
     sample = recording["samples"][-1]
@@ -305,6 +318,25 @@ async def test_a_light_in_the_area_is_driven_twice_without_the_check(
     lights, by_commands = room.split_commands(sample["lights"])
     assert set(by_commands) == {harness.IN_AREA}
     assert harness.IN_AREA in lights
+
+
+async def test_a_bridge_request_the_fake_does_not_answer_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that asks the bridge for something else would get nothing,
+    leave no light out and look as if it drove the lamp twice: the run fails
+    instead."""
+    harness = _load("room_harness")
+    init = harness.FakeBridge.__init__
+
+    def without_lights(self: Any) -> None:
+        init(self)
+        del self.resources["light"]
+
+    monkeypatch.setattr(harness.FakeBridge, "__init__", without_lights)
+
+    with pytest.raises(RuntimeError, match="does not answer /clip/v2/resource/light"):
+        await harness.record_async(CORE, lights="in-area")
 
 
 def test_a_light_driven_twice_is_drawn_with_both() -> None:

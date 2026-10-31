@@ -48,8 +48,7 @@ import itertools
 import json
 import math
 import sys
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -677,6 +676,14 @@ class FakeHass:
         self.data: dict[Any, Any] = {er.DATA_REGISTRY: FakeRegistry(lights)}
         self.states = SimpleNamespace(get=self._get)
         self.services = SimpleNamespace(async_call=self._async_call)
+        if bridge is not None:
+            from homeassistant.helpers import aiohttp_client
+
+            # Home Assistant's own session (async_get_clientsession) is the
+            # fake bridge, for every module that asks the bridge through it.
+            self.data[aiohttp_client.DATA_CLIENTSESSION] = {
+                aiohttp_client._make_key(): bridge
+            }
         # Home Assistant's hue entry of the bridge, when there is one.
         self.config_entries = SimpleNamespace(
             async_entry_for_domain_unique_id=self._hue_entry,
@@ -764,8 +771,12 @@ class FakeBridge:
     areas (their `light_services` and channels), the entertainment services
     and the lights. Each light of the area (the strip, the floor lamp, the
     light bar and the table lamp) is a device with one light and one
-    entertainment service. The requests are kept in `requests` (their paths);
-    nothing else is answered, and no network is used.
+    entertainment service. It is Home Assistant's session on FakeHass. The
+    requests are kept in `requests` (their paths); nothing else is answered,
+    and no network is used. `check()` fails a run whose output was to ask it
+    for the area's lights and did not, or that asked something it does not
+    answer, so a release that asks another way is not drawn as driving the
+    lamp twice.
     """
 
     unique_id = "room-bridge"
@@ -778,6 +789,9 @@ class FakeBridge:
         from homeassistant.const import CONF_API_KEY, CONF_API_VERSION, CONF_HOST
 
         self.requests: list[str] = []
+        self.unanswered: list[str] = []
+        # Whether the output is to ask for the area's lights (v0.3.1 on).
+        self.expected = False
         self.entry = SimpleNamespace(
             entry_id=HUE_ENTRY_ID,
             domain=HUE,
@@ -850,7 +864,17 @@ class FakeBridge:
             and (headers or {}).get("hue-application-key") == self.key
         ):
             found = self.resources.get(path.removeprefix(CLIP))
+        if found is None:
+            self.unanswered.append(path)
         return _BridgeReply(None if found is None else {"errors": [], "data": found})
+
+    def check(self) -> None:
+        """Raise when the run did not ask the bridge as expected."""
+        if self.unanswered:
+            paths = ", ".join(dict.fromkeys(self.unanswered))
+            raise RuntimeError(f"The fake bridge does not answer {paths}")
+        if self.expected and not self.requests:
+            raise RuntimeError("The output did not ask the bridge for the area lights")
 
 
 class _BridgeReply:
@@ -875,24 +899,6 @@ class _BridgeReply:
 
     async def json(self) -> dict[str, Any] | None:
         return self._body
-
-
-@contextmanager
-def _bridge_session(
-    hue: ModuleType | None, bridge: FakeBridge | None
-) -> Iterator[None]:
-    """Home Assistant's session in `outputs/hue_entertainment.py` reaches
-    `bridge` while the scenarios run, and is Home Assistant's own again after
-    them (the tests import the same module)."""
-    if hue is None or bridge is None:
-        yield
-        return
-    own = hue.async_get_clientsession
-    hue.async_get_clientsession = lambda hass, *args, **kwargs: bridge
-    try:
-        yield
-    finally:
-        hue.async_get_clientsession = own
 
 
 class BadPlace(ValueError):
@@ -1026,9 +1032,10 @@ def _ha_lights(
         hue = glowcast.hue
         data = {hue.CONF_BRIDGE: {hue.CONF_UNIQUE_ID: bridge.unique_id}}
         area = {"type": hue.OUTPUT_HUE_ENTERTAINMENT, hue.CONF_AREA_ID: bridge.area_id}
+        # Both came in v0.3.1 (#198), as the release's create() passes them.
         extra["area_lights"] = partial(hue.async_area_lights, hass, data, area)
-        if "left_out_key" in parameters:
-            extra["left_out_key"] = ha_lights._left_out_key(area, block)
+        extra["left_out_key"] = ha_lights._left_out_key(area, block)
+        bridge.expected = True
     output = ha_lights.HaLightsOutput(hass, block, now=clock.now, **extra)
     return hass, output, positions
 
@@ -1085,6 +1092,8 @@ async def _record(
     task = asyncio.ensure_future(lights_.run())
     frames: dict[bytes, int] = {}
     samples = []
+    # The lights of the area that light commands may drive too (in-area).
+    in_area = area_ids(lights)
     start = 0
     begin = 0.0  # when the scenario starts
     for index, scenario in enumerate(run):
@@ -1109,7 +1118,6 @@ async def _record(
             if hass is not None:
                 # A light of the area that light commands drive too (in-area,
                 # before v0.3.1): what they give it, beside the stream's.
-                in_area = area_ids(lights)
                 lit |= {
                     room_id + COMMANDS if room_id in in_area else room_id: level
                     for room_id, level in hass.levels(clock.now()).items()
@@ -1146,6 +1154,8 @@ async def _record(
         task.cancel()
         raise RuntimeError(f"The pipeline did not stop within {STOP_SECONDS} s")
     task.result()
+    if bridge is not None:
+        bridge.check()
     return {
         "lights": lights,
         "liveliness": liveliness,
@@ -1234,10 +1244,9 @@ async def record_async(
             timing.pipeline.LOST_RETRY_DELAY,
         )
     bridge = FakeBridge() if lights == "in-area" else None
-    with _bridge_session(glowcast.hue if glowcast else None, bridge):
-        return await _record(
-            core, run, lights, places, glowcast, liveliness=liveliness, bridge=bridge
-        )
+    return await _record(
+        core, run, lights, places, glowcast, liveliness=liveliness, bridge=bridge
+    )
 
 
 def parse_places(values: list[str]) -> dict[str, str]:
