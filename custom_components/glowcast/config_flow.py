@@ -27,11 +27,13 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_BRIGHTNESS,
     CONF_INTENSITY,
+    CONF_LIVELINESS,
     CONF_OUTPUT,
     CONF_SOURCE,
     CONF_TYPE,
     CONF_UPDATE_RATE,
     DOMAIN,
+    LIVELINESS_LEVELS,
     REAUTH_PART,
     REAUTH_SOURCE,
     UPDATE_RATES,
@@ -224,7 +226,8 @@ class GlowcastOptionsBase(OptionsFlow):
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Brightness, intensity and the update rate; then store everything."""
+        """Brightness, intensity, the update rate and the liveliness; then store
+        everything."""
         entry = self.config_entry
         if user_input is not None:
             if self._data and {**entry.data, **self._data} != entry.data:
@@ -257,6 +260,15 @@ class GlowcastOptionsBase(OptionsFlow):
                         SelectSelectorConfig(
                             options=UPDATE_RATES,
                             translation_key=CONF_UPDATE_RATE,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_LIVELINESS, default=settings.liveliness.value
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=LIVELINESS_LEVELS,
+                            translation_key=CONF_LIVELINESS,
                             mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),

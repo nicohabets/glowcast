@@ -17,6 +17,7 @@ from .color_engine import compute, is_all_zero, is_black
 from .letterbox import Letterbox
 from .light_state import RGB, LightState
 from .light_test import LightTest, pattern_colors
+from .liveliness import Liveliness, Profile
 from .models import Channel, ChannelColor, Frame
 from .ports import (
     FrameSource,
@@ -132,6 +133,7 @@ class Settings:
     brightness: int  # 1-100 %
     intensity: int  # 0-200 %
     update_rate: UpdateRate
+    liveliness: Liveliness = Liveliness.NORMAL  # #16
 
 
 class Clock(Protocol):
@@ -291,8 +293,8 @@ class Pipeline:
     def update_settings(self, settings: Settings) -> None:
         """Use new settings without a restart.
 
-        Brightness applies at the next send, intensity and the update rate at
-        the next capture; the lights stay claimed.
+        Brightness applies at the next send, intensity, the update rate and
+        the liveliness at the next capture; the lights stay claimed.
         """
         self._settings = settings
 
@@ -610,6 +612,8 @@ class Pipeline:
         frames for NO_PICTURE_WAIT. Until then an all-zero frame is a black
         frame, with the hold on black and the glow, and the status says so."""
         now = self._clock.now()
+        # Read on every capture: the level can change while streaming.
+        profile = self._settings.liveliness.profile
         colors, frame_black, no_picture = await self._async_run_job(
             _compute,
             frame,
@@ -617,6 +621,7 @@ class Pipeline:
             self._settings.intensity / 100,
             self._letterbox,
             now,
+            profile,
         )
         if not no_picture:
             self._no_picture_since = None
@@ -628,7 +633,14 @@ class Pipeline:
             # The light test is over: fade from its last colours to the picture.
             self._lights.fade_in(self._fade_back)
             self._fade_back = None
-        self._lights.set_target(colors, frame_black, now)
+        self._lights.set_target(
+            colors,
+            frame_black,
+            now,
+            fade_intervals=profile.fade_intervals,
+            cut=profile.cut,
+            cut_fade=profile.cut_fade,
+        )
         if frame_black != self._black_picture:
             self._black_picture = frame_black
             self._report(Phase.STREAMING)
@@ -778,6 +790,7 @@ def _compute(
     intensity: float,
     letterbox: Letterbox,
     now: float,
+    profile: Profile = Liveliness.NORMAL.profile,
 ) -> tuple[list[ChannelColor], bool, bool]:
     """The colour engine's work for one frame, in one executor job.
 
@@ -787,7 +800,15 @@ def _compute(
     black = is_black(frame)
     bars = letterbox.update(frame, now, black)
     picture = bars.picture(frame.width, frame.height)
-    return compute(frame, channels, intensity, picture), black, is_all_zero(frame)
+    colors = compute(
+        frame,
+        channels,
+        intensity,
+        picture,
+        weight_floor=profile.weight_floor,
+        far_blend=profile.far_blend,
+    )
+    return colors, black, is_all_zero(frame)
 
 
 def _raise_check_result(check: asyncio.Task[None]) -> None:

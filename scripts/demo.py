@@ -21,6 +21,7 @@ Usage:
     python scripts/demo.py status
     python scripts/demo.py room [--compare] [--lights area|ha|combined]
                                 [--place LIGHT=PLACE ...] [--versus LIGHT=PLACE ...]
+                                [--liveliness calm|normal|lively|all]
                                 [--names] [--out DIR]
     python scripts/demo.py rooms [--next REF --next-label vX.Y.Z] [--force]
                                  [--pages-only]
@@ -299,6 +300,13 @@ def main() -> None:
         help="a second room beside the first, with these places instead",
     )
     room.add_argument(
+        "--liveliness",
+        choices=("calm", "normal", "lively", "all"),
+        default="normal",
+        help="run the scenarios at this liveliness level (#16), or draw all "
+        "three side by side (all)",
+    )
+    room.add_argument(
         "--names",
         action="store_true",
         help="each Home Assistant light's name and place next to it (for reviews)",
@@ -548,6 +556,11 @@ def draw_room(args: argparse.Namespace) -> None:
             *(f"--place={value}" for value in args.place),
             *(f"--versus={value}" for value in args.versus),
             *(["--names"] if args.names else []),
+            *(
+                [f"--liveliness={args.liveliness}"]
+                if args.liveliness != "normal"
+                else []
+            ),
         ]
     )
     try:

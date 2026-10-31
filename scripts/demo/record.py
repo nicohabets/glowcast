@@ -406,7 +406,7 @@ def pairing_code(
 
 
 def settings(rec: Recorder) -> None:
-    """Change the update rate on the settings screen."""
+    """Change the update rate and the liveliness on the settings screen."""
     page = rec.page
     rec.goto("/config/integrations/integration/glowcast")
     rec.begin()
@@ -420,10 +420,16 @@ def settings(rec: Recorder) -> None:
     rec.submit()
     page.locator(PRIMARY).wait_for()
     rec.step("settings")
-    rec.click(page.locator(f"{DIALOG} ha-picker-field").last)
+    # The settings step's dropdowns: the update rate, then the liveliness.
+    pickers = page.locator(f"{DIALOG} ha-picker-field")
+    rec.click(pickers.nth(0))
     rec.step("update-rate")
     rec.click(rec.option("maximum"))
     rec.step("update-rate-chosen")
+    rec.click(pickers.nth(1))
+    rec.step("liveliness")
+    rec.click(rec.option("lively"))
+    rec.step("liveliness-chosen")
     rec.submit()
     rec.step("saved")
 
@@ -446,7 +452,7 @@ def entities(rec: Recorder) -> None:
     """The settings as entities under Configuration on the device page (#13).
 
     Switches Glowcast on (the demo's fake TV source and light output keep it
-    syncing), changes brightness, intensity and update rate, and the
+    syncing), changes brightness, intensity, update rate and liveliness, and the
     entertainment area that the Hue output type provides, while the switch
     stays on (a new area restarts the pipeline), and switches off.
     """
@@ -479,6 +485,11 @@ def entities(rec: Recorder) -> None:
         (
             "select",
             "select_option",
+            {"entity_id": ids["liveliness"], "option": "normal"},
+        ),
+        (
+            "select",
+            "select_option",
             {"entity_id": ids["entertainment_area"], "option": "TV area"},
         ),
     ):
@@ -500,6 +511,10 @@ def entities(rec: Recorder) -> None:
     rec.step("update-rates")
     rec.click(rec.option("maximum"))
     rec.step("update-rate-chosen")
+    rec.click(row(rec, ids["liveliness"]).locator("ha-select"))
+    rec.step("liveliness-levels")
+    rec.click(rec.option("lively"))
+    rec.step("liveliness-chosen")
     rec.click(row(rec, ids["entertainment_area"]).locator("ha-select"))
     rec.step("areas")
     rec.click(rec.option("Whole room"))

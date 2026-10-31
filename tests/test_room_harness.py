@@ -10,6 +10,7 @@ import itertools
 import logging
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -199,3 +200,47 @@ def test_a_bad_place_stops_before_the_run() -> None:
         harness.place("middle", {"left": (-1.0, 0.0)})
     with pytest.raises(harness.BadPlace):
         harness.place("2,0", {"left": (-1.0, 0.0)})
+
+
+async def test_the_liveliness_levels() -> None:
+    """--liveliness (#16): Normal is the run without a level; Calm fades the
+    cut into the saturated red more slowly, Lively at least as fast."""
+    harness = _load("room_harness")
+    scenarios = harness.scenarios(BLACK_HOLD, NO_PICTURE_WAIT)
+    run = [scenarios[0], scenarios[2]]  # the sunset, then a cut to red
+    default = await harness.record_async(CORE, run)
+    levels = {
+        level: await harness.record_async(CORE, run, liveliness=level)
+        for level in harness.LEVELS
+    }
+    assert levels["normal"]["samples"] == default["samples"]
+    assert {r["liveliness"] for r in levels.values()} == set(harness.LEVELS)
+
+    def ticks_to_red(recording: dict[str, Any]) -> int:
+        red = [s for s in recording["samples"] if s["scenario"] == 1]
+        # The strip's top: its green is gone.
+        return next(n for n, s in enumerate(red) if s["lights"]["top"][1] < 0.1)
+
+    assert ticks_to_red(levels["calm"]) > ticks_to_red(levels["normal"])
+    assert ticks_to_red(levels["lively"]) <= ticks_to_red(levels["normal"])
+
+
+def test_a_core_without_levels_runs_normal_only() -> None:
+    """As main before #16: Normal adds nothing to the settings."""
+    harness = _load("room_harness")
+    old = ModuleType("glowcast_core_before_16")
+    assert harness._liveliness(old, "normal") == ()
+    with pytest.raises(harness.NoLiveliness):
+        harness._liveliness(old, "lively")
+
+
+def test_a_room_at_a_level_is_labelled_with_it() -> None:
+    room = _load("room")
+    assert room.level_label({"liveliness": "calm"}) == "Calm"
+    assert room.level_label({}) == "Normal"  # an older recording
+    assert room.mode_label({"lights": "area", "liveliness": "lively"}) == "Lively"
+    assert room.mode_label({"lights": "area", "liveliness": "normal"}) is None
+    assert (
+        room.mode_label({"lights": "ha", "liveliness": "calm", "places": {}})
+        == "Calm: Home Assistant lights"
+    )

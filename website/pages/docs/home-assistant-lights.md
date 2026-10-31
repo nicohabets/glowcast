@@ -61,7 +61,7 @@ While Glowcast streams to an entertainment area, its lights only listen to Glowc
 
 ## Together with an entertainment area
 
-One Glowcast can drive an entertainment area and Home Assistant lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Hue area and Home Assistant lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the Home Assistant lights and their places, then brightness, intensity and the update rate.
+One Glowcast can drive an entertainment area and Home Assistant lights together, with one switch: for example Hue lights round the TV in an area, and a non-Hue strip or a Matter lamp beside the sofa. Under **Configure**, choose **Hue area and Home Assistant lights**: first the area (pairing with the bridge if Glowcast has not done that yet), then the Home Assistant lights and their places, then brightness, intensity, the update rate and the liveliness.
 
 - The area keeps its own pace (the update rate, up to 25 changes per second), and the Home Assistant lights theirs (about once per second); the Home Assistant lights never slow the area down.
 - A light that is in the entertainment area cannot also be a Home Assistant light: it already follows the picture through the area. The settings screen says which lights, and so does the **Lights** or **Entertainment area** entity on the device page when you pick an area, group or entertainment area that would put a light in both. Pick the other lights one by one, or a group without them.

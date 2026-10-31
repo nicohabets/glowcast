@@ -37,6 +37,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 
 from custom_components.glowcast import runtime
 from custom_components.glowcast.const import DOMAIN
+from custom_components.glowcast.core.liveliness import Liveliness
 from custom_components.glowcast.core.pipeline import (
     Settings,
     UpdateRate,
@@ -59,13 +60,16 @@ SWITCH = "switch.glowcast_living_room_tv"
 BRIGHTNESS = "number.glowcast_living_room_tv_brightness"
 INTENSITY = "number.glowcast_living_room_tv_intensity"
 UPDATE_RATE = "select.glowcast_living_room_tv_update_rate"
+LIVELINESS = "select.glowcast_living_room_tv_liveliness"
 AREA = "select.glowcast_living_room_tv_entertainment_area"
 TEST_LIGHTS = "button.glowcast_living_room_tv_test_lights"
+LIVELY = Liveliness.LIVELY
 OPTIONS = {
     "output": {"type": "hue_entertainment", "area_id": "area-tv"},
     "brightness": 60,
     "intensity": 120,
     "update_rate": "medium",
+    "liveliness": "lively",
 }
 
 
@@ -187,6 +191,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
                 BRIGHTNESS: "Brightness",
                 INTENSITY: "Intensity",
                 UPDATE_RATE: "Update rate",
+                LIVELINESS: "Liveliness",
                 AREA: "Entertainment area",
                 TEST_LIGHTS: "Test lights",
             },
@@ -197,6 +202,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
                 BRIGHTNESS: "Helderheid",
                 INTENSITY: "Intensiteit",
                 UPDATE_RATE: "Updatefrequentie",
+                LIVELINESS: "Levendigheid",
                 AREA: "Entertainmentruimte",
                 TEST_LIGHTS: "Lampen testen",
             },
@@ -206,7 +212,7 @@ def has_issue(hass: HomeAssistant, entry: ConfigEntry, key: str) -> bool:
 async def test_the_entities(
     hass: HomeAssistant, fakes: FakeAdapters, language: str, names: dict[str, str]
 ) -> None:
-    """Five configuration entities next to the switch, with translated names:
+    """Six configuration entities next to the switch, with translated names:
     the settings and the test button (#182)."""
     hass.config.language = language
     entry = await setup(hass)
@@ -229,6 +235,7 @@ async def test_the_entities(
         f"{entry.entry_id}_brightness",
         f"{entry.entry_id}_intensity",
         f"{entry.entry_id}_update_rate",
+        f"{entry.entry_id}_liveliness",
         f"{entry.entry_id}_entertainment_area",
         f"{entry.entry_id}_test_lights",  # the button (#182)
         f"{entry.entry_id}_hardware_check",  # the button (#115)
@@ -255,6 +262,9 @@ async def test_the_values_and_ranges(hass: HomeAssistant, fakes: FakeAdapters) -
     update_rate = hass.states.get(UPDATE_RATE)
     assert update_rate.state == "medium"
     assert update_rate.attributes["options"] == ["low", "medium", "high", "maximum"]
+    liveliness = hass.states.get(LIVELINESS)
+    assert liveliness.state == "lively"
+    assert liveliness.attributes["options"] == ["calm", "normal", "lively"]
     area_select = hass.states.get(AREA)
     assert area_select.state == "TV area"
     assert area_select.attributes["options"] == ["Other area", "TV area"]
@@ -273,6 +283,7 @@ async def test_an_older_entry_gets_the_entities_and_keeps_its_switch(
     assert state(hass, BRIGHTNESS) == "80"
     assert state(hass, INTENSITY) == "100"
     assert state(hass, UPDATE_RATE) == "high"
+    assert state(hass, LIVELINESS) == "normal"  # v0.4 (#16)
     assert state(hass, AREA) == "TV area"
     assert entry.options == {
         "output": {"type": "hue_entertainment", "area_id": "area-tv"}
@@ -285,13 +296,19 @@ async def test_an_older_entry_gets_the_entities_and_keeps_its_switch(
 @pytest.mark.parametrize(
     ("entity_id", "key", "value", "expected"),
     [
-        (BRIGHTNESS, "brightness", 30, Settings(30, 120, UpdateRate.MEDIUM)),
-        (INTENSITY, "intensity", 0, Settings(60, 0, UpdateRate.MEDIUM)),
+        (BRIGHTNESS, "brightness", 30, Settings(30, 120, UpdateRate.MEDIUM, LIVELY)),
+        (INTENSITY, "intensity", 0, Settings(60, 0, UpdateRate.MEDIUM, LIVELY)),
         (
             UPDATE_RATE,
             "update_rate",
             "maximum",
-            Settings(60, 120, UpdateRate.MAXIMUM),
+            Settings(60, 120, UpdateRate.MAXIMUM, LIVELY),
+        ),
+        (
+            LIVELINESS,
+            "liveliness",
+            "calm",
+            Settings(60, 120, UpdateRate.MEDIUM, Liveliness.CALM),
         ),
     ],
 )
@@ -314,7 +331,7 @@ async def test_a_setting_while_syncing_reaches_the_pipeline_without_a_restart(
             else None
         ),
     )
-    if entity_id == UPDATE_RATE:
+    if entity_id in (UPDATE_RATE, LIVELINESS):
         await select(hass, entity_id, value)
     else:
         await set_number(hass, entity_id, value)
@@ -371,9 +388,11 @@ async def test_a_value_survives_a_restart(
 ) -> None:
     entry = await setup(hass)
     await set_number(hass, INTENSITY, 150)
+    await select(hass, LIVELINESS, "calm")
     assert await hass.config_entries.async_reload(entry.entry_id)
     await settle(hass)
     assert state(hass, INTENSITY) == "150"
+    assert state(hass, LIVELINESS) == "calm"
 
 
 @pytest.mark.usefixtures("no_fade_in")
@@ -410,6 +429,7 @@ async def test_the_options_screen_shows_what_an_entity_set(
     entry = await setup(hass)
     await set_number(hass, BRIGHTNESS, 33)
     await select(hass, UPDATE_RATE, "low")
+    await select(hass, LIVELINESS, "calm")
     await select(hass, AREA, "Other area")
     result = await open_area_options(hass, entry)
     assert form_default(result, "area") == "area-other"
@@ -418,6 +438,7 @@ async def test_the_options_screen_shows_what_an_entity_set(
     )
     assert form_default(result, "brightness") == 33
     assert form_default(result, "update_rate") == "low"
+    assert form_default(result, "liveliness") == "calm"
 
 
 async def test_the_entities_show_what_the_options_screen_saved(
@@ -430,15 +451,22 @@ async def test_the_entities_show_what_the_options_screen_saved(
         result["flow_id"], {"area": "area-tv"}
     )
     await hass.config_entries.options.async_configure(
-        result["flow_id"], {"brightness": 45, "intensity": 90, "update_rate": "high"}
+        result["flow_id"],
+        {
+            "brightness": 45,
+            "intensity": 90,
+            "update_rate": "high",
+            "liveliness": "normal",
+        },
     )
     await settle(hass)
     assert state(hass, BRIGHTNESS) == "45"
     assert state(hass, INTENSITY) == "90"
     assert state(hass, UPDATE_RATE) == "high"
+    assert state(hass, LIVELINESS) == "normal"
     # Without a new area the options screen no longer restarts the stream.
     [running] = FakePipeline.instances
-    assert running.updates == [Settings(45, 90, UpdateRate.HIGH)]
+    assert running.updates == [Settings(45, 90, UpdateRate.HIGH, Liveliness.NORMAL)]
     assert state(hass, SWITCH) == STATE_ON
     await switch(hass, SERVICE_TURN_OFF)
 
@@ -757,7 +785,7 @@ async def test_the_output_type_provides_what_follows_the_tv(
     assert f"{entry.entry_id}_entertainment_area" not in unique_ids
     # The common settings, the switch, the two sensors (#14), the test
     # button (#182) and the hardware check (#115).
-    assert len(unique_ids) == 8 + len(expected)
+    assert len(unique_ids) == 9 + len(expected)
 
 
 async def test_an_unknown_output_type_still_gets_the_common_settings(
@@ -776,6 +804,7 @@ async def test_an_unknown_output_type_still_gets_the_common_settings(
         "button",
         "number",
         "number",
+        "select",
         "select",
         "sensor",
         "sensor",
