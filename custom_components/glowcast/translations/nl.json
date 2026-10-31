@@ -160,7 +160,7 @@
     "step": {
       "init": {
         "title": "Welke lampen volgen het beeld?",
-        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit en het updatetempo. Samen: eerst de entertainmentruimte, dan de Home Assistant-lampen.",
+        "description": "Eerst de lampen en hun eigen instellingen, dan helderheid, intensiteit, de updatefrequentie en de levendigheid. Samen: eerst de entertainmentruimte, dan de Home Assistant-lampen.",
         "menu_options": {
           "hue_options": "Hue-entertainmentruimte - het vloeiendst",
           "ha_lights_options": "Home Assistant-lampen - elk merk, trager",
@@ -176,12 +176,14 @@
         "data": {
           "brightness": "Helderheid",
           "intensity": "Intensiteit",
-          "update_rate": "Updatefrequentie"
+          "update_rate": "Updatefrequentie",
+          "liveliness": "Levendigheid"
         },
         "data_description": {
           "brightness": "Hoe fel de lampen maximaal zijn.",
           "intensity": "Hoe levendig de kleuren zijn: 0% is bijna wit, 100% is zoals op het scherm, 200% is extra levendig.",
-          "update_rate": "Hoe vaak het beeld wordt gelezen. De lampen faden er altijd vloeiend tussendoor."
+          "update_rate": "Hoe vaak het beeld wordt gelezen. De lampen faden er altijd vloeiend tussendoor.",
+          "liveliness": "Hoe levendig de lampen reageren. Rustig: alles fadet zacht, ook scènewissels, met zachtere kleuren. Normaal: scènewissels zie je meteen, kleine veranderingen blijven zacht. Levendig: meer veranderingen zie je meteen, met verzadigder kleuren."
         }
       },
       "bridge": {
@@ -295,6 +297,13 @@
         "maximum": "Maximaal (zo snel als de tv toelaat)"
       }
     },
+    "liveliness": {
+      "options": {
+        "calm": "Rustig",
+        "normal": "Normaal",
+        "lively": "Levendig"
+      }
+    },
     "ha_lights_follow": {
       "options": {
         "lights": "Losse lampen",
@@ -330,6 +339,14 @@
           "medium": "Middel",
           "high": "Hoog",
           "maximum": "Maximaal"
+        }
+      },
+      "liveliness": {
+        "name": "Levendigheid",
+        "state": {
+          "calm": "Rustig",
+          "normal": "Normaal",
+          "lively": "Levendig"
         }
       },
       "entertainment_area": {

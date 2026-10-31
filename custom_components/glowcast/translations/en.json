@@ -160,7 +160,7 @@
     "step": {
       "init": {
         "title": "Which lights should follow the picture?",
-        "description": "First the lights and their own settings, then brightness, intensity and the update rate. Together: first the entertainment area, then the Home Assistant lights.",
+        "description": "First the lights and their own settings, then brightness, intensity, the update rate and the liveliness. Together: first the entertainment area, then the Home Assistant lights.",
         "menu_options": {
           "hue_options": "Hue entertainment area - the smoothest",
           "ha_lights_options": "Home Assistant lights - any brand, slower",
@@ -176,12 +176,14 @@
         "data": {
           "brightness": "Brightness",
           "intensity": "Intensity",
-          "update_rate": "Update rate"
+          "update_rate": "Update rate",
+          "liveliness": "Liveliness"
         },
         "data_description": {
           "brightness": "How bright the lights are at most.",
           "intensity": "How vivid the colours are: 0% is almost white, 100% is as on screen, 200% is extra vivid.",
-          "update_rate": "How often the picture is read. The lights always fade smoothly in between."
+          "update_rate": "How often the picture is read. The lights always fade smoothly in between.",
+          "liveliness": "How lively the lights react. Calm: everything fades softly, also scene changes, with softer colours. Normal: scene changes show at once, small changes stay soft. Lively: more changes show at once, with more saturated colours."
         }
       },
       "bridge": {
@@ -295,6 +297,13 @@
         "maximum": "Maximum (as fast as the TV allows)"
       }
     },
+    "liveliness": {
+      "options": {
+        "calm": "Calm",
+        "normal": "Normal",
+        "lively": "Lively"
+      }
+    },
     "ha_lights_follow": {
       "options": {
         "lights": "Single lights",
@@ -330,6 +339,14 @@
           "medium": "Medium",
           "high": "High",
           "maximum": "Maximum"
+        }
+      },
+      "liveliness": {
+        "name": "Liveliness",
+        "state": {
+          "calm": "Calm",
+          "normal": "Normal",
+          "lively": "Lively"
         }
       },
       "entertainment_area": {

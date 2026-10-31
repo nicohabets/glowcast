@@ -29,6 +29,7 @@ SHARED = (
     "images/combined-settings-ha-lights.gif",
     "images/settings-menu.png",
     "images/device-page-ha-lights.png",
+    "images/liveliness-*",
     "brand/*.svg",
 )
 

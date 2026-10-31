@@ -20,6 +20,7 @@ from custom_components.glowcast.core.light_state import (
     GLOW,
     GLOW_COLOR,
 )
+from custom_components.glowcast.core.liveliness import Liveliness, Profile
 from custom_components.glowcast.core.models import Channel, Frame
 from custom_components.glowcast.core.pipeline import (
     NO_PICTURE_WAIT,
@@ -79,6 +80,7 @@ class Harness:
         self.status_error: Exception | None = None
         self.compute_error: Exception | None = None
         self.intensities: list[float] = []  # the factor of each colour computation
+        self.profiles: list[Profile] = []  # the level's knobs of each computation
         # Per colour computation: how often the lights were claimed by then,
         # the letterbox memory it got and its bars before the frame.
         self.computes: list[tuple[int, Letterbox, Bars]] = []
@@ -132,8 +134,9 @@ class Harness:
         if self.compute_error is not None:
             raise self.compute_error
         if func is _compute:
-            _, _, intensity, letterbox, _ = args
+            _, _, intensity, letterbox, _, profile = args
             self.intensities.append(intensity)
+            self.profiles.append(profile)
             self.computes.append(
                 (self.log.count("output.start"), letterbox, letterbox.bars)
             )
@@ -520,6 +523,45 @@ async def test_new_intensity_applies_at_the_next_capture() -> None:
     assert r == pytest.approx(g) == pytest.approx(b)
     assert h.log == ["source.start", "output.start"]
     assert await h.stop() == StopReason.USER
+
+
+async def test_new_liveliness_applies_at_the_next_capture() -> None:
+    """A new level is used from the next capture on, colours and fade, and
+    the lights stay claimed (#16)."""
+    h = Harness()
+    await h.start()
+    await h.clock.advance(1)
+    assert set(h.profiles) == {Liveliness.NORMAL.profile}
+    captures = h.source.captures
+    h.pipeline.update_settings(Settings(100, 100, UpdateRate.HIGH, Liveliness.CALM))
+    await h.clock.advance(1)
+    assert h.source.captures > captures
+    assert h.profiles[-(h.source.captures - captures) :] == [
+        Liveliness.CALM.profile
+    ] * (h.source.captures - captures)
+    assert h.log == ["source.start", "output.start"]  # no new handshake
+    assert await h.stop() == StopReason.USER
+
+
+@pytest.mark.usefixtures("no_fade_in")
+async def test_calm_fades_a_cut_over_two_capture_intervals() -> None:
+    """At Calm a cut is no fast fade: halfway after about one capture
+    interval, where Normal is there within the cut fade (#16)."""
+    halfway = {}
+    for level in (Liveliness.NORMAL, Liveliness.CALM):
+        h = Harness(rate=UpdateRate.LOW)
+        h.pipeline.update_settings(Settings(100, 100, UpdateRate.LOW, level))
+        h.source.default = solid((255, 0, 0))
+        await h.start()
+        await h.clock.advance(3.1)  # settled on red, between two captures
+        h.source.default = solid((0, 0, 255))
+        start = len(h.output.sent)
+        await h.clock.advance(3)
+        blues = [h.output.rgb_at(i)[2] for i in range(start, len(h.output.sent))]
+        halfway[level] = next(n for n, b in enumerate(blues) if b >= 0.5) * TICK
+        assert await h.stop() == StopReason.USER
+    assert halfway[Liveliness.NORMAL] <= 1.0 + 0.1  # the next capture, then fast
+    assert halfway[Liveliness.CALM] >= halfway[Liveliness.NORMAL] + 0.8
 
 
 async def test_new_update_rate_applies_from_the_next_capture() -> None:

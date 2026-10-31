@@ -10,16 +10,20 @@ from typing import Any
 from .const import (
     CONF_BRIGHTNESS,
     CONF_INTENSITY,
+    CONF_LIVELINESS,
     CONF_UPDATE_RATE,
     DEFAULT_BRIGHTNESS,
     DEFAULT_INTENSITY,
+    DEFAULT_LIVELINESS,
     DEFAULT_UPDATE_RATE,
 )
+from .core.liveliness import Liveliness
 from .core.pipeline import Settings, UpdateRate
 
 _LOGGER = logging.getLogger(__name__)
 
-# Unknown update rates already logged; the settings are read at every start.
+# Unknown update rates and levels already logged; the settings are read at
+# every start.
 _warned: set[str] = set()
 
 
@@ -30,6 +34,7 @@ def read_settings(options: Mapping[str, Any]) -> Settings:
         brightness=int(options.get(CONF_BRIGHTNESS, DEFAULT_BRIGHTNESS)),
         intensity=int(options.get(CONF_INTENSITY, DEFAULT_INTENSITY)),
         update_rate=_update_rate(options.get(CONF_UPDATE_RATE, DEFAULT_UPDATE_RATE)),
+        liveliness=_liveliness(options.get(CONF_LIVELINESS, DEFAULT_LIVELINESS)),
     )
 
 
@@ -39,6 +44,7 @@ def write_settings(settings: Settings) -> dict[str, Any]:
         CONF_BRIGHTNESS: settings.brightness,
         CONF_INTENSITY: settings.intensity,
         CONF_UPDATE_RATE: settings.update_rate.value,
+        CONF_LIVELINESS: settings.liveliness.value,
     }
 
 
@@ -55,3 +61,19 @@ def _update_rate(value: Any) -> UpdateRate:
                 DEFAULT_UPDATE_RATE,
             )
         return UpdateRate(DEFAULT_UPDATE_RATE)
+
+
+def _liveliness(value: Any) -> Liveliness:
+    """The stored level; an unknown one (renamed or removed later) gets the
+    default."""
+    try:
+        return Liveliness(value)
+    except ValueError:
+        if f"liveliness {value}" not in _warned:
+            _warned.add(f"liveliness {value}")
+            _LOGGER.warning(
+                "Unknown liveliness %r in Glowcast's settings; using %s",
+                value,
+                DEFAULT_LIVELINESS,
+            )
+        return Liveliness(DEFAULT_LIVELINESS)
