@@ -19,7 +19,7 @@ scenarios = ["area:Sudden dark picture", "area:No picture"]
 
 [[groups]]
 page = "home-assistant-lights.md"
-scenarios = ["ha:Sunset", "ha:Fade between scenes", "ha:No picture", "combined:Home Assistant lights unavailable"]
+scenarios = ["ha:Sunset", "ha:Fade between scenes", "ha:No picture", "combined:Home Assistant lights unavailable", "in-area:Floor lamp in the area too"]
 
 [scenarios."area:Sunset"]
 picture = "A sunset: an orange and pink sky with the sun low over a blue-green sea, the start of the run. Before it the lights are as they were."
@@ -73,10 +73,15 @@ prefix = "Together"
 picture = "An entertainment area (the strip, the floor lamp, the light bar and the table lamp) and three Home Assistant lights together, on a slowly moving picture. The wall light becomes unavailable in Home Assistant after 1 second, the other two after 3 seconds."
 lights = "The entertainment area keeps following the picture. Glowcast notices the Home Assistant lights are gone, tries them once more after a few seconds, and then drops that part; the room names what is unavailable and dropped."
 
+[scenarios."in-area:Floor lamp in the area too"]
+prefix = "Together"
+picture = "An entertainment area (the strip, the floor lamp, the light bar and the table lamp) and Home Assistant lights together, on slowly moving colours. The floor lamp is a Hue light in the entertainment area and is also one of the Home Assistant lights, at the place Right: as when a Home Assistant light is added to the entertainment area later, in the Hue app."
+lights = "The floor lamp follows the entertainment area only, in the colour of the left of the picture: Glowcast leaves it out of the Home Assistant lights, so it gets no light commands. The other lights follow as usual."
+
 # A release whose room is the same in every scenario: what it did change, in
 # every tab without a note of its own (the overview says more).
 [releases]
-"v0.3.1" = "v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes)."
+"v0.3.1" = "Besides a light in the entertainment area too, v0.3.1 changed what the room does not show; see [the overview](index.md#same-room-other-changes)."
 
 # What visibly changed, per release and scenario (from docs/releases/).
 # A scenario that is new or changed and has no note gets a plain line.
@@ -106,6 +111,10 @@ lights = "The entertainment area keeps following the picture. Glowcast notices t
 "ha:Fade between scenes" = "Home Assistant lights (then called loose lights) are new in v0.3.0."
 "ha:No picture" = "Home Assistant lights (then called loose lights) are new in v0.3.0."
 "combined:Home Assistant lights unavailable" = "An entertainment area and Home Assistant lights together are new in v0.3.0."
+"in-area:Floor lamp in the area too" = "Driven twice: the stream gives the floor lamp the left of the picture, light commands the right. The room draws its glow from the stream and the lamp itself in the colour of the light commands, and says so at the bottom."
+
+[notes."v0.3.1"]
+"in-area:Floor lamp in the area too" = "No longer driven twice: Glowcast leaves the floor lamp out of the Home Assistant lights, so it follows the entertainment area only; the log and a repair issue name it."
 
 [notes."v0.4.0"]
 "area:Sunset" = "Livelier colours, the lightstrip follows the edges of the picture, and the table lamp at the back of the room follows more softly."
@@ -120,3 +129,4 @@ lights = "The entertainment area keeps following the picture. Glowcast notices t
 "ha:Fade between scenes" = "Livelier colours, also for Home Assistant lights."
 "ha:No picture" = "The held colours are the livelier ones of the scenario before it; letting go is as before."
 "combined:Home Assistant lights unavailable" = "Livelier colours in the entertainment area; how the unavailable lights are handled is as before."
+"in-area:Floor lamp in the area too" = "Livelier colours; the floor lamp still follows the entertainment area only."
