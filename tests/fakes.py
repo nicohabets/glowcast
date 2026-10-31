@@ -172,6 +172,8 @@ class FakeOutput:
         self.sent: list[tuple[float, list[ChannelColor]]] = []
         self.checks = 0
         self.retries: list[bool] = []  # start()'s `retry`, per call
+        # If set, stop() waits for it first (a release that takes long).
+        self.stop_gate: asyncio.Event | None = None
 
     async def start(self, *, retry: bool = False) -> list[Channel]:
         self.log.append("output.start")
@@ -193,6 +195,8 @@ class FakeOutput:
             raise self.check_error
 
     async def stop(self) -> None:
+        if self.stop_gate is not None:
+            await self.stop_gate.wait()
         if self.slow_stop:
             await asyncio.sleep(0)
         self.log.append("output.stop")
@@ -226,6 +230,8 @@ class FakeAdapters:
         self.source_refusal: Exception | None = None
         # If set, the sources' captures wait for it (a look in progress).
         self.source_gate: asyncio.Event | None = None
+        # If set, the outputs' releases wait for it (a slow release).
+        self.output_stop_gate: asyncio.Event | None = None
         self.channels = [CHANNEL]
         self.sources: list[FakeSource] = []
         self.outputs: list[FakeOutput] = []
@@ -246,6 +252,7 @@ class FakeAdapters:
         output = FakeOutput(
             MonotonicClock(), self.log, slow_stop=True, channels=self.channels
         )
+        output.stop_gate = self.output_stop_gate
         self.outputs.append(output)
         return output
 

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
@@ -21,7 +21,15 @@ from custom_components.glowcast.outputs import OUTPUTS
 from custom_components.glowcast.sources import SOURCES
 
 from .fakes import FakeAdapters, FakePipeline, wait_for
-from .test_init import notices, settle, setup, state, switch, tv_device  # noqa: F401
+from .test_init import (  # noqa: F401
+    notices,
+    settle,
+    setup,
+    state,
+    stop_home_assistant,
+    switch,
+    tv_device,
+)
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -331,6 +339,50 @@ async def test_unload_ends_a_check(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await settle(hass)
     assert notification_id(entry.entry_id) not in notices(hass)
+
+
+@pytest.mark.parametrize("ending", ["unload", "home_assistant_stops"])
+async def test_no_check_after_unload_or_home_assistant_stopping(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,
+    output_probe: FakeProbe,
+    ending: str,
+) -> None:
+    """A press after the unload or the stop does not connect to the TV or
+    the lights (#282)."""
+    entry = await setup(hass)
+    data = entry.runtime_data
+    if ending == "unload":
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    else:
+        stop_home_assistant(hass)
+        await settle(hass)
+    await data.async_hardware_check()
+    await settle(hass)
+    assert source_probe.calls == output_probe.calls == []
+    assert data.hardware_check is None
+    hass.set_state(CoreState.running)
+
+
+async def test_a_cancelled_switch_on_does_not_run_on_after_the_check(
+    hass: HomeAssistant,
+    fakes: FakeAdapters,
+    source_probe: FakeProbe,
+    output_probe: FakeProbe,
+) -> None:
+    """A switch-on cancelled while it ends a check that captures is
+    cancelled, not taken for the check's end: it starts nothing (#282)."""
+    entry = await setup(hass)
+    source_probe.release = asyncio.Event()
+    await press(hass)
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now ends the check
+    start.cancel()
+    await settle(hass)
+    assert start.cancelled()
+    assert FakePipeline.instances == []
+    assert state(hass) == STATE_OFF
 
 
 # Only where it can report something (#270)
