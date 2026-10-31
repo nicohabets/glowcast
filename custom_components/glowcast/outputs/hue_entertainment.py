@@ -111,9 +111,10 @@ CT_CORRECTION_K = 800
 # Looking up which Glowcast setup streams (#299), only when the bridge is busy:
 # one GET /auth/v1 per other setup on the bridge, together at most this long.
 OTHERS_TIMEOUT = 3.0
-# hass.data keys (#299): {(entry id, app key): the application id the bridge
-# gave that entry's key}, and {(bridge unique id, app key): the title of the
-# Glowcast setup that kept this key's last start busy}.
+# hass.data keys (#299): {entry id: (its app key, the application id the
+# bridge gave that key)}, and {(bridge unique id, app key): the title of the
+# Glowcast setup that kept this key's last start busy}. A removed entry's
+# rows are dropped (async_removed).
 APP_IDS = "glowcast_hue_app_ids"
 BUSY_BY = "glowcast_hue_busy_by"
 # The bridge allows 20 characters before the # of a devicetype and 19 after.
@@ -332,34 +333,40 @@ class HueEntertainmentOutput:
 
         Each other Glowcast entry paired with this bridge with another key is
         asked for its application id once (cached by entry and key, so a new
-        key after pairing again is asked again). None when no other setup
+        key after pairing again is asked again); the cached ones are compared
+        first, so a slow bridge cannot hide them. None when no other setup
         matches, or when the bridge does not tell in time. Never logs a key
         or an application id.
         """
         if not streamer:
             return None
         app_ids = _app_ids(self._hass)
+        unknown: list[tuple[ConfigEntry, str]] = []
+        for entry in self._hass.config_entries.async_entries(DOMAIN):
+            bridge = entry.data.get(CONF_BRIDGE)
+            if (
+                not isinstance(bridge, Mapping)
+                or bridge.get(CONF_UNIQUE_ID) != self._bridge_unique_id
+                or not (key := bridge.get(CONF_APP_KEY))
+                or key == self._app_key
+            ):
+                continue
+            if app_ids.get(entry.entry_id) == (key, streamer):
+                return entry.title
+            if app_ids.get(entry.entry_id, ("",))[0] != key:
+                unknown.append((entry, key))
         try:
             async with asyncio.timeout(OTHERS_TIMEOUT):
-                for entry in self._hass.config_entries.async_entries(DOMAIN):
-                    bridge = entry.data.get(CONF_BRIDGE)
-                    if (
-                        not isinstance(bridge, Mapping)
-                        or bridge.get(CONF_UNIQUE_ID) != self._bridge_unique_id
-                        or not (key := bridge.get(CONF_APP_KEY))
-                        or key == self._app_key
-                    ):
+                for entry, key in unknown:
+                    try:
+                        headers, _ = await _async_clip_get(
+                            self._hass, host, key, AUTH_PATH, body=False
+                        )
+                    except (OutputAuthFailed, OutputNotFound, OutputUnavailable):
                         continue
-                    if (app_id := app_ids.get((entry.entry_id, key))) is None:
-                        try:
-                            headers, _ = await _async_clip_get(
-                                self._hass, host, key, AUTH_PATH, body=False
-                            )
-                        except (OutputAuthFailed, OutputNotFound, OutputUnavailable):
-                            continue
-                        if not (app_id := headers.get("hue-application-id")):
-                            continue
-                        app_ids[(entry.entry_id, key)] = app_id
+                    if not (app_id := headers.get("hue-application-id")):
+                        continue
+                    app_ids[entry.entry_id] = key, app_id
                     if app_id == streamer:
                         return entry.title
         except TimeoutError:
@@ -418,7 +425,7 @@ def other_glowcast(
     return None if title is None else {"other": title}
 
 
-def _app_ids(hass: HomeAssistant) -> dict[tuple[str, str], str]:
+def _app_ids(hass: HomeAssistant) -> dict[str, tuple[str, str]]:
     return hass.data.setdefault(APP_IDS, {})
 
 
@@ -485,9 +492,13 @@ async def async_removed(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     The bridge has no API to remove an app (architecture 4.1); the user
     removes it in the Hue app. Text in Home Assistant's server language.
+    Also forgets what the busy lookup (#299) kept for the entry.
     """
     if CONF_BRIDGE not in entry.data:
         return
+    bridge = entry.data[CONF_BRIDGE]
+    _app_ids(hass).pop(entry.entry_id, None)
+    _busy_by(hass).pop((bridge.get(CONF_UNIQUE_ID), bridge.get(CONF_APP_KEY)), None)
     strings = await async_get_translations(
         hass, hass.config.language, "issues", {DOMAIN}
     )

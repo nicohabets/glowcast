@@ -775,6 +775,50 @@ async def test_the_application_ids_are_cached_per_entry_and_key(
     assert asked.count("new-key") == 1
 
 
+async def test_a_cached_match_is_not_hidden_by_a_slow_bridge(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cached ids are compared before any other setup is asked."""
+    monkeypatch.setattr(hue, "OTHERS_TIMEOUT", 0.05)
+    add_bridge()
+    add_glowcast(hass, "Hall TV", key="hall-key")  # asked first
+    add_glowcast(hass)
+    answers: dict[str, Any] = {"hall-key": 403, SIBLING_KEY: SIBLING_APP_ID}
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, answers)
+    with pytest.raises(OutputBusy, match="Glowcast"):
+        await output.start()
+    answers["hall-key"] = HANG
+    with pytest.raises(OutputBusy, match="Glowcast"):
+        await output.start()
+    data = {"bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY}}
+    assert hue.other_glowcast(hass, data, {}) == {"other": "Bedroom TV"}
+
+
+async def test_a_removed_entry_is_forgotten(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """What the lookup kept for an entry goes with the entry (#299)."""
+    add_bridge()
+    sibling = add_glowcast(hass)
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, {SIBLING_KEY: SIBLING_APP_ID})
+    with pytest.raises(OutputBusy):
+        await output.start()
+    own = add_glowcast(hass, "Living room TV", key=APP_KEY)
+    assert hass.data[hue.APP_IDS] and hass.data[hue.BUSY_BY]
+    await hue.async_removed(hass, sibling)
+    await hue.async_removed(hass, own)
+    assert hass.data[hue.APP_IDS] == {}
+    assert hass.data[hue.BUSY_BY] == {}
+
+
 async def test_a_start_that_works_forgets_the_other_setup(
     hass: HomeAssistant,
     output: HueEntertainmentOutput,
