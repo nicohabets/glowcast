@@ -20,13 +20,12 @@ entertainment area (the default), Home Assistant lights, both combined, or
 both with the floor lamp in both (in-area, #301): a light that the stream and
 light commands drive at once has its glow on the walls and the floor from the
 stream and its own colour from the light commands, and the room says so at its
-bottom. --place
-moves a Home Assistant light, and --versus draws a second room beside the first with
-other places, labelled with them (the place comparison). --liveliness runs the
-scenarios at a level (#16), and --liveliness all draws the three levels side by
-side, labelled Calm, Normal and Lively. A Home Assistant light that
-is unavailable, and a part of a combined output that is dropped, are named at
-the bottom of the room.
+bottom. --place moves a Home Assistant light, and --versus draws a second room
+beside the first with other places, labelled with them (the place comparison).
+--liveliness runs the scenarios at a level (#16), and --liveliness all draws
+the three levels side by side, labelled Calm, Normal and Lively. A Home
+Assistant light that is unavailable, and a part of a combined output that is
+dropped, are named at the bottom of the room.
 
 Files in --out: room.gif (all scenarios), and per scenario room-<n>.gif and
 room-<n>.png, a still at the moment that shows it best.
