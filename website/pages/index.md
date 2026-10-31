@@ -52,7 +52,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     **Colours that match the picture**
 
-    The colourful, bright part of the picture leads, so the lights stay lively instead of a grey average, and black bars are left out. A strong colour shows as that pure colour, not mixed with white. Scene cuts show at once; lights at the back of the room follow more softly.
+    The colourful, bright part of the picture leads, so the lights stay lively instead of a grey average, and black bars are left out. A strong colour shows as that pure colour, not mixed with white. Scene cuts show at once, while calm scenes fade softly. Lights at the back of the room lean towards the colour of the whole picture.
 
 -   ![Glowcast's device page in Home Assistant: the switch on under Controls and the status Streaming under Sensors.](images/device-page.png){ .gc-feature .gc-shot loading=lazy }
 
@@ -68,7 +68,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 LG TV (webOS)  --local-->  Glowcast (in Home Assistant)  --local-->  Hue Bridge  -->  your lights
 ```
 
-Glowcast reuses Home Assistant's pairing with the TV, asks the TV for a small screen capture about 3 times per second, works out the colour of each part of the picture and streams it to an entertainment area on your Hue bridge, fading smoothly between frames. Everything stays on your local network.
+Glowcast reuses Home Assistant's pairing with the TV, asks the TV for a small screen capture about 3 times per second, works out the colour of each part of the picture and streams it to an entertainment area on your Hue bridge, fading smoothly between frames and changing at once at a scene cut. Everything stays on your local network.
 
 At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs from 2024 onwards (webOS 24+), and costs €129.99 once or €2.99 a month. The alternative is the Hue Play HDMI Sync Box of around €300. Glowcast is free, and it is tested on a TV from before 2024 (a 2023 LG G3).
 
