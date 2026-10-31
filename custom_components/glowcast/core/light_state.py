@@ -1,10 +1,12 @@
 """Light state: what the lights show between frames (architecture 3.5).
 
 Pure and synchronous, no asyncio and no Home Assistant imports: the time is an
-argument. Fades towards each new target over the measured capture interval,
-holds the last colours when the picture suddenly turns black, and applies
-brightness and the minimal glow. When the lights have just been claimed, the
-first colours fade in from what each light showed before (#153).
+argument. Fades towards each new target over the measured capture interval; a
+channel whose colour jumps by more than CUT has a scene cut and fades over
+CUT_FADE instead, so the cut shows at once (#258). Holds the last colours when
+the picture suddenly turns black, and applies brightness and the minimal glow.
+When the lights have just been claimed, the first colours fade in from what
+each light showed before (#153).
 """
 
 from collections.abc import Mapping

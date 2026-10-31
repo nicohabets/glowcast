@@ -9,12 +9,12 @@ is exactly the image the expected colours are computed from.
 
 The expected colour of a light is what Glowcast makes of the scene: the image
 shrunk to 64x36 as the screen helper does (`downscale`, a copy of
-`glowcast_screen.capture.downscale`), then the colour engine's average over
-the region of each of the light's channels (their x and z from the bridge),
-the mean of those channels. The camera judges a colour by its dominant
-channel (`report.classify`), so `bucket` turns the expected colour into red,
-green, blue or white; every scene is made so that each side is clearly one of
-them, and the two sides differ.
+`glowcast_screen.capture.downscale`), then the colour engine's colour for
+each of the light's channels (their x, z and y from the bridge, so a light
+far from the TV gets the far blend), the mean of those channels. The camera
+judges a colour by its dominant channel (`report.classify`), so `bucket`
+turns the expected colour into red, green, blue or white; every scene is made
+so that each side is clearly one of them, and the two sides differ.
 """
 
 from __future__ import annotations
@@ -217,14 +217,24 @@ def downscale(image: Image.Image) -> bytes:
     return image.resize((WIDTH, HEIGHT), Image.Resampling.BOX).tobytes()
 
 
-def expected(frame: bytes, positions: Sequence[tuple[float, float]]) -> RGB:
-    """The colour Glowcast gives a light (0-255): the colour engine on the
-    64x36 frame, for each of the light's channels (x, z), averaged.
+Position = tuple[float, float] | tuple[float, float, float | None]
 
-    Without the letterbox bars (no `picture`) and without the stretch of TV
-    strips (the channels have no `y` or `light`), which is fine for the
-    bench: its lights have one channel each and its scenes have no bars."""
-    channels = [Channel(str(i), "", x, z) for i, (x, z) in enumerate(positions)]
+
+def expected(frame: bytes, positions: Sequence[Position]) -> RGB:
+    """The colour Glowcast gives a light (0-255): the colour engine on the
+    64x36 frame, for each of the light's channels (x, z and, from the bridge,
+    the depth y), averaged.
+
+    With y, a light further back than NEAR_TV gets the far blend with the
+    whole picture (#15), as in Glowcast; without it (an (x, z) pair, or y
+    None) it gets its region's colour only. Without the letterbox bars (no
+    `picture`) and without the stretch of TV strips (the channels have no
+    `light`), which is fine for the bench: its lights have one channel each
+    and its scenes have no bars."""
+    channels = [
+        Channel(str(i), "", p[0], p[1], y=p[2] if len(p) > 2 else None)
+        for i, p in enumerate(positions)
+    ]
     colours = color_engine.compute(Frame(WIDTH, HEIGHT, frame), channels, 1.0)
     return tuple(  # type: ignore[return-value]
         round(255 * sum(c.rgb[i] for c in colours) / len(colours), 1) for i in range(3)

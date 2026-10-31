@@ -145,8 +145,9 @@ class Bench:
         self.window_timed = 0
         # Each scene as the helper should see it (64x36), from the rendered image.
         self.scene_frames: dict[str, bytes] = {}
-        # Each light's channel positions (x, z) in the bench area, from the bridge.
-        self.positions: dict[str, list[tuple[float, float]]] = {}
+        # Each light's channel positions (x, z, y) in the bench area, from the
+        # bridge.
+        self.positions: dict[str, list[tuple[float, float, float | None]]] = {}
         # The bench area and the bridge's entertainment services (left/right).
         self.bench_area: dict[str, Any] = {}
         # Each light's side from the bridge ("left"/"right"), or None, and why.
@@ -1725,7 +1726,7 @@ class Bench:
         )
         return ok
 
-    def probe_positions(self) -> dict[str, list[tuple[float, float]]]:
+    def probe_positions(self) -> dict[str, list[scenes.Position]]:
         """Where to compare the scenes' colours: each light's channels, or a
         point left and right when the lights are not matched to the bridge."""
         if self.positions and all(self.positions.get(n) for n in self.lights):

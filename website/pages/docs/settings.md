@@ -9,7 +9,7 @@ Under **Configure** (Settings → Devices & services → Glowcast), or on Glowca
 - **intensity**: how vivid the colours are (0-200 %, default 100 %);
 - the **update rate**: Low (1 per second), Medium (2), High (3, default) or Maximum (as fast as the TV allows).
 
-The lights always fade smoothly between updates; a scene cut shows at once. When Glowcast takes them over, they first fade in from how they were, in about 2 seconds; a new setting while syncing applies without that fade-in.
+The lights always fade smoothly between updates; with an entertainment area, a scene cut shows at once. When Glowcast takes them over, they first fade in from how they were, in about 2 seconds; a new setting while syncing applies without that fade-in.
 
 **Configure** has three steps: first which lights follow the picture (**Hue entertainment area**, **Home Assistant lights**, or both: **Hue area and Home Assistant lights**, see [Together with an entertainment area](home-assistant-lights.md#together-with-an-entertainment-area)), then their own settings (the area, or the Home Assistant lights and their places), then brightness, intensity and the update rate. Switching from Home Assistant lights to an entertainment area pairs with the bridge then, if Glowcast has not paired with it before; switching back and forth later needs no new pairing. Switching between these reloads Glowcast, so syncing stops; switch it on again. The TV and the bridge are fixed; to change them, remove Glowcast and add it again.
 
