@@ -5,7 +5,7 @@
 When it stops by itself, the switch turns off, the [status](status.md) shows Picture source off or Error, and the reason is in the Home Assistant log:
 
 - **The picture source turns off** (or is not reachable): the TV turns off, or for a computer screen the screen helper stops or the screen is locked; the lights are released. When you switch the TV off with the remote, the lights go straight from the picture's colours to the state the bridge restores.
-- **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start.
+- **Another app is streaming** to the bridge (the Hue Sync app, a Sync Box, another Glowcast): Glowcast does not take over and does not start. When it is your other Glowcast on the same Home Assistant, a repair says which one, for example "Glowcast Bedroom: Glowcast Living room is streaming to this bridge".
 - **The light stream is lost** (bridge restarted, another app took over): one retry after 5 seconds; if that does not work, Glowcast stops. The next switch-on works once the bridge is back.
 - **The bridge rejects Glowcast's key** (for example after removing the app in the Hue app): Home Assistant asks you to press the bridge's link button again; your settings are kept.
 - **The entertainment area was removed, or has more than 20 channels**: Home Assistant shows a repair with what to change in Glowcast's settings or in the Hue app.

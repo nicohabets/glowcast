@@ -1,6 +1,7 @@
 """Tests for the Hue entertainment output, with a fake EntertainmentSession."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 from unittest.mock import Mock
@@ -13,6 +14,7 @@ from hue_entertainment.models import LightColorCommand
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
+    AiohttpClientMockResponse,
 )
 
 from custom_components.glowcast.core.models import Channel, ChannelColor
@@ -614,6 +616,229 @@ async def test_another_app_is_streaming(
     await output.stop()
     assert FakeSession.instances == []
     assert FakeApi.instances[-1].stopped == []  # the other stream is left alone
+
+
+# Another Glowcast setup on the same bridge (#299)
+
+SIBLING_KEY = "sibling-app-key"
+SIBLING_APP_ID = "sibling-app-id"
+
+
+def add_glowcast(
+    hass: HomeAssistant,
+    title: str = "Bedroom TV",
+    key: str = SIBLING_KEY,
+    bridge_id: str = BRIDGE_ID,
+) -> MockConfigEntry:
+    """Another Glowcast entry paired with a bridge; never set up."""
+    entry = MockConfigEntry(
+        domain="glowcast",
+        title=title,
+        unique_id=f"tv-{title}",
+        data={
+            "source": {"type": "webos", "unique_id": f"tv-{title}"},
+            "bridge": {"unique_id": bridge_id, "app_key": key, "client_key": "11"},
+        },
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+def mock_busy_bridge(
+    aioclient_mock: AiohttpClientMocker,
+    streamer: str,
+    app_ids: dict[str, Any],
+) -> list[str]:
+    """The bridge with the other area streaming for `streamer`; /auth/v1
+    answers per key from `app_ids` (an id, an HTTP status, or HANG). Returns
+    the keys /auth/v1 was asked with, in order."""
+    asked: list[str] = []
+
+    async def auth(method: str, url: Any, data: Any) -> Any:
+        key = aioclient_mock.mock_calls[-1][3]["hue-application-key"]
+        asked.append(key)
+        answer = {APP_KEY: APP_ID, **app_ids}.get(key, 403)
+        if answer is HANG:
+            await asyncio.Event().wait()
+        if isinstance(answer, int):
+            return AiohttpClientMockResponse("GET", url, status=answer)
+        return AiohttpClientMockResponse(
+            "GET", url, headers={"hue-application-id": answer}
+        )
+
+    aioclient_mock.get(AUTH_URL, side_effect=auth)
+    aioclient_mock.get(
+        AREAS_URL,
+        json={"errors": [], "data": [_area(), _area(OTHER_AREA, "active", streamer)]},
+    )
+    return asked
+
+
+async def test_another_glowcast_setup_is_streaming(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Busy as for another app, and the busy stop's check names the setup;
+    its stream is left alone, and no key or application id is logged."""
+    caplog.set_level(logging.DEBUG)
+    add_bridge()
+    add_glowcast(hass)
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, {SIBLING_KEY: SIBLING_APP_ID})
+    with pytest.raises(OutputBusy):
+        await output.start()
+    await output.stop()
+    assert FakeSession.instances == []
+    assert FakeApi.instances[-1].stopped == []
+    data = {"bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY}}
+    assert hue.other_glowcast(hass, data, {}) == {"other": "Bedroom TV"}
+    for secret in (SIBLING_KEY, SIBLING_APP_ID, APP_KEY, APP_ID):
+        assert secret not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("sibling", "streamer"),
+    [
+        # Another app streams: no Glowcast setup has its id.
+        ({SIBLING_KEY: SIBLING_APP_ID}, OTHER_APP_ID),
+        # The other setup's key is rejected, or the bridge errors or hangs.
+        ({SIBLING_KEY: 403}, SIBLING_APP_ID),
+        ({SIBLING_KEY: 503}, SIBLING_APP_ID),
+        ({SIBLING_KEY: HANG}, SIBLING_APP_ID),
+        # The bridge answers without an application id.
+        ({SIBLING_KEY: ""}, SIBLING_APP_ID),
+    ],
+)
+async def test_busy_for_another_app_or_unknown_stays_as_today(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+    sibling: dict[str, Any],
+    streamer: str,
+) -> None:
+    monkeypatch.setattr(hue, "OTHERS_TIMEOUT", 0.05)
+    add_bridge()
+    add_glowcast(hass)
+    mock_busy_bridge(aioclient_mock, streamer, sibling)
+    with pytest.raises(OutputBusy, match="Another app"):
+        await output.start()
+    data = {"bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY}}
+    assert hue.other_glowcast(hass, data, {}) is None
+
+
+async def test_only_other_glowcast_setups_on_this_bridge_are_asked(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Not an entry with this output's own key (its stale stream is stopped
+    before), not one on another bridge, not one without a bridge."""
+    add_bridge()
+    add_glowcast(hass, "Same key", key=APP_KEY)
+    add_glowcast(hass, "Other bridge", key="far-key", bridge_id="other-bridge")
+    MockConfigEntry(domain="glowcast", title="Lights only", data={}).add_to_hass(hass)
+    asked = mock_busy_bridge(aioclient_mock, OTHER_APP_ID, {})
+    with pytest.raises(OutputBusy):
+        await output.start()
+    assert asked == [APP_KEY]  # its own id only
+
+
+async def test_the_application_ids_are_cached_per_entry_and_key(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    add_bridge()
+    sibling = add_glowcast(hass)
+    asked = mock_busy_bridge(
+        aioclient_mock,
+        SIBLING_APP_ID,
+        {SIBLING_KEY: SIBLING_APP_ID, "new-key": "new-app-id"},
+    )
+    for _ in range(2):
+        with pytest.raises(OutputBusy):
+            await output.start()
+    assert asked.count(SIBLING_KEY) == 1
+    # Paired again: the new key is asked; the old id is not used for it.
+    paired = {**sibling.data["bridge"], "app_key": "new-key"}
+    hass.config_entries.async_update_entry(
+        sibling, data={**sibling.data, "bridge": paired}
+    )
+    with pytest.raises(OutputBusy, match="Another app"):
+        await output.start()
+    assert asked.count("new-key") == 1
+
+
+async def test_a_cached_match_is_not_hidden_by_a_slow_bridge(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cached ids are compared before any other setup is asked."""
+    monkeypatch.setattr(hue, "OTHERS_TIMEOUT", 0.05)
+    add_bridge()
+    add_glowcast(hass, "Hall TV", key="hall-key")  # asked first
+    add_glowcast(hass)
+    answers: dict[str, Any] = {"hall-key": 403, SIBLING_KEY: SIBLING_APP_ID}
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, answers)
+    with pytest.raises(OutputBusy, match="Glowcast"):
+        await output.start()
+    answers["hall-key"] = HANG
+    with pytest.raises(OutputBusy, match="Glowcast"):
+        await output.start()
+    data = {"bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY}}
+    assert hue.other_glowcast(hass, data, {}) == {"other": "Bedroom TV"}
+
+
+async def test_a_removed_entry_is_forgotten(
+    hass: HomeAssistant,
+    enable_custom_integrations: None,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """What the lookup kept for an entry goes with the entry (#299)."""
+    add_bridge()
+    sibling = add_glowcast(hass)
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, {SIBLING_KEY: SIBLING_APP_ID})
+    with pytest.raises(OutputBusy):
+        await output.start()
+    own = add_glowcast(hass, "Living room TV", key=APP_KEY)
+    assert hass.data[hue.APP_IDS] and hass.data[hue.BUSY_BY]
+    await hue.async_removed(hass, sibling)
+    await hue.async_removed(hass, own)
+    assert hass.data[hue.APP_IDS] == {}
+    assert hass.data[hue.BUSY_BY] == {}
+
+
+async def test_a_start_that_works_forgets_the_other_setup(
+    hass: HomeAssistant,
+    output: HueEntertainmentOutput,
+    add_bridge: AddBridge,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    add_bridge()
+    add_glowcast(hass)
+    mock_busy_bridge(aioclient_mock, SIBLING_APP_ID, {SIBLING_KEY: SIBLING_APP_ID})
+    with pytest.raises(OutputBusy):
+        await output.start()
+    aioclient_mock.clear_requests()
+    mock_bridge(aioclient_mock)
+    await output.start()
+    data = {"bridge": {"unique_id": BRIDGE_ID, "app_key": APP_KEY}}
+    assert hue.other_glowcast(hass, data, {}) is None
+
+
+def test_the_check_without_a_bridge(hass: HomeAssistant) -> None:
+    assert hue.other_glowcast(hass, {}, {}) is None
 
 
 async def test_our_own_stale_stream_is_stopped(

@@ -4,12 +4,16 @@ It answers what Glowcast's setup flow, settings screen and Hue output ask for:
 
 - GET  /api/config: the bridge answers (the reachability check);
 - POST /api: Hue's pairing reply, error 101 ("link button not pressed") until
-  the link button is pressed, then a generic app key and client key;
-- GET  /auth/v1: the app's application id, in the `hue-application-id` header;
+  the link button is pressed, then a generic app key and client key: the
+  first pairing gets the first of KEYS, the next one the next (in turn), so
+  two Glowcast setups have their own key and application id (#299);
+- GET  /auth/v1: the key's application id, in the `hue-application-id` header;
 - GET  /clip/v2/resource/entertainment_configuration[/<id>]: two
   entertainment areas (or one), with their streaming status;
 - PUT  /clip/v2/resource/entertainment_configuration/<id>: `action` `start`
-  or `stop` claims or releases the area;
+  or `stop` claims or releases the area; the area's `active_streamer` is the
+  application id of the key that started it, and a start while another area
+  streams is refused (503), as one stream per bridge;
 - POST /demo/press-link-button: presses the link button (for the recording
   script); the next pairing request succeeds.
 
@@ -61,6 +65,17 @@ AREAS = [
 APP_KEY = "demo-app-key"
 CLIENT_KEY = "00112233445566778899AABBCCDDEEFF"
 APP_ID = "aaaaaaaa-0000-4000-8000-0000000000ff"
+# Every app the bridge pairs, in turn: (app key, client key, application id).
+KEYS = [
+    (APP_KEY, CLIENT_KEY, APP_ID),
+    (
+        "demo-app-key-2",
+        "FFEEDDCCBBAA99887766554433221100",
+        "aaaaaaaa-0000-4000-8000-0000000000fe",
+    ),
+]
+APP_IDS = {key: app_id for key, _, app_id in KEYS}
+CLIENT_KEYS = {key: bytes.fromhex(client_key) for key, client_key, _ in KEYS}
 
 
 def channel_position(channel: int) -> dict[str, float]:
@@ -95,7 +110,9 @@ class Bridge:
         """Start with the link button not pressed and no area active."""
         self._lock = threading.Lock()  # requests come in on several threads
         self._button_pressed = False
+        self._paired = 0
         self.active_area: str | None = None
+        self.active_streamer: str | None = None  # its application id
         self.events = events
 
     def press_link_button(self) -> None:
@@ -117,20 +134,29 @@ class Bridge:
                     }
                 }
             ]
-        return [{"success": {"username": APP_KEY, "clientkey": CLIENT_KEY}}]
+        with self._lock:
+            app_key, client_key, _ = KEYS[self._paired % len(KEYS)]
+            self._paired += 1
+        return [{"success": {"username": app_key, "clientkey": client_key}}]
 
-    def set_action(self, area_id: str, action: str) -> None:
-        """Start or stop streaming to an area."""
+    def set_action(self, area_id: str, action: str, app_key: str) -> bool:
+        """Start or stop streaming to an area; False when another app's
+        stream holds the bridge (one stream per bridge)."""
         with self._lock:
             if action == "start":
-                self.active_area = area_id
+                if self.active_area is not None and (
+                    self.active_streamer != APP_IDS[app_key]
+                ):
+                    return False
+                self.active_area, self.active_streamer = area_id, APP_IDS[app_key]
             elif action == "stop" and self.active_area == area_id:
-                self.active_area = None
+                self.active_area = self.active_streamer = None
+        return True
 
     def areas(self, area_id: str | None = None) -> dict[str, Any]:
         """The entertainment configurations in CLIP v2 form (or just one)."""
         with self._lock:
-            active = self.active_area
+            active, streamer = self.active_area, self.active_streamer
         return {
             "errors": [],
             "data": [
@@ -140,7 +166,7 @@ class Bridge:
                     "metadata": {"name": area["name"]},
                     "status": "active" if area["id"] == active else "inactive",
                     **(
-                        {"active_streamer": {"rid": APP_ID, "rtype": "auth_v1"}}
+                        {"active_streamer": {"rid": streamer, "rtype": "auth_v1"}}
                         if area["id"] == active
                         else {}
                     ),
@@ -175,7 +201,8 @@ def make_handler(bridge: Bridge) -> type[http.server.BaseHTTPRequestHandler]:
             elif not self._authorized():
                 return
             elif self.path == "/auth/v1":
-                self._reply({}, headers={"hue-application-id": APP_ID})
+                key = self.headers.get("hue-application-key", "")
+                self._reply({}, headers={"hue-application-id": APP_IDS[key]})
             elif self.path == AREAS_PATH:
                 self._reply(bridge.areas())
             elif self.path.startswith(f"{AREAS_PATH}/"):
@@ -208,8 +235,16 @@ def make_handler(bridge: Bridge) -> type[http.server.BaseHTTPRequestHandler]:
                 self._reply({"errors": [{"description": "not found"}]}, 404)
                 return
             action = body.get("action") if isinstance(body, dict) else None
-            bridge.events.add("action", area=area_id, action=action)
-            bridge.set_action(area_id, str(action))
+            key = self.headers.get("hue-application-key", "")
+            # Which app, by its place in KEYS: never the key itself.
+            app = next(n for n, (k, _, _) in enumerate(KEYS) if k == key)
+            if not bridge.set_action(area_id, str(action), key):
+                bridge.events.add(
+                    "action", area=area_id, action=action, app=app, refused=True
+                )
+                self._reply({"errors": [{"description": "stream in use"}]}, 503)
+                return
+            bridge.events.add("action", area=area_id, action=action, app=app)
             self._reply(
                 {
                     "errors": [],
@@ -218,7 +253,7 @@ def make_handler(bridge: Bridge) -> type[http.server.BaseHTTPRequestHandler]:
             )
 
         def _authorized(self) -> bool:
-            if self.headers.get("hue-application-key") == APP_KEY:
+            if self.headers.get("hue-application-key") in APP_IDS:
                 return True
             self._reply({"errors": [{"description": "unauthorized"}]}, 403)
             return False
@@ -326,7 +361,6 @@ class DtlsServer:
         self._sock.bind((HOST, port))
         self._cookie_secret = os.urandom(16)
         self._clients: dict[tuple[str, int], DtlsClient] = {}
-        self._psk = bytes.fromhex(CLIENT_KEY)
 
     def serve_forever(self) -> None:
         """Handle datagrams until the process ends."""
@@ -371,9 +405,17 @@ class DtlsServer:
         if msg_type == _HT_CLIENT_KEY_EXCHANGE:
             identity = body[2 : 2 + int.from_bytes(body[0:2], "big")]
             # Compared, never logged or recorded.
-            client.identity_ok = hmac.compare_digest(identity, APP_KEY.encode())
+            psk = next(
+                (
+                    client_key
+                    for key, client_key in CLIENT_KEYS.items()
+                    if hmac.compare_digest(identity, key.encode())
+                ),
+                None,
+            )
+            client.identity_ok = psk is not None
             client.transcript += message
-            client.derive_keys(self._psk)
+            client.derive_keys(psk or CLIENT_KEYS[APP_KEY])
         else:
             self._error(address, f"unexpected handshake message {msg_type}")
 

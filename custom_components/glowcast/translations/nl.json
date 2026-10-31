@@ -433,6 +433,10 @@
       "title": "Glowcast {name}: de entertainmentruimte bestaat niet meer",
       "description": "De entertainmentruimte waar Glowcast naartoe streamt is van de Hue-bridge verwijderd. Kies een andere in de instellingen van Glowcast."
     },
+    "hue_entertainment_other_glowcast": {
+      "title": "Glowcast {name}: Glowcast {other} streamt naar deze bridge",
+      "description": "Glowcast kan niet synchroniseren omdat je andere Glowcast, {other}, naar dezelfde Hue-bridge streamt. Een Hue-bridge streamt naar één entertainmentruimte tegelijk, dus er kan per bridge maar één Glowcast tegelijk synchroniseren. Zet eerst Glowcast {other} uit en zet Glowcast {name} daarna weer aan. Glowcast {name} laat de andere stream met rust. De melding verdwijnt zodra Glowcast {name} de lampen weer overneemt."
+    },
     "hue_entertainment_bridge_app_left": {
       "title": "Glowcast {name}: verwijder ook de app van de Hue-bridge",
       "description": "Glowcast is uit Home Assistant verwijderd, maar de app van Glowcast staat nog op de Hue-bridge. De sleutel van die app geeft volledige toegang tot de bridge. Verwijder hem in de Hue-app: ga naar **Instellingen → Toepassingen → Netwerk-gebaseerd**, tik op de infoknop naast **glowcast** en verwijder hem."
