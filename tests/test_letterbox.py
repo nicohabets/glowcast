@@ -283,6 +283,37 @@ def test_a_dark_strip_next_to_the_bar_no_longer_greys_the_top_light() -> None:
     assert inside.rgb[0] > 0.5 > inside.rgb[2] * 2
 
 
+def test_a_four_three_picture_lights_the_sides_from_its_edges() -> None:
+    """4:3 material in the 16:9 frame (#294): bars left and right are taken,
+    and the lights at the sides and the strip's ends read the picture's edges:
+    red at its left edge, blue at its right, white in between."""
+    frame = make_frame(
+        lambda col, row: (
+            BLACK
+            if col < 8 or col >= WIDTH - 8
+            else RED
+            if col < 18
+            else BLUE
+            if col >= WIDTH - 18
+            else WHITE
+        )
+    )
+    sides = [Channel("l", "l", -1.0, 0.0), Channel("r", "r", 1.0, 0.0)]
+    strip = [
+        Channel(f"s{n}", "s", x, z, y=0.8, light="strip")
+        for n, (x, z) in enumerate([(-0.4, 0.0), (0.0, 0.4), (0.4, 0.0)])
+    ]
+    bars = feed(Letterbox(), frame, 0.0, 3.0)
+    assert bars == Bars(0, 0, 8, 8)
+    left, right, strip_left, _, strip_right = (
+        c.rgb for c in compute(frame, sides + strip, 1.0, bars.picture(WIDTH, HEIGHT))
+    )
+    for rgb in (left, strip_left):
+        assert rgb[0] > 0.9 and rgb[0] > 2 * rgb[2]
+    for rgb in (right, strip_right):
+        assert rgb[2] > 0.9 and rgb[2] > 2 * rgb[0]
+
+
 def test_measuring_is_cheap() -> None:
     """Within the colour engine's budget with room to spare (architecture 3.3)."""
     frame = letterbox(5, 3)
