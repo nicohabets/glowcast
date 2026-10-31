@@ -18,10 +18,11 @@ import spike_scenes  # noqa: E402
 
 from custom_components.glowcast.core import letterbox  # noqa: E402
 from custom_components.glowcast.core.color_engine import (  # noqa: E402
+    compute,
     is_all_zero,
     is_black,
 )
-from custom_components.glowcast.core.models import Frame  # noqa: E402
+from custom_components.glowcast.core.models import Channel, Frame  # noqa: E402
 
 SIZE = (1920, 1080)
 
@@ -30,13 +31,16 @@ def frame(image) -> Frame:
     return Frame(64, 36, scenes.downscale(image))
 
 
-def test_sparks_flip_between_black_and_lit() -> None:
-    """The worst case for #265: the whole frame is black by the colour
-    engine's rule in some pictures and lit in others, never all zero."""
+def test_sparks_flip_a_lights_colour_between_black_and_lit() -> None:
+    """The worst case for #265: a light left of the picture gets black in
+    some pictures and a colour in others, while the whole frame never counts
+    as black (that would hold the colours instead)."""
+    left = [Channel("left", "", -0.7, 0.6)]
     frames = [frame(spike_scenes.sparks(seed, SIZE)) for seed in range(16)]
-    black = [is_black(f) for f in frames]
-    assert any(black)
-    assert not all(black)
+    colours = [compute(f, left, 1.0)[0].rgb for f in frames]
+    assert (0.0, 0.0, 0.0) in colours
+    assert any(max(c) > 0.3 for c in colours)
+    assert not any(is_black(f) for f in frames)
     assert not any(is_all_zero(f) for f in frames)
 
 

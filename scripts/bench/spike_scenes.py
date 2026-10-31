@@ -32,6 +32,9 @@ import random
 from PIL import Image, ImageDraw, ImageFilter
 
 FRAME = (64, 36)  # the helper's frame (glowcast_screen.capture)
+# Columns 22-41, rows 29-35 of the 64x36 frame: 140 pixels (6 % of the frame),
+# below and between the regions of lights left and right of the picture.
+STRIP = (22, 29, 42, 36)
 SPARK_COLOURS = [(255, 240, 200), (255, 80, 40), (90, 160, 255)]
 STAR_COLOURS = [(255, 255, 255), (200, 220, 255), (255, 230, 190)]
 FIREWORK_COLOURS = [
@@ -48,13 +51,20 @@ BOTTOM = (40, 120, 255)
 
 
 def sparks(seed: int, size: tuple[int, int]) -> Image.Image:
-    """Bright single pixels of the 64x36 frame on black, a lit share of 2-8 %."""
+    """Bright single pixels of the 64x36 frame on black, a lit share of 2-8 %,
+    and a steady lit strip at the bottom centre (STRIP), so the whole frame
+    never counts as black (which would hold the colours) while each light's
+    region flips around the 5 % threshold."""
     rnd = random.Random(seed)
     share = rnd.uniform(0.02, 0.08)
     pixels = [
         rnd.choice(SPARK_COLOURS) if rnd.random() < share else (0, 0, 0)
         for _ in range(FRAME[0] * FRAME[1])
     ]
+    x0, y0, x1, y1 = STRIP
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            pixels[y * FRAME[0] + x] = (180, 150, 110)
     small = Image.new("RGB", FRAME)
     small.putdata(pixels)
     return small.resize(size, Image.Resampling.NEAREST)
@@ -91,14 +101,14 @@ def fireworks(seed: int, size: tuple[int, int]) -> Image.Image:
     for _ in range(rnd.randint(1, 3)):
         cx = rnd.uniform(0.1, 0.9) * w
         cy = rnd.uniform(0.1, 0.65) * h
-        radius = rnd.uniform(150, 600) * unit
+        radius = rnd.uniform(350, 1000) * unit
         colour = rnd.choice(FIREWORK_COLOURS)
         fade = rnd.uniform(0.4, 1.0)
-        for _ in range(140):
+        for _ in range(260):
             angle = rnd.uniform(0, 2 * math.pi)
             r = radius * rnd.uniform(0.6, 1.0)
             x, y = cx + r * math.cos(angle), cy + r * math.sin(angle)
-            s = rnd.choice([5, 7, 9]) * unit
+            s = rnd.choice([12, 16, 22]) * unit
             draw.ellipse(
                 [x - s, y - s, x + s, y + s], fill=tuple(int(fade * c) for c in colour)
             )
