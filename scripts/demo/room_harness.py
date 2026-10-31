@@ -21,9 +21,13 @@ Assistant is started. These modes import the Glowcast package of the tree that
 holds `--core`, so they need Home Assistant installed (the demo's environment,
 or the test requirements).
 
+`--liveliness` runs the pipeline at that level (#16; Normal by default, the
+settings as before, so an older `core/` without the setting runs too).
+
 Usage (room.py runs it; the result is JSON):
     python room_harness.py --core DIR [--timing-from DIR]
-        [--lights area|ha|combined] [--place LIGHT=PLACE ...] --out FILE
+        [--lights area|ha|combined] [--place LIGHT=PLACE ...]
+        [--liveliness calm|normal|lively] --out FILE
 """
 
 import argparse
@@ -54,6 +58,9 @@ STOP_SECONDS = 60
 BRIGHTNESS = 80
 INTENSITY = 100
 UPDATE_RATE = "high"
+# The liveliness levels (#16, core/liveliness.py); Normal is v0.4.
+LEVELS = ("calm", "normal", "lively")
+NORMAL = "normal"
 
 # The lights in the illustrated room, per output type: the one place that says
 # which light of the room stands for which channel. room.py draws each light
@@ -122,6 +129,22 @@ Picture = Callable[[float], bytes]  # seconds into the scenario -> pixels
 
 class NoOutput(Exception):
     """The tree has no output of this kind (main before #9 or #11)."""
+
+
+class NoLiveliness(Exception):
+    """The tree has no liveliness levels (main before #16)."""
+
+
+def _liveliness(core: ModuleType, level: str) -> tuple[Any, ...]:
+    """The level as Settings' last argument: none for Normal, so a `core/`
+    from before the setting runs as before."""
+    if level == NORMAL:
+        return ()
+    try:
+        module = importlib.import_module(f"{core.__name__}.liveliness")
+    except ModuleNotFoundError:
+        raise NoLiveliness(f"has no liveliness levels, so no {level}") from None
+    return (module.Liveliness(level),)
 
 
 @dataclass(frozen=True)
@@ -747,6 +770,8 @@ async def _record(
     lights: str = "area",
     places: Mapping[str, str] | None = None,
     glowcast: SimpleNamespace | None = None,
+    *,
+    liveliness: str = NORMAL,
 ) -> dict[str, Any]:
     pipeline = core.pipeline
     clock = FakeClock()
@@ -775,7 +800,10 @@ async def _record(
         return part in watched and not watched[part].start_failed
 
     settings = pipeline.Settings(
-        BRIGHTNESS, INTENSITY, pipeline.UpdateRate(UPDATE_RATE)
+        BRIGHTNESS,
+        INTENSITY,
+        pipeline.UpdateRate(UPDATE_RATE),
+        *_liveliness(core, liveliness),
     )
     lights_ = pipeline.Pipeline(
         source, output, settings, _runner, clock, lambda status: None
@@ -840,6 +868,7 @@ async def _record(
     task.result()
     return {
         "lights": lights,
+        "liveliness": liveliness,
         # Each Home Assistant light's place: as given (a preset or "x,z"), where, and
         # whether --place moved it from HA_LIGHTS's.
         "places": {
@@ -867,9 +896,15 @@ def record(
     timing_folder: Path | None = None,
     lights: str = "area",
     places: Mapping[str, str] | None = None,
+    *,
+    liveliness: str = NORMAL,
 ) -> dict[str, Any]:
     """record_async() in an event loop of its own."""
-    return asyncio.run(record_async(core_folder, run, timing_folder, lights, places))
+    return asyncio.run(
+        record_async(
+            core_folder, run, timing_folder, lights, places, liveliness=liveliness
+        )
+    )
 
 
 async def record_async(
@@ -878,6 +913,8 @@ async def record_async(
     timing_folder: Path | None = None,
     lights: str = "area",
     places: Mapping[str, str] | None = None,
+    *,
+    liveliness: str = NORMAL,
 ) -> dict[str, Any]:
     """Run the scenarios through the `core/` in `core_folder`, sampling the
     lights and the TV picture on every send tick. The timings come from
@@ -888,9 +925,14 @@ async def record_async(
     Assistant lights at `places` ("ha"), or both ("combined": the area as with
     "area", the other lights of HA_LIGHTS as Home Assistant lights). Raises
     NoOutput when the tree of `core_folder` has no such output.
+
+    `liveliness`: the level the pipeline runs at (LEVELS); raises
+    NoLiveliness for Calm or Lively when that `core/` has no levels.
     """
     if lights not in LIGHTS:
         raise ValueError(f"lights is one of {', '.join(LIGHTS)}")
+    if liveliness not in LEVELS:
+        raise ValueError(f"liveliness is one of {', '.join(LEVELS)}")
     glowcast = None
     if lights == "area":
         core = load_core(core_folder, f"glowcast_core_{next(_LOADED)}")
@@ -907,7 +949,7 @@ async def record_async(
             lights,
             timing.pipeline.LOST_RETRY_DELAY,
         )
-    return await _record(core, run, lights, places, glowcast)
+    return await _record(core, run, lights, places, glowcast, liveliness=liveliness)
 
 
 def parse_places(values: list[str]) -> dict[str, str]:
@@ -927,6 +969,7 @@ def main() -> None:
     parser.add_argument("--timing-from", type=Path)
     parser.add_argument("--lights", choices=LIGHTS, default="area")
     parser.add_argument("--place", action="append", default=[])
+    parser.add_argument("--liveliness", choices=LEVELS, default=NORMAL)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -936,9 +979,13 @@ def main() -> None:
         sys.exit(str(err))
     try:
         recording = record(
-            args.core, timing_folder=args.timing_from, lights=args.lights, places=places
+            args.core,
+            timing_folder=args.timing_from,
+            lights=args.lights,
+            places=places,
+            liveliness=args.liveliness,
         )
-    except NoOutput as err:
+    except (NoOutput, NoLiveliness) as err:
         print(err, file=sys.stderr)
         sys.exit(EXIT_NO_OUTPUT)
     except BadPlace as err:
