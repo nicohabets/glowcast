@@ -6,9 +6,11 @@ part of CI.
 """
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts" / "bench"))
@@ -27,7 +29,7 @@ from custom_components.glowcast.core.models import Channel, Frame  # noqa: E402
 SIZE = (1920, 1080)
 
 
-def frame(image) -> Frame:
+def frame(image: Image.Image) -> Frame:
     return Frame(64, 36, scenes.downscale(image))
 
 
@@ -45,7 +47,9 @@ def test_sparks_flip_a_lights_colour_between_black_and_lit() -> None:
 
 
 @pytest.mark.parametrize("make", [spike_scenes.starfield, spike_scenes.fireworks])
-def test_busy_scenes_are_dark_but_not_empty(make) -> None:
+def test_busy_scenes_are_dark_but_not_empty(
+    make: Callable[[int, tuple[int, int]], Image.Image],
+) -> None:
     for seed in range(4):
         f = frame(make(seed, SIZE))
         assert not is_all_zero(f)
@@ -70,7 +74,9 @@ def test_the_control_film_has_bars_top_and_bottom() -> None:
     ("make", "rows"),
     [(spike_scenes.night_sky, (3, 4)), (spike_scenes.menu_bar, (1, 2))],
 )
-def test_a_dark_top_band_reads_as_a_bar(make, rows) -> None:
+def test_a_dark_top_band_reads_as_a_bar(
+    make: Callable[[tuple[int, int]], Image.Image], rows: tuple[int, int]
+) -> None:
     """What #241 is about: one frame of a dark band near the top measures as
     a top bar, and the bottom has none."""
     top, bottom, _, _ = letterbox.measure(frame(make(SIZE)))
