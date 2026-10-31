@@ -450,6 +450,23 @@ async def test_switching_off_during_a_restart_keeps_the_stop(
     assert data.status == FakePipeline.stopped(StopReason.USER)
 
 
+async def test_a_restart_during_a_switch_off_does_not_switch_on_again(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A new choice of lights while a switch-off still releases them: the
+    switch-off came first and wins (#269)."""
+    entry = await setup(hass)
+    await switch(hass, SERVICE_TURN_ON)
+    data = entry.runtime_data
+    stop = hass.async_create_task(data.async_stop())
+    assert data.is_on  # still releasing the lights
+    await data.async_restart()
+    await stop
+    await settle(hass)
+    assert len(FakePipeline.instances) == 1
+    assert state(hass) == STATE_OFF
+
+
 async def test_a_stop_without_a_reason_still_turns_the_switch_off(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:

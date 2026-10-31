@@ -167,6 +167,57 @@ async def test_a_press_while_switching_on_ends_no_second_test(
     assert len(fakes.outputs) == 2  # the test's and the pipeline's
 
 
+async def test_switching_off_while_a_switch_on_waits_for_the_test_wins(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """The last of start and stop wins, also while the start waits for the
+    test's release (#269)."""
+    entry = await setup(hass)
+    await press(hass)
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the test's release
+    await entry.runtime_data.async_stop()
+    assert fakes.log == RELEASED  # the stop waited for the release
+    await start
+    await settle(hass)
+    assert FakePipeline.instances == []
+    assert state(hass) == STATE_OFF
+
+
+async def test_unloading_while_a_switch_on_waits_for_the_test_starts_nothing(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """No pipeline streams after an unload with nothing left to stop it
+    (#269)."""
+    entry = await setup(hass)
+    await press(hass)
+    start = hass.async_create_task(entry.runtime_data.async_start())
+    await asyncio.sleep(0)  # the start now waits for the test's release
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert fakes.log == RELEASED
+    await start
+    await settle(hass)
+    assert FakePipeline.instances == []
+    assert fakes.log == RELEASED
+
+
+async def test_two_switch_ons_during_the_test_both_wait_for_its_release(
+    hass: HomeAssistant, fakes: FakeAdapters
+) -> None:
+    """A second switch-on does not claim the lights while the first one
+    still waits for the test's release (#269)."""
+    entry = await setup(hass)
+    await press(hass)
+    first = hass.async_create_task(entry.runtime_data.async_start())
+    second = hass.async_create_task(entry.runtime_data.async_start())
+    await first
+    await second
+    await settle(hass)
+    assert fakes.log == [*RELEASED, "source.start", "output.start"]
+    assert len(FakePipeline.instances) == 1
+    assert state(hass) == STATE_ON
+
+
 async def test_unloading_during_the_test_releases_the_lights(
     hass: HomeAssistant, fakes: FakeAdapters
 ) -> None:
