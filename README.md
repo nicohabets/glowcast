@@ -16,7 +16,7 @@ Glowcast is a [Home Assistant](https://www.home-assistant.io/) custom integratio
 
 **The full documentation is on Glowcast's website: [nicohabets.github.io/glowcast](https://nicohabets.github.io/glowcast/).** This README is the short version. New to Glowcast? The [user guide](https://nicohabets.github.io/glowcast/guide/) takes you from installing to the first evening.
 
-> **Status: v0.4.0 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.4.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
+> **Status: v0.5.0 released - an early version.** Tested on an LG OLED65G36LA (2023, G3) with a Hue Bridge Pro and a gradient TV lightstrip. See the [release notes](https://github.com/nicohabets/glowcast/blob/main/docs/releases/v0.5.0.md) and [docs/ARCHITECTURE.md](https://github.com/nicohabets/glowcast/blob/main/docs/ARCHITECTURE.md) for the design. Expect breaking changes until v1.0.
 
 ## How it works
 
@@ -106,7 +106,8 @@ More: [status and diagnostics](https://nicohabets.github.io/glowcast/docs/status
 ## Known limits
 
 - **About 3 captures per second**, the TV's limit: the lights follow scenes, not every flash or cut.
-- **Only LG webOS TVs** for now, tested on one model (a 2023 LG G3); other webOS TVs should work the same way.
+- **LG webOS TVs only** for now (a computer screen works as a preview), tested on one TV model (a 2023 LG G3); other webOS TVs should work the same way.
+- **webOS 26:** Home Assistant 2026.8.3 is the minimum that can work, not a guarantee; Glowcast has not been tried on such a TV yet. More: [installation](https://nicohabets.github.io/glowcast/docs/installation/#what-you-need)
 - **Streaming apps with DRM** in the TV's own apps give no picture (tested with Prime Video); the same app on a streaming stick over HDMI works.
 - **One stream per bridge at a time**, so two TVs on one bridge cannot sync together.
 - **Home Assistant lights change about once per second**, and at most 4 commands per second go to each Hue bridge and Thread network.

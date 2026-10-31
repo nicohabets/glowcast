@@ -58,7 +58,7 @@ If you already run Home Assistant with the LG webOS integration and colour light
 
     **Part of Home Assistant**
 
-    A switch, a status and its settings on one device page. Start it with the TV, by voice or from a dashboard, and change the brightness while it runs.
+    A switch, a status and its settings on one device page, and a button to test where each light sits. Start it with the TV (only after dark or for the inputs you choose, if you like), with a Hue Sync Box, by voice or from a dashboard, and change the brightness while it runs.
 
 </div>
 
@@ -74,7 +74,7 @@ At the time of writing (2026), Philips' own Hue Sync TV app only runs on LG TVs 
 
 ## Honest limits
 
-- **Only LG webOS TVs for now.** Other TVs and sources are planned. So far Glowcast is tested on one TV, a 2023 LG G3.
+- **LG webOS TVs only, for now.** A computer screen works as a preview; other TVs and sources are planned. So far Glowcast is tested on one TV, a 2023 LG G3.
 - **About 3 pictures per second.** That is the TV's limit, so the lights follow scenes, not every flash. Fine as ambient light; not as fast as an HDMI Sync Box.
 - **Protected apps in the TV's own apps give no picture.** Streaming apps with DRM (tested with Prime Video) return a black frame, so the lights let go. The same app on a streaming stick over HDMI works.
 - **One stream per bridge.** A Hue bridge streams to one entertainment area at a time, so two TVs on one bridge cannot sync together.

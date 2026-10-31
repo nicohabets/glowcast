@@ -9,7 +9,7 @@
 - **Choosing another entertainment area while syncing** briefly restarts the light stream (a few seconds). Brightness, intensity and the update rate change without a restart.
 - **Streaming apps with DRM** in the TV's own apps return a black frame (tested with Prime Video), so Glowcast cannot follow them. After 7 s without a picture it lets go of the lights, so they return to how they were before syncing (about 8 s after the app starts); Glowcast stays on and follows the picture again as soon as there is one. The same app on a streaming stick over HDMI works. Other apps and copy-protected HDMI sources are not tested yet.
 - **The TV's capture call is undocumented** by LG and could stop working after a TV firmware update. A TV that refuses it stops Glowcast (at the start after about 10 seconds of asking again), with a repair that says so; see [Troubleshooting](troubleshooting.md#the-tv-does-not-allow-screenshots).
-- **Glowcast's icon** in Settings → Devices & services only shows on Home Assistant 2026.3 or newer; older versions show no icon for Glowcast.
 - **Tested on one TV model so far**, a 2023 LG G3. Other webOS TVs should work the same way, but that is not confirmed yet.
+- **webOS 26:** a TV with LG's 2026 update only pairs with Home Assistant 2026.8.3 or newer. That is the minimum that can work, not a guarantee, and Glowcast has not been tried on such a TV yet. See [Installation](installation.md#what-you-need).
 
 **Tried it on your TV?** Please tell us how it went, also when it just works: [open a hardware report](https://github.com/nicohabets/glowcast/issues/new?template=hardware-report.md) with your TV model, webOS version, bridge and how many captures per second you get (the [Capture rate](status.md#the-capture-rate) sensor shows it).
