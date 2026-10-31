@@ -25,7 +25,7 @@ The lights always fade smoothly between updates; a scene cut shows at once. When
 
 The settings are also entities on Glowcast's device, under **Configuration**: **Brightness** and **Intensity** (sliders, in %), **Update rate** (Low, Medium, High, Maximum) and what follows the picture: **Entertainment area** (the bridge's areas by name), or with Home Assistant lights **Lights** (both when you use the two together) (the Home Assistant areas and light groups that have colour lights, or *Chosen lights* while you use single lights, which you pick under **Configure**). Change them on the device page, from a dashboard, by voice or with an automation; the settings screen under **Configure** shows the same values.
 
-![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, and the settings under Configuration.](../images/device-page.png){ width="400" }
+![Glowcast's device page in Home Assistant while syncing: the switch on under Controls, the status Streaming under Sensors, the settings and the Test lights button under Configuration, and the Run hardware check button under Diagnostic.](../images/device-page.png){ width="400" }
 
 *Glowcast's device page: the switch under Controls, the status under Sensors, the settings under Configuration.*
 
