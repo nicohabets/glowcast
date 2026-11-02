@@ -627,7 +627,7 @@ Planned as new **source adapters** behind `FrameSource`. Candidates, each still 
 |---|---|---|
 | Android TV / Google TV | ADB `screencap` | slow (about 1 per second), developer mode needed |
 | Any HA camera entity | camera snapshot (HDMI capture card via go2rtc, or a camera aimed at the screen) | works for every TV, needs hardware |
-| Samsung (Tizen) | no known local screenshot API | probably not possible |
+| Samsung (Tizen) | no supported local API; an unofficial app on the TV can measure 6-16 edge points (`docs/research/samsung-tizen.md`, #321) | reported only, not tested; sideloading, a Samsung certificate, no full picture |
 | A PC or Mac screen | a screen helper on the computer serves 64x36 frames; see 8.3 | needs a helper installed on the computer |
 
 Rule: **no code outside `sources/` may know about webOS**, and that includes the UI: the webOS source type provides its own setup step (pick a TV) and its texts. Each source decides itself whether its TV is on (`FrameSource.is_on()`), so the pipeline never needs a TV-specific entity.
