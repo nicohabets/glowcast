@@ -57,6 +57,7 @@ Numbers come from the project's own measurements. Where something was emulated o
 - **Can a camera check a light's colour?** Yes: a USB webcam tells red, green, blue, warm white and off apart on a wall lit by a Hue light, which became the test bench ([#133](https://github.com/nicohabets/glowcast/issues/133)).
 - **Which LG TVs support the capture?** Probably webOS 4 to 25 (2018-2025), unknown for older ones, probably not webOS 1 ([#185](https://github.com/nicohabets/glowcast/issues/185)).
 - **What about other TV brands?** Answered from online reports, not tested; the follow-ups are a capture card and an app on Android TV streamers (below) ([#12](https://github.com/nicohabets/glowcast/issues/12)).
+- **Can a Samsung TV give Glowcast a picture?** Not today. Unofficial apps on the TV are reported to measure a few colours on the edges of the picture, which takes sideloading; nobody reports it on a 2025 S90F, and it is not tested ([#321](https://github.com/nicohabets/glowcast/issues/321)).
 - **What do users of Hue Sync and similar products miss?** Their lessons led to the Test lights button, continuing after a Home Assistant restart, and the questions below ([#159](https://github.com/nicohabets/glowcast/issues/159)).
 
 ## Open questions
