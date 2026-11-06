@@ -63,7 +63,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uv run --project screen_helper --locked --group dev pytest screen_helper/tests
       # The documented command itself (the console script, not python -m).
       - run: uv run --project screen_helper --locked glowcast-screen --version
@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: python3 scripts/demo.py e2e
       - if: failure()
         uses: actions/upload-artifact@v7
