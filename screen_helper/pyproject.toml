@@ -10,8 +10,8 @@ dependencies = [
     "ifaddr==0.2.0",
     "mss==10.2.0",
     "pillow==13.0.0",
-    "platformdirs==4.14.0",
-    "zeroconf==0.151.5",
+    "platformdirs==4.14.3",
+    "zeroconf==0.153.0",
 ]
 
 [project.scripts]
